@@ -1,0 +1,49 @@
+#
+# Copyright SecureKey Technologies Inc. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+name: build
+on:
+  push:
+  pull_request:
+jobs:
+  unitTest:
+    name: Unit test
+    runs-on: ubuntu-18.04
+    timeout-minutes: 10
+    steps:
+      - name: Setup Go 1.15
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.15
+        id: go
+
+      - uses: actions/checkout@v2
+
+      - name: Run unit test
+        timeout-minutes: 10
+        run: make unit-test
+
+      - name: Upload coverage to Codecov
+        timeout-minutes: 10
+        if: github.repository == 'hyperledger/aries-framework-go-ext'
+        uses: codecov/codecov-action@v1.0.13
+        with:
+          file: ./coverage.txt
+
+  checks:
+    name: Checks
+    timeout-minutes: 10
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Setup Go 1.15
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.15
+
+      - uses: actions/checkout@v2
+
+      - name: Run checks
+        timeout-minutes: 10
+        run: make checks
