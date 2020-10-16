@@ -1,0 +1,20 @@
+#
+# Copyright SecureKey Technologies Inc. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+name: license
+on:
+  push:
+  pull_request:
+jobs:
+  license:
+    name: Apache license
+    timeout-minutes: 10
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Checks Apache license
+        timeout-minutes: 10
+        run: make license
