@@ -11,6 +11,7 @@ require (
 	github.com/go-kivik/kivik v2.0.0+incompatible
 	github.com/google/uuid v1.1.2
 	github.com/hyperledger/aries-framework-go v0.1.5-0.20201017112511-5734c20820a9
+	github.com/hyperledger/aries-framework-go-ext/test/component/storage v0.0.0-20201020105420-c85a221b09b5
 	github.com/ory/dockertest/v3 v3.6.2
 	github.com/stretchr/testify v1.6.1
 )
