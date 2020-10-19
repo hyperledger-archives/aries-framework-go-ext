@@ -7,10 +7,12 @@ name: common
 on:
   push:
     paths-ignore:
-      - 'component/**'
+      - 'component/storage/couchdb/**'
+      - 'component/storage/mysql/**'
   pull_request:
     paths-ignore:
-      - 'component/**'
+      - 'component/storage/couchdb/**'
+      - 'component/storage/mysql/**'
 jobs:
   linter:
     name: Go linter
