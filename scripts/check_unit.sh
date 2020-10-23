@@ -19,7 +19,6 @@ if [ -z "$unit_tests_path" ]; then
 fi
 
 coverage_path="$(pwd)/coverage.txt"
-rm -f "$coverage_path"
 
 function clean ()
 {
@@ -37,14 +36,7 @@ do
       continue
   fi
   go test -count=1 -race -coverprofile=profile.out -covermode=atomic ./... -timeout=10m
-  if [ -f "$coverage_path" ]; then
-    res=$(grep -v "mode: atomic" profile.out || true )
-    if [ -n "$res" ]; then
-        echo "$res" >> "$coverage_path"
-    fi
-  else
     cat profile.out  >> "$coverage_path"
-  fi
   clean
   popd  > /dev/null
 done

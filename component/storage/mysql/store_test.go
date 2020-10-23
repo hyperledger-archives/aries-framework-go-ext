@@ -3,7 +3,7 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package mysql
+package mysql_test
 
 import (
 	"database/sql"
@@ -19,6 +19,7 @@ import (
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
 
+	. "github.com/hyperledger/aries-framework-go-ext/component/storage/mysql"
 	common "github.com/hyperledger/aries-framework-go-ext/test/component/storage"
 )
 
@@ -102,7 +103,7 @@ func TestSqlDBStore(t *testing.T) {
 	t.Run("Test sql db store failures", func(t *testing.T) {
 		prov, err := NewProvider("")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), errBlankDBPath.Error())
+		require.Contains(t, err.Error(), "DB URL for new mySQL DB provider can't be blank")
 		require.Nil(t, prov)
 
 		// Invalid db path
@@ -113,21 +114,6 @@ func TestSqlDBStore(t *testing.T) {
 		_, err = NewProvider("root:@tcp(127.0.0.1:45454)/")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failure while pinging MySQL")
-	})
-
-	t.Run("Test the open new connection error", func(t *testing.T) {
-		prov, err := NewProvider(sqlStoreDBURL)
-		require.NoError(t, err)
-
-		// invalid db url
-		prov.dbURL = "fake-url"
-
-		_, err = prov.OpenStore("testErr")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "failure while opening MySQL connection using url fake-url")
-
-		//  valid but not available db url
-		prov.dbURL = "root:my-secret-pw@tcp(127.0.0.1:3307)/"
 	})
 
 	t.Run("Test sqlDB multi store close by name", func(t *testing.T) {
@@ -158,9 +144,6 @@ func TestSqlDBStore(t *testing.T) {
 			require.Equal(t, data, dataRead)
 		}
 
-		// verify store length
-		require.Len(t, prov.dbs, 5)
-
 		for _, name := range storesToClose {
 			store, e := prov.OpenStore(name)
 			require.NoError(t, e)
@@ -174,21 +157,12 @@ func TestSqlDBStore(t *testing.T) {
 			require.Error(t, err)
 		}
 
-		// verify store length
-		require.Len(t, prov.dbs, 2)
-
 		// try to close non existing db
 		err = prov.CloseStore("store_x")
 		require.EqualError(t, err, storage.ErrStoreNotFound.Error())
 
-		// verify store length
-		require.Len(t, prov.dbs, 2)
-
 		err = prov.Close()
 		require.NoError(t, err)
-
-		// verify store length
-		require.Empty(t, prov.dbs)
 
 		// try close all again
 		err = prov.Close()

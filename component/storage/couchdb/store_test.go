@@ -4,7 +4,7 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package couchdb
+package couchdb_test
 
 import (
 	"context"
@@ -21,6 +21,7 @@ import (
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
 
+	. "github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb"
 	common "github.com/hyperledger/aries-framework-go-ext/test/component/storage"
 )
 
@@ -87,24 +88,10 @@ func checkCouchDB() error {
 }
 
 func TestCouchDBStore(t *testing.T) {
-	t.Run("Couchdb connection refused", func(t *testing.T) {
-		const (
-			driverName     = "couch"
-			dataSourceName = "admin:password@localhost:1111"
-			dbName         = "db_name"
-		)
-
-		client, err := kivik.New(driverName, dataSourceName)
-		require.NoError(t, err)
-
-		db := &StoreCouchDB{db: client.DB(context.Background(), dbName)}
-		require.Error(t, db.Put("key", []byte("val")))
-	})
-
 	t.Run("Test couchdb store failures", func(t *testing.T) {
 		prov, err := NewProvider("")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), blankHostErrMsg)
+		require.Contains(t, err.Error(), "hostURL for new CouchDB provider can't be blank")
 		require.Nil(t, prov)
 
 		_, err = NewProvider("wrongURL")
@@ -139,9 +126,6 @@ func TestCouchDBStore(t *testing.T) {
 			require.Equal(t, data, dataRead)
 		}
 
-		// verify store length
-		require.Len(t, prov.dbs, 5)
-
 		for _, name := range storesToClose {
 			store, e := prov.OpenStore(name)
 			require.NoError(t, e)
@@ -151,21 +135,12 @@ func TestCouchDBStore(t *testing.T) {
 			require.NoError(t, e)
 		}
 
-		// verify store length
-		require.Len(t, prov.dbs, 2)
-
 		// try to close non existing db
 		err = prov.CloseStore("store_x")
 		require.NoError(t, err)
 
-		// verify store length
-		require.Len(t, prov.dbs, 2)
-
 		err = prov.Close()
 		require.NoError(t, err)
-
-		// verify store length
-		require.Empty(t, prov.dbs)
 
 		// try close all again
 		err = prov.Close()
@@ -212,11 +187,11 @@ No matching index found, create an index to optimize query time.`)
 func queryTest(t *testing.T, fieldToIndex string, opts ...Option) {
 	prov, err := NewProvider(couchDBURL, opts...)
 	require.NoError(t, err)
-	store, err := prov.OpenStore(randomKey())
-	require.NoError(t, err)
 
-	couchDBStore, ok := store.(*StoreCouchDB)
-	require.True(t, ok, "failed to assert store as a StoreCouchDB")
+	storeName := randomKey()
+
+	store, err := prov.OpenStore(storeName)
+	require.NoError(t, err)
 
 	testJSONPayload := []byte(`{"employeeID":1234,"name":"Mr. Aries"}`)
 
@@ -227,7 +202,11 @@ func queryTest(t *testing.T, fieldToIndex string, opts ...Option) {
 
 	const indexName = "TestIndex"
 
-	err = couchDBStore.db.CreateIndex(context.Background(), designDocName, indexName,
+	client, err := kivik.New("couch", couchDBURL)
+	require.NoError(t, err)
+
+	db := client.DB(context.Background(), storeName)
+	err = db.CreateIndex(context.Background(), designDocName, indexName,
 		`{"fields": ["`+fieldToIndex+`"]}`)
 	require.NoError(t, err)
 
@@ -239,7 +218,7 @@ func queryTest(t *testing.T, fieldToIndex string, opts ...Option) {
 		}`)
 	require.NoError(t, err)
 
-	ok = itr.Next()
+	ok := itr.Next()
 	require.True(t, ok)
 	require.NoError(t, itr.Error())
 

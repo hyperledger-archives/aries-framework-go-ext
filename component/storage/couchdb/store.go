@@ -238,6 +238,7 @@ func (c *StoreCouchDB) put(k string, value []byte) error {
 
 func isJSON(textToCheck []byte) bool {
 	var js struct{}
+
 	return json.Unmarshal(textToCheck, &js) == nil
 }
 
@@ -245,6 +246,7 @@ func isJSON(textToCheck []byte) bool {
 // We want to do it all in one step, hence this manual stuff below.
 func wrapTextAsCouchDBAttachment(textToWrap []byte) []byte {
 	encodedTextToWrap := base64.StdEncoding.EncodeToString(textToWrap)
+
 	return []byte(`{"_attachments": {"data": {"data": "` + encodedTextToWrap + `", "content_type": "text/plain"}}}`)
 }
 
@@ -388,6 +390,7 @@ func (i *couchDBResultsIterator) Key() []byte {
 		v, err := strconv.Unquote(key)
 		if err != nil {
 			i.err = err
+
 			return nil
 		}
 
@@ -403,6 +406,7 @@ func (i *couchDBResultsIterator) Value() []byte {
 
 	if err := i.resultRows.ScanDoc(&rawDoc); err != nil {
 		i.err = err
+
 		return nil
 	}
 

@@ -74,9 +74,7 @@ linters-settings:
 linters:
   enable-all: true
   disable:
-    - testpackage # TODO enable
-    - goerr113 # TODO enable
-    - nlreturn # TODO enable
+    - goerr113
 
 issues:
   exclude-use-default: false
