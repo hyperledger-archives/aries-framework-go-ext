@@ -304,6 +304,7 @@ func (i *sqlDBResultsIterator) Key() []byte {
 	err := i.resultRows.Scan(&i.result.key, &i.result.value)
 	if err != nil {
 		i.err = err
+
 		return nil
 	}
 
@@ -315,6 +316,7 @@ func (i *sqlDBResultsIterator) Value() []byte {
 	err := i.resultRows.Scan(&i.result.key, &i.result.value)
 	if err != nil {
 		i.err = err
+
 		return nil
 	}
 
