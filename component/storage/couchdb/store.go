@@ -58,13 +58,6 @@ func WithDBPrefix(dbPrefix string) Option {
 	}
 }
 
-// WithLogger option is for logging.
-func WithLogger(log logger) Option {
-	return func(opts *Provider) {
-		opts.log = log
-	}
-}
-
 // PingCouchDB performs a readiness check on the CouchDB url.
 func PingCouchDB(url string) error {
 	if url == "" {
@@ -324,27 +317,15 @@ func (c *StoreCouchDB) Iterator(startKey, endKey string) storage.StoreIterator {
 	})
 	if err != nil {
 		return &couchDBResultsIterator{
-			log:   c.log,
 			store: c, resultRows: &kivik.Rows{},
 			err: fmt.Errorf("failed to query docs: %w", err),
 		}
 	}
 
-	return &couchDBResultsIterator{log: c.log, store: c, resultRows: resultRows}
-}
-
-// Query executes a query using the CouchDB _find endpoint.
-func (c *StoreCouchDB) Query(findQuery string) (storage.StoreIterator, error) {
-	resultRows, err := c.db.Find(context.Background(), findQuery)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query CouchDB using the find endpoint: %w", err)
-	}
-
-	return &couchDBResultsIterator{log: c.log, store: c, resultRows: resultRows}, nil
+	return &couchDBResultsIterator{store: c, resultRows: resultRows}
 }
 
 type couchDBResultsIterator struct {
-	log        logger
 	store      *StoreCouchDB
 	resultRows *kivik.Rows
 	err        error
@@ -353,19 +334,7 @@ type couchDBResultsIterator struct {
 // Next moves the pointer to the next value in the iterator. It returns false if the iterator is exhausted.
 // Note that the Kivik library automatically closes the kivik.Rows iterator if the iterator is exhausted.
 func (i *couchDBResultsIterator) Next() bool {
-	nextCallResult := i.resultRows.Next()
-
-	if i.log == nil {
-		return nextCallResult
-	}
-
-	// Kivik only guarantees that this value will be set after all the rows have been iterated through.
-	warningMsg := i.resultRows.Warning()
-	if warningMsg != "" {
-		i.log.Warnf(warningMsg)
-	}
-
-	return nextCallResult
+	return i.resultRows.Next()
 }
 
 func (i *couchDBResultsIterator) Release() {

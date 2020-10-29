@@ -7,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package couchdb_test
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,7 +14,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/go-kivik/kivik"
 	"github.com/google/uuid"
 	dctest "github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
@@ -31,12 +29,6 @@ const (
 	dockerCouchdbTag    = "3.1.0"
 	dockerCouchdbVolume = "%s/testdata/single-node.ini:/opt/couchdb/etc/local.d/single-node.ini"
 )
-
-type mockLoggerFn func(msg string, args ...interface{})
-
-func (fn mockLoggerFn) Warnf(msg string, args ...interface{}) {
-	fn(msg, args)
-}
 
 func TestMain(m *testing.M) {
 	code := 1
@@ -146,92 +138,6 @@ func TestCouchDBStore(t *testing.T) {
 		err = prov.Close()
 		require.NoError(t, err)
 	})
-
-	t.Run("Test CouchDB store query", func(t *testing.T) {
-		t.Run("Successfully query using index", func(t *testing.T) {
-			queryTest(t, "payload.employeeID")
-		})
-		t.Run("Successful query, but the specified index isn't valid for the query", func(t *testing.T) {
-			done := make(chan struct{})
-			// Despite the selected index ("name") not being applicable to our query ("payload.employeeID"),
-			// CouchDB doesn't throw an error. Instead, it just ignores the chosen index and still does the search,
-			// albeit slowly. When this happens, we log the warning message returned from CouchDB.
-			queryTest(t, "name", WithLogger(mockLoggerFn(func(msg string, args ...interface{}) {
-				defer close(done)
-
-				require.Contains(t, msg,
-					`_design/TestDesignDoc, TestIndex was not used because it is not a valid index for this query.
-No matching index found, create an index to optimize query time.`)
-			})))
-
-			select {
-			case <-done:
-			case <-time.After(time.Second):
-				t.Error("timeout")
-			}
-		})
-		t.Run("Fail to query - invalid query JSON", func(t *testing.T) {
-			prov, err := NewProvider(couchDBURL)
-			require.NoError(t, err)
-			store, err := prov.OpenStore(randomKey())
-			require.NoError(t, err)
-
-			itr, err := store.Query(``)
-			require.EqualError(t,
-				err, "failed to query CouchDB using the find endpoint: Bad Request: invalid UTF-8 JSON")
-			require.Nil(t, itr)
-		})
-	})
-}
-
-func queryTest(t *testing.T, fieldToIndex string, opts ...Option) {
-	prov, err := NewProvider(couchDBURL, opts...)
-	require.NoError(t, err)
-
-	storeName := randomKey()
-
-	store, err := prov.OpenStore(storeName)
-	require.NoError(t, err)
-
-	testJSONPayload := []byte(`{"employeeID":1234,"name":"Mr. Aries"}`)
-
-	err = store.Put("sampleDBKey", testJSONPayload)
-	require.NoError(t, err)
-
-	const designDocName = "TestDesignDoc"
-
-	const indexName = "TestIndex"
-
-	client, err := kivik.New("couch", couchDBURL)
-	require.NoError(t, err)
-
-	db := client.DB(context.Background(), storeName)
-	err = db.CreateIndex(context.Background(), designDocName, indexName,
-		`{"fields": ["`+fieldToIndex+`"]}`)
-	require.NoError(t, err)
-
-	itr, err := store.Query(`{
-		   "selector": {
-		       "payload.employeeID": 1234
-		   },
-			"use_index": ["` + designDocName + `", "` + indexName + `"]
-		}`)
-	require.NoError(t, err)
-
-	ok := itr.Next()
-	require.True(t, ok)
-	require.NoError(t, itr.Error())
-
-	value := itr.Value()
-	require.Equal(t, testJSONPayload, value)
-	require.NoError(t, itr.Error())
-
-	ok = itr.Next()
-	require.False(t, ok)
-	require.NoError(t, itr.Error())
-
-	itr.Release()
-	require.NoError(t, itr.Error())
 }
 
 func TestCouchDBStore_Common(t *testing.T) {
