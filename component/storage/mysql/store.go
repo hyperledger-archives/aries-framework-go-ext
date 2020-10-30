@@ -234,11 +234,6 @@ func (s *sqlDBStore) Delete(k string) error {
 	return nil
 }
 
-// TODO #2230 - implement query method.
-func (s *sqlDBStore) Query(_ string) (storage.StoreIterator, error) {
-	return nil, storage.ErrQueryingNotSupported
-}
-
 type sqlDBResultsIterator struct {
 	resultRows *sql.Rows
 	result     result
