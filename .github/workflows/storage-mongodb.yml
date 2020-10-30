@@ -1,24 +1,22 @@
 #
-# Copyright SecureKey Technologies Inc. All Rights Reserved.
+# Copyright Scoir, Inc. All Rights Reserved.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-name: common
+name: storage-mongodb
 on:
   push:
-    paths-ignore:
-      - 'component/storage/couchdb/**'
-      - 'component/storage/mysql/**'
+    paths:
       - 'component/storage/mongodb/**'
   pull_request:
-    paths-ignore:
-      - 'component/storage/couchdb/**'
-      - 'component/storage/mysql/**'
+    paths:
       - 'component/storage/mongodb/**'
 jobs:
   linter:
     name: Go linter
     timeout-minutes: 10
+    env:
+      LINT_PATH: component/storage/mongodb
     runs-on: ubuntu-18.04
     steps:
       - uses: actions/checkout@v2
@@ -26,11 +24,17 @@ jobs:
       - name: Checks linter
         timeout-minutes: 10
         run: make lint
-
   unitTest:
     name: Unit test
     runs-on: ubuntu-18.04
+    services:
+      mongodb:
+        image: mongo:4.2.8
+        ports:
+          - 27017:27017
     timeout-minutes: 15
+    env:
+      UNIT_TESTS_PATH: component/storage/mongodb
     steps:
       - name: Setup Go 1.15
         uses: actions/setup-go@v2
