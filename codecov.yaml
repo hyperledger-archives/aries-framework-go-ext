@@ -11,4 +11,6 @@ coverage:
       default:
         target: 85%
         only_pulls: true
-
+comment:
+  require_changes: false
+  require_base: no
