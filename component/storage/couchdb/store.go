@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package couchdb implements a storage interface for Aries (aries-framework-go).
-//
 package couchdb
 
 import (
