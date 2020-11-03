@@ -39,13 +39,22 @@ jobs:
 
       - uses: actions/checkout@v2
 
+      - name: Cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: $(echo ${GITHUB_SHA})
+          key: $(echo ${GITHUB_SHA})
+
       - name: Run unit test
         timeout-minutes: 15
-        run: make unit-test
+        run: |
+          cat $(echo ${GITHUB_SHA})
+          make unit-test
 
       - name: Upload coverage to Codecov
         timeout-minutes: 10
         if: github.repository == 'hyperledger/aries-framework-go-ext'
-        uses: codecov/codecov-action@v1.0.13
+        uses: codecov/codecov-action@v1.0.14
         with:
           file: ./coverage.txt

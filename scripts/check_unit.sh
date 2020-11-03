@@ -19,6 +19,7 @@ if [ -z "$unit_tests_path" ]; then
 fi
 
 coverage_path="$(pwd)/coverage.txt"
+touch "$coverage_path"
 
 function clean ()
 {
@@ -40,3 +41,6 @@ do
   clean
   popd  > /dev/null
 done
+
+result=$(cat "$coverage_path" | awk '!a[$0]++')
+echo -e "$result" > "$coverage_path"

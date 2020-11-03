@@ -16,6 +16,20 @@ on:
       - 'component/storage/mysql/**'
       - 'component/storage/mongodb/**'
 jobs:
+  cache:
+    name: Cache
+    timeout-minutes: 10
+    runs-on: ubuntu-18.04
+    steps:
+      - run: |
+          echo $(echo ${GITHUB_SHA})
+          touch $(echo ${GITHUB_SHA})
+
+      - uses: actions/cache@v2
+        with:
+          path: $(echo ${GITHUB_SHA})
+          key: $(echo ${GITHUB_SHA})
+
   linter:
     name: Go linter
     timeout-minutes: 10
