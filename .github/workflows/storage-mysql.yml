@@ -41,11 +41,12 @@ jobs:
 
       - name: Run unit test
         timeout-minutes: 15
-        run: make unit-test
+        run: |
+          make unit-test
 
       - name: Upload coverage to Codecov
         timeout-minutes: 10
         if: github.repository == 'hyperledger/aries-framework-go-ext'
-        uses: codecov/codecov-action@v1.0.13
+        uses: codecov/codecov-action@v1.0.14
         with:
           file: ./coverage.txt
