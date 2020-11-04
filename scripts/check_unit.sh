@@ -18,7 +18,8 @@ if [ -z "$unit_tests_path" ]; then
   unit_tests_path=./
 fi
 
-coverage_path="$(pwd)/coverage.txt"
+coverage_path="$(pwd)/coverage.out"
+rm -f "$coverage_path"
 
 function clean ()
 {
