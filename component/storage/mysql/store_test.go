@@ -14,7 +14,6 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/go-sql-driver/mysql"
-	"github.com/hyperledger/aries-framework-go/pkg/storage"
 	dctest "github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
@@ -159,7 +158,7 @@ func TestSqlDBStore(t *testing.T) {
 
 		// try to close non existing db
 		err = prov.CloseStore("store_x")
-		require.EqualError(t, err, storage.ErrStoreNotFound.Error())
+		require.EqualError(t, err, ErrStoreNotFound.Error())
 
 		err = prov.Close()
 		require.NoError(t, err)

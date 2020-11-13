@@ -19,6 +19,12 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/storage"
 )
 
+// ErrStoreNotFound is used when a given store was not found in a provider.
+var ErrStoreNotFound = errors.New("store not found")
+
+// ErrKeyRequired is returned when key is mandatory.
+var ErrKeyRequired = errors.New("key is mandatory")
+
 // Provider represents a MySQL DB implementation of the storage.Provider interface.
 type Provider struct {
 	dbURL    string
@@ -167,7 +173,7 @@ func (p *Provider) CloseStore(name string) error {
 
 	store, exists := p.dbs[name]
 	if !exists {
-		return storage.ErrStoreNotFound
+		return ErrStoreNotFound
 	}
 
 	delete(p.dbs, name)
@@ -200,7 +206,7 @@ func (s *sqlDBStore) Put(k string, v []byte) error {
 // Get fetches the value based on key.
 func (s *sqlDBStore) Get(k string) ([]byte, error) {
 	if k == "" {
-		return nil, storage.ErrKeyRequired
+		return nil, ErrKeyRequired
 	}
 
 	var value []byte
@@ -222,7 +228,7 @@ func (s *sqlDBStore) Get(k string) ([]byte, error) {
 // Delete will delete record with k key.
 func (s *sqlDBStore) Delete(k string) error {
 	if k == "" {
-		return storage.ErrKeyRequired
+		return ErrKeyRequired
 	}
 
 	// delete query to delete the record by key
