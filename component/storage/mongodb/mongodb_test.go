@@ -15,7 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/hyperledger/aries-framework-go/pkg/storage"
+	dctest "github.com/ory/dockertest/v3"
+	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
@@ -27,30 +30,52 @@ import (
 )
 
 const (
-	mongoStoreDBURL = "mongodb://localhost:27017"
+	mongoStoreDBURL    = "mongodb://localhost:27019"
+	dockerMongoDBImage = "mongo"
+	dockerMongoDBTag   = "4.2.8"
 )
 
-// docker run --name some-mongo -d mongo:tag
-// For these unit tests to run, you must ensure you have a Mongo DB instance running at the URL specified in
-// mongoStoreDBURL.
-// To run the tests manually, start an instance by running the following command in the terminal
-// docker run -p 27017:27017 --name MongoStoreTest -d mongo:4.2.8
-// delete using
-//   docker kill MongoStoreTest
-//   docker rm MongoStoreTest
 func TestMain(m *testing.M) {
-	err := waitForMongoDBToStart()
+	code := 1
+
+	defer func() { os.Exit(code) }()
+
+	pool, err := dctest.NewPool("")
 	if err != nil {
-		fmt.Printf(err.Error() +
-			". Make sure you start a mongoDBStore instance using" +
-			" 'docker run -p 27017:27017 mongo:4.2.8' before running the unit tests")
-		os.Exit(0)
+		panic(fmt.Sprintf("pool: %v", err))
 	}
 
-	os.Exit(m.Run())
+	mongoDBResource, err := pool.RunWithOptions(&dctest.RunOptions{
+		Repository: dockerMongoDBImage,
+		Tag:        dockerMongoDBTag,
+		PortBindings: map[dc.Port][]dc.PortBinding{
+			"27017/tcp": {{HostIP: "", HostPort: "27019"}},
+		},
+	})
+	if err != nil {
+		panic(fmt.Sprintf("run with options: %v", err))
+	}
+
+	defer func() {
+		if err := pool.Purge(mongoDBResource); err != nil {
+			panic(fmt.Sprintf("purge: %v", err))
+		}
+	}()
+
+	if err := checkMongoDB(); err != nil {
+		panic(fmt.Sprintf("check MongoDB: %v", err))
+	}
+
+	code = m.Run()
 }
 
-func waitForMongoDBToStart() error {
+const retries = 30
+
+func checkMongoDB() error {
+	return backoff.Retry(pingMongoDB, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), retries))
+}
+
+func pingMongoDB() error {
 	var err error
 
 	tM := reflect.TypeOf(bson.M{})
@@ -69,21 +94,10 @@ func waitForMongoDBToStart() error {
 
 	db := mongoClient.Database("test")
 
-	timeout := time.After(10 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	for {
-		select {
-		case <-timeout:
-			return fmt.Errorf("timeout: couldn't reach mongodb server")
-		default:
-			err := db.Client().Ping(context.Background(), nil)
-			if err != nil {
-				return err
-			}
-
-			return nil
-		}
-	}
+	return db.Client().Ping(ctx, nil)
 }
 
 func TestMongoDBStore(t *testing.T) {
