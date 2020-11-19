@@ -27,11 +27,6 @@ jobs:
   unitTest:
     name: Unit test
     runs-on: ubuntu-18.04
-    services:
-      mongodb:
-        image: mongo:4.2.8
-        ports:
-          - 27017:27017
     timeout-minutes: 15
     env:
       UNIT_TESTS_PATH: component/storage/mongodb
