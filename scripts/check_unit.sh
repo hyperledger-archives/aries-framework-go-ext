@@ -18,6 +18,12 @@ if [ -z "$unit_tests_path" ]; then
   unit_tests_path=./
 fi
 
+if [ -z "${EXCLUDE_TEST_PATH}" ]; then
+  exclude=""
+else
+  exclude="-path ${EXCLUDE_TEST_PATH} -prune -o"
+fi
+
 coverage_path="$(pwd)/coverage.out"
 rm -f "$coverage_path"
 
@@ -29,7 +35,7 @@ function clean ()
 trap exit INT
 trap clean EXIT
 
-for i in $(find $unit_tests_path -name "go.mod")
+for i in $(find $unit_tests_path $exclude -name "go.mod" -print)
 do
   pushd "$(dirname $i)" > /dev/null
   if [ -z $(go list) ]; then
