@@ -54,9 +54,9 @@ do
   fi
 
   ${DOCKER_CMD} run --rm -e GOPROXY=${GOPROXY} \
-  -v "$(pwd):/opt/workspace" \
-  -v "$ROOT/.golangci.yml:/opt/workspace/.golangci.yml" \
-  -w "/opt/workspace" \
+  -v "$ROOT:/opt/workspace" \
+  -v "$ROOT/.golangci.yml:/opt/workspace/$(dirname $i)/.golangci.yml" \
+  -w "/opt/workspace/$(dirname $i)" \
   ${lint_image} golangci-lint run
 
   clean
