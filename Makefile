@@ -17,4 +17,5 @@ license:
 
 .PHONY: lint
 lint:
-	@scripts/check_lint.sh
+	@EXCLUDE_LINT_PATH=./component/vdr/indy scripts/check_lint.sh
+	@LINT_PATH=./component/vdr/indy GOLANGCI_LINT_IMAGE="canislabs/golangci-lint:latest" scripts/check_lint.sh
