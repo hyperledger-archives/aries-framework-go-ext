@@ -375,10 +375,18 @@ func TestStore_GetTags(t *testing.T) {
 }
 
 func TestStore_GetBulk(t *testing.T) {
-	t.Run("Failure - not implemented", func(t *testing.T) {
-		store := &Store{}
-		_, err := store.GetBulk()
-		require.EqualError(t, err, "not implemented")
+	t.Run("Failure: keys string slice cannot be nil", func(t *testing.T) {
+		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
+		require.NoError(t, err)
+		require.NotNil(t, provider)
+
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		values, err := store.GetBulk(nil...)
+		require.EqualError(t, err, "keys string slice cannot be nil")
+		require.Nil(t, values)
 	})
 }
 

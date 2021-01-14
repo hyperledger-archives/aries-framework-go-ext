@@ -21,6 +21,7 @@ type mockDB struct {
 	errPut         error
 	getRowBodyData string
 	errGetRow      error
+	errBulkGet     error
 }
 
 func (m *mockDB) Get(context.Context, string, ...kivik.Options) *kivik.Row {
@@ -42,6 +43,10 @@ func (m *mockDB) Delete(context.Context, string, string, ...kivik.Options) (stri
 	return "", errors.New("mockDB Delete always fails")
 }
 
+func (m *mockDB) BulkGet(context.Context, []kivik.BulkGetReference, ...kivik.Options) (*kivik.Rows, error) {
+	return &kivik.Rows{}, m.errBulkGet
+}
+
 func (m *mockDB) Close(context.Context) error {
 	return errors.New("mockDB Close always fails")
 }
@@ -49,10 +54,11 @@ func (m *mockDB) Close(context.Context) error {
 type mockRows struct {
 	err      error
 	errClose error
+	next     bool
 }
 
 func (m *mockRows) Next() bool {
-	return false
+	return m.next
 }
 
 func (m *mockRows) Err() error {
@@ -174,6 +180,17 @@ func TestStore_Get_Internal(t *testing.T) {
 	})
 }
 
+func TestStore_GetBulk_Internal(t *testing.T) {
+	t.Run("Failure while getting raw CouchDB documents", func(t *testing.T) {
+		store := &Store{db: &mockDB{errBulkGet: errors.New("mockDB BulkGet always fails")}}
+
+		values, err := store.GetBulk("key")
+		require.EqualError(t, err, "failure while getting raw CouchDB documents: "+
+			"failure while sending request to CouchDB bulk docs endpoint: mockDB BulkGet always fails")
+		require.Nil(t, values)
+	})
+}
+
 func TestStore_Query_Internal(t *testing.T) {
 	t.Run("Failure sending tag name only query to find endpoint", func(t *testing.T) {
 		store := &Store{db: &mockDB{}}
@@ -214,6 +231,35 @@ func TestStore_Delete_Internal(t *testing.T) {
 
 		err := store.Delete("key")
 		require.EqualError(t, err, "failed to delete document via client: mockDB Delete always fails")
+	})
+}
+
+func TestGetRawDocsFromRows(t *testing.T) {
+	t.Run("Failure while scanning result rows", func(t *testing.T) {
+		rawDocs, err := getRawDocsFromRows(&mockRows{next: true})
+		require.EqualError(t, err, "failure while scanning result rows: mockRows ScanDoc always fails")
+		require.Nil(t, rawDocs)
+	})
+}
+
+func TestPayloadsFromRawDocs(t *testing.T) {
+	t.Run("Failed to assert deleted field value as a bool", func(t *testing.T) {
+		rawDocs := make([]map[string]interface{}, 1)
+		rawDocs[0] = make(map[string]interface{})
+		rawDocs[0][deletedFieldKey] = "Not a bool"
+
+		payloads, err := getPayloadsFromRawDocs(rawDocs)
+		require.EqualError(t, err, "failed to assert the retrieved deleted field value as a bool")
+		require.Nil(t, payloads)
+	})
+	t.Run("Failed to get the payload from the raw document", func(t *testing.T) {
+		rawDocs := make([]map[string]interface{}, 1)
+		rawDocs[0] = make(map[string]interface{})
+
+		payloads, err := getPayloadsFromRawDocs(rawDocs)
+		require.EqualError(t, err,
+			`failed to get the payload from the raw document: "payload" is missing from the raw document`)
+		require.Nil(t, payloads)
 	})
 }
 
