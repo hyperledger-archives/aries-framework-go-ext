@@ -24,6 +24,7 @@ import ( //nolint:gci // False positive, seemingly caused by the CouchDB driver 
 
 const (
 	couchDBUsersTable = "_users"
+	revIDFieldKey     = "_rev"
 
 	designDocumentName = "AriesStorageDesignDocument"
 	payloadFieldKey    = "payload"
@@ -34,21 +35,42 @@ const (
 	databaseNotFoundErrMsgFromKivik       = "Not Found: Database does not exist."
 	documentUpdateConflictErrMsgFromKivik = "Conflict: Document update conflict."
 
-	failGetDatabaseHandle   = "failed to get database handle: %w"
-	failGetExistingIndexes  = "failed to get existing indexes: %w"
-	failureWhileScanningRow = "failure while scanning row: %w"
-	failGetTagsFromRawDoc   = "failed to get tags from raw CouchDB document: %w"
-	failGetRevisionID       = "failed to get revision ID: %w"
-	failPutValueViaClient   = "failed to put value via client: %w"
+	failGetDatabaseHandle         = "failed to get database handle: %w"
+	failGetExistingIndexes        = "failed to get existing indexes: %w"
+	failureWhileScanningRow       = "failure while scanning row: %w"
+	failGetTagsFromRawDoc         = "failed to get tags from raw CouchDB document: %w"
+	failGetRevisionID             = "failed to get revision ID: %w"
+	failPutValueViaClient         = "failed to put value via client: %w"
+	failWhileScanResultRows       = "failure while scanning result rows: %w"
+	failSendRequestToFindEndpoint = "failure while sending request to CouchDB find endpoint: %w"
+
+	expressionTagNameOnlyLength     = 1
+	expressionTagNameAndValueLength = 2
+
+	tagNameOnlyQueryTemplate     = `{"selector":{"%s":{"$exists":true}},"limit":%d}`
+	tagNameAndValueQueryTemplate = `{"selector":{"%s":"%s"},"limit":%d}`
 )
+
+var errInvalidQueryExpressionFormat = errors.New("invalid expression format. " +
+	"it must be in the following format: TagName:TagValue")
 
 type marshalFunc func(interface{}) ([]byte, error)
 
 type db interface {
 	Get(ctx context.Context, docID string, options ...kivik.Options) *kivik.Row
 	Put(ctx context.Context, docID string, doc interface{}, options ...kivik.Options) (rev string, err error)
+	Find(ctx context.Context, query interface{}, options ...kivik.Options) (*kivik.Rows, error)
 	Delete(ctx context.Context, docID, rev string, options ...kivik.Options) (newRev string, err error)
 	Close(ctx context.Context) error
+}
+
+type rows interface {
+	Next() bool
+	Err() error
+	Close() error
+	ScanDoc(dest interface{}) error
+	Warning() string
+	Bookmark() string
 }
 
 // Provider represents a CouchDB implementation of the newstorage.Provider interface.
@@ -105,6 +127,7 @@ func PingCouchDB(url string) error {
 }
 
 // NewProvider instantiates a new CouchDB Provider.
+// TODO (#48): Allow context to be passed in.
 func NewProvider(hostURL string, opts ...Option) (*Provider, error) {
 	err := PingCouchDB(hostURL)
 	if err != nil {
@@ -260,6 +283,8 @@ type Store struct {
 // Put stores the key + value pair along with the (optional) tags.
 // TODO (#40) Values stored under keys containing special URL characters like `/`
 //  are not retrievable due to a bug in the underlying Kivik library.
+// TODO (#44) Tags do not have to be defined in the store config prior to storing data that uses them.
+//  Should all store implementations require tags to be defined in store config before allowing them to be used?
 func (s *Store) Put(k string, v []byte, tags ...newstorage.Tag) error {
 	if k == "" {
 		return errors.New("key cannot be empty")
@@ -314,12 +339,12 @@ func (s *Store) Get(k string) ([]byte, error) {
 		return nil, fmt.Errorf(failureWhileScanningRow, err)
 	}
 
-	storedValue, err := s.getStoredValueFromRawDoc(rawDoc)
+	storedValue, err := getValueFromRawDoc(rawDoc, payloadFieldKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get payload from raw document: %w", err)
 	}
 
-	return storedValue, nil
+	return []byte(storedValue), nil
 }
 
 // GetTags fetches all tags associated with the given key.
@@ -359,11 +384,65 @@ func (s *Store) GetBulk(keys ...string) ([][]byte, error) {
 // If TagValue is not provided, then all data associated with the TagName will be returned.
 // For now, expression can only be a single tag Name + Value pair.
 // If no options are provided, then defaults will be used.
+// For improved performance, ensure that the tag name you are querying is included in the store config, as this
+// will ensure that it's indexed in CouchDB.
+// TODO (#44) Should we make the store config mandatory?
 func (s *Store) Query(expression string, options ...newstorage.QueryOption) (newstorage.Iterator, error) {
-	return &couchDBResultsIterator{}, errors.New("not implemented")
+	if expression == "" {
+		return &couchDBResultsIterator{}, errInvalidQueryExpressionFormat
+	}
+
+	queryOptions := getQueryOptions(options)
+
+	expressionSplit := strings.Split(expression, ":")
+
+	switch len(expressionSplit) {
+	case expressionTagNameOnlyLength:
+		expressionTagName := expressionSplit[0]
+
+		findQuery := fmt.Sprintf(tagNameOnlyQueryTemplate, expressionTagName, queryOptions.PageSize)
+
+		resultRows, err := s.db.Find(context.Background(), findQuery)
+		if err != nil {
+			return nil, fmt.Errorf(failSendRequestToFindEndpoint, err)
+		}
+
+		queryWithPageSizeAndBookmarkPlaceholders := `{"selector":{"` +
+			expressionTagName + `":{"$exists":true}},"limit":%d,"bookmark":"%s"}`
+
+		return &couchDBResultsIterator{
+			store:                                    s,
+			resultRows:                               resultRows,
+			pageSize:                                 queryOptions.PageSize,
+			queryWithPageSizeAndBookmarkPlaceholders: queryWithPageSizeAndBookmarkPlaceholders,
+		}, nil
+	case expressionTagNameAndValueLength:
+		expressionTagName := expressionSplit[0]
+		expressionTagValue := expressionSplit[1]
+
+		findQuery := fmt.Sprintf(tagNameAndValueQueryTemplate,
+			expressionTagName, expressionTagValue, queryOptions.PageSize)
+
+		queryWithPageSizeAndBookmarkPlaceholders := `{"selector":{"` +
+			expressionTagName + `":"` + expressionTagValue + `"},"limit":%d,"bookmark":"%s"}`
+
+		resultRows, err := s.db.Find(context.Background(), findQuery)
+		if err != nil {
+			return nil, fmt.Errorf(failSendRequestToFindEndpoint, err)
+		}
+
+		return &couchDBResultsIterator{
+			store:                                    s,
+			resultRows:                               resultRows,
+			pageSize:                                 queryOptions.PageSize,
+			queryWithPageSizeAndBookmarkPlaceholders: queryWithPageSizeAndBookmarkPlaceholders,
+		}, nil
+	default:
+		return &couchDBResultsIterator{}, errInvalidQueryExpressionFormat
+	}
 }
 
-// Delete deletes the key + value pair (and all tags) associated with key.
+// Delete deletes the key + value pair (and all tags) associated with k.
 func (s *Store) Delete(k string) error {
 	if k == "" {
 		return errors.New("key is mandatory")
@@ -412,7 +491,7 @@ func (s *Store) put(k string, value []byte) error {
 		}
 
 		if revID != "" {
-			value = []byte(`{"_rev":"` + revID + `",` + string(value[1:]))
+			value = []byte(`{"` + revIDFieldKey + `":"` + revID + `",` + string(value[1:]))
 		}
 
 		_, err = s.db.Put(context.Background(), k, value)
@@ -456,61 +535,132 @@ func (s *Store) getRevID(k string) (string, error) {
 		return "", err
 	}
 
-	revID, ok := rawDoc["_rev"]
-	if !ok {
-		return "", errors.New("revision ID was missing from the raw document")
+	revID, err := getValueFromRawDoc(rawDoc, revIDFieldKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to get revision ID from the raw document: %w", err)
 	}
 
-	revIDString, ok := revID.(string)
-	if !ok {
-		return "", errors.New("unable to assert revision ID as a string")
-	}
-
-	return revIDString, nil
-}
-
-func (s *Store) getStoredValueFromRawDoc(rawDoc map[string]interface{}) ([]byte, error) {
-	storedValue, ok := rawDoc[payloadFieldKey]
-	if !ok {
-		return nil, errors.New("payload was unexpectedly missing from raw document")
-	}
-
-	storedValueString, ok := storedValue.(string)
-	if !ok {
-		return nil, errors.New("stored value could not be asserted as a string")
-	}
-
-	return []byte(storedValueString), nil
+	return revID, nil
 }
 
 type couchDBResultsIterator struct {
+	store                                    *Store
+	resultRows                               rows
+	pageSize                                 int
+	queryWithPageSizeAndBookmarkPlaceholders string
+	numDocumentsReturnedInThisPage           int
 }
 
 // Next moves the pointer to the next value in the iterator. It returns false if the iterator is exhausted.
 // Note that the Kivik library automatically closes the kivik.Rows iterator if the iterator is exhausted.
 func (i *couchDBResultsIterator) Next() (bool, error) {
-	return false, errors.New("not implemented")
+	nextCallResult := i.resultRows.Next()
+
+	// If no applicable index could be found to speed up the query, then we will receive a warning here.
+	// This most likely reasons for no index being found is that either the Provider's StoreConfiguration
+	// was never set, or it was set but was missing the queried tag name.
+	// This value is only set by Kivik on the final iteration (once all the rows have been iterated through).
+	logAnyWarning(i)
+
+	err := i.resultRows.Err()
+	if err != nil {
+		return false, fmt.Errorf("failure during iteration of result rows: %w", err)
+	}
+
+	if nextCallResult {
+		i.numDocumentsReturnedInThisPage++
+	} else {
+		if i.numDocumentsReturnedInThisPage < i.pageSize {
+			// All documents have been returned - no need to attempt fetching any more pages.
+			return false, nil
+		}
+
+		err := i.resultRows.Close()
+		if err != nil {
+			return false, fmt.Errorf("failed to close result rows before fetching new page: %w", err)
+		}
+
+		// Try fetching another page of documents.
+		// Kivik only sets the bookmark value after all result rows have been enumerated via the Next call.
+		// Note that the presence of a bookmark doesn't guarantee that there are more results.
+		// It's necessary to instead compare the number of returned documents against the page size (done above)
+		// See https://docs.couchdb.org/en/stable/api/database/find.html#pagination for more information.
+		newPageNextCallResult, err := i.fetchAnotherPage()
+		if err != nil {
+			return false, fmt.Errorf("failure while fetching new page: %w", err)
+		}
+
+		return newPageNextCallResult, nil
+	}
+
+	return nextCallResult, nil
 }
 
 // Release releases associated resources. Release should always result in success
 // and can be called multiple times without causing an error.
 func (i *couchDBResultsIterator) Release() error {
-	return errors.New("not implemented")
+	err := i.resultRows.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close result rows: %w", err)
+	}
+
+	return nil
 }
 
 // Key returns the key of the current key-value pair.
 // A nil error likely means that the key list is exhausted.
 func (i *couchDBResultsIterator) Key() (string, error) {
-	return "", errors.New("not implemented")
+	id, err := getValueFromRows(i.resultRows, "_id")
+	if err != nil {
+		return "", fmt.Errorf(`failed to get _id from rows: %w`, err)
+	}
+
+	return id, nil
 }
 
 // Value returns the value of the current key-value pair.
 func (i *couchDBResultsIterator) Value() ([]byte, error) {
-	return nil, errors.New("not implemented")
+	value, err := getValueFromRows(i.resultRows, payloadFieldKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get payload from rows: %w", err)
+	}
+
+	return []byte(value), nil
 }
 
 func (i *couchDBResultsIterator) Tags() ([]newstorage.Tag, error) {
-	return nil, errors.New("not implemented")
+	rawDoc := make(map[string]interface{})
+
+	err := i.resultRows.ScanDoc(&rawDoc)
+	if err != nil {
+		return nil, fmt.Errorf(failWhileScanResultRows, err)
+	}
+
+	tags, err := getTagsFromRawDoc(rawDoc)
+	if err != nil {
+		return nil, fmt.Errorf(failGetTagsFromRawDoc, err)
+	}
+
+	return tags, nil
+}
+
+func (i *couchDBResultsIterator) fetchAnotherPage() (bool, error) {
+	var err error
+
+	query := fmt.Sprintf(i.queryWithPageSizeAndBookmarkPlaceholders, i.pageSize, i.resultRows.Bookmark())
+
+	i.resultRows, err = i.store.db.Find(context.Background(), query)
+	if err != nil {
+		return false, fmt.Errorf("failure while sending request to CouchDB find endpoint: %w", err)
+	}
+
+	followupNextCallResult := i.resultRows.Next()
+
+	if followupNextCallResult {
+		i.numDocumentsReturnedInThisPage = 1
+	}
+
+	return followupNextCallResult, nil
 }
 
 func validateTagNames(config newstorage.StoreConfiguration) error {
@@ -581,12 +731,59 @@ func createIndexes(db *kivik.DB, tagNamesNeedIndexCreation []string) error {
 	return nil
 }
 
+func getQueryOptions(options []newstorage.QueryOption) newstorage.QueryOptions {
+	var queryOptions newstorage.QueryOptions
+
+	for _, option := range options {
+		option(&queryOptions)
+	}
+
+	if queryOptions.PageSize == 0 {
+		queryOptions.PageSize = 25
+	}
+
+	return queryOptions
+}
+
+func getValueFromRows(rows rows, rawDocKey string) (string, error) {
+	rawDoc := make(map[string]interface{})
+
+	err := rows.ScanDoc(&rawDoc)
+	if err != nil {
+		return "", fmt.Errorf(failWhileScanResultRows, err)
+	}
+
+	value, err := getValueFromRawDoc(rawDoc, rawDocKey)
+	if err != nil {
+		return "", fmt.Errorf(`failure while getting the value associated with the "%s" key`+
+			`from the raw document`, rawDocKey)
+	}
+
+	return value, nil
+}
+
+func getValueFromRawDoc(rawDoc map[string]interface{}, rawDocKey string) (string, error) {
+	value, ok := rawDoc[rawDocKey]
+	if !ok {
+		return "", fmt.Errorf(`"%s" is missing from the raw document`, rawDocKey)
+	}
+
+	valueString, ok := value.(string)
+	if !ok {
+		return "",
+			fmt.Errorf(`value associated with the "%s" key in the raw document `+
+				`could not be asserted as a string`, rawDocKey)
+	}
+
+	return valueString, nil
+}
+
 func getTagsFromRawDoc(rawDoc map[string]interface{}) ([]newstorage.Tag, error) {
 	var tags []newstorage.Tag
 
 	for key, value := range rawDoc {
 		// Any key that isn't one of the reserved keywords below must be a tag.
-		if key != "_id" && key != "_rev" && key != payloadFieldKey {
+		if key != "_id" && key != revIDFieldKey && key != payloadFieldKey {
 			valueString, ok := value.(string)
 			if !ok {
 				return nil, errors.New("failed to assert tag value as string")
@@ -600,4 +797,12 @@ func getTagsFromRawDoc(rawDoc map[string]interface{}) ([]newstorage.Tag, error) 
 	}
 
 	return tags, nil
+}
+
+func logAnyWarning(i *couchDBResultsIterator) {
+	warningMsg := i.resultRows.Warning()
+
+	if warningMsg != "" {
+		i.store.logger.Warnf(warningMsg)
+	}
 }

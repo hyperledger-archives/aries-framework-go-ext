@@ -382,29 +382,6 @@ func TestStore_GetBulk(t *testing.T) {
 	})
 }
 
-func TestStore_Query(t *testing.T) {
-	t.Run("Failure - not implemented", func(t *testing.T) {
-		store := &Store{}
-		iterator, err := store.Query("")
-		require.EqualError(t, err, "not implemented")
-
-		_, err = iterator.Next()
-		require.EqualError(t, err, "not implemented")
-
-		err = iterator.Release()
-		require.EqualError(t, err, "not implemented")
-
-		_, err = iterator.Key()
-		require.EqualError(t, err, "not implemented")
-
-		_, err = iterator.Value()
-		require.EqualError(t, err, "not implemented")
-
-		_, err = iterator.Tags()
-		require.EqualError(t, err, "not implemented")
-	})
-}
-
 func TestStore_Batch(t *testing.T) {
 	t.Run("Failure - not implemented", func(t *testing.T) {
 		store := &Store{}

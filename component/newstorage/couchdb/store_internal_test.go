@@ -34,12 +34,45 @@ func (m *mockDB) Put(context.Context, string, interface{}, ...kivik.Options) (st
 	return "", m.errPut
 }
 
+func (m *mockDB) Find(ctx context.Context, query interface{}, options ...kivik.Options) (*kivik.Rows, error) {
+	return nil, errors.New("mockDB Find always fails")
+}
+
 func (m *mockDB) Delete(context.Context, string, string, ...kivik.Options) (string, error) {
 	return "", errors.New("mockDB Delete always fails")
 }
 
 func (m *mockDB) Close(context.Context) error {
 	return errors.New("mockDB Close always fails")
+}
+
+type mockRows struct {
+	err      error
+	errClose error
+}
+
+func (m *mockRows) Next() bool {
+	return false
+}
+
+func (m *mockRows) Err() error {
+	return m.err
+}
+
+func (m *mockRows) Close() error {
+	return m.errClose
+}
+
+func (m *mockRows) ScanDoc(dest interface{}) error {
+	return errors.New("mockRows ScanDoc always fails")
+}
+
+func (m *mockRows) Warning() string {
+	return ""
+}
+
+func (m *mockRows) Bookmark() string {
+	return ""
 }
 
 func TestStore_Put_Internal(t *testing.T) {
@@ -96,8 +129,9 @@ func TestStore_Put_Internal(t *testing.T) {
 		}
 
 		err := store.Put("key", []byte("value"))
-		require.EqualError(t, err, "failure while putting value into CouchDB: "+
-			"failed to get revision ID: revision ID was missing from the raw document")
+		require.EqualError(t, err, `failure while putting value into CouchDB: `+
+			`failed to get revision ID: `+
+			`failed to get revision ID from the raw document: "_rev" is missing from the raw document`)
 	})
 	t.Run("Unable to assert revision ID as a string", func(t *testing.T) {
 		store := &Store{
@@ -108,8 +142,9 @@ func TestStore_Put_Internal(t *testing.T) {
 		}
 
 		err := store.Put("key", []byte("value"))
-		require.EqualError(t, err, "failure while putting value into CouchDB: "+
-			"failed to get revision ID: unable to assert revision ID as a string")
+		require.EqualError(t, err, `failure while putting value into CouchDB: `+
+			`failed to get revision ID: failed to get revision ID from the raw document: `+
+			`value associated with the "_rev" key in the raw document could not be asserted as a string`)
 	})
 }
 
@@ -125,8 +160,8 @@ func TestStore_Get_Internal(t *testing.T) {
 		store := &Store{db: &mockDB{getRowBodyData: `{}`}}
 
 		value, err := store.Get("key")
-		require.EqualError(t, err, "failed to get payload from raw document: "+
-			"payload was unexpectedly missing from raw document")
+		require.EqualError(t, err, `failed to get payload from raw document: `+
+			`"payload" is missing from the raw document`)
 		require.Nil(t, value)
 	})
 	t.Run("Failed to assert stored value as a string", func(t *testing.T) {
@@ -134,8 +169,27 @@ func TestStore_Get_Internal(t *testing.T) {
 
 		value, err := store.Get("key")
 		require.EqualError(t, err, "failed to get payload from raw document: "+
-			"stored value could not be asserted as a string")
+			`value associated with the "payload" key in the raw document could not be asserted as a string`)
 		require.Nil(t, value)
+	})
+}
+
+func TestStore_Query_Internal(t *testing.T) {
+	t.Run("Failure sending tag name only query to find endpoint", func(t *testing.T) {
+		store := &Store{db: &mockDB{}}
+
+		iterator, err := store.Query("tagName")
+		require.EqualError(t, err,
+			"failure while sending request to CouchDB find endpoint: mockDB Find always fails")
+		require.Empty(t, iterator)
+	})
+	t.Run("Failure sending tag name and value query to find endpoint", func(t *testing.T) {
+		store := &Store{db: &mockDB{}}
+
+		iterator, err := store.Query("tagName:tagValue")
+		require.EqualError(t, err,
+			"failure while sending request to CouchDB find endpoint: mockDB Find always fails")
+		require.Empty(t, iterator)
 	})
 }
 
@@ -160,6 +214,88 @@ func TestStore_Delete_Internal(t *testing.T) {
 
 		err := store.Delete("key")
 		require.EqualError(t, err, "failed to delete document via client: mockDB Delete always fails")
+	})
+}
+
+func TestCouchDBResultsIterator_Next_Internal(t *testing.T) {
+	t.Run("Error returned from result rows", func(t *testing.T) {
+		iterator := &couchDBResultsIterator{
+			resultRows: &mockRows{err: errors.New("result rows error")},
+		}
+
+		nextCallResult, err := iterator.Next()
+		require.EqualError(t, err, "failure during iteration of result rows: result rows error")
+		require.False(t, nextCallResult)
+	})
+	t.Run("Fail to close result rows before fetching new page", func(t *testing.T) {
+		iterator := &couchDBResultsIterator{
+			resultRows: &mockRows{errClose: errors.New("close error")},
+		}
+
+		nextCallResult, err := iterator.Next()
+		require.EqualError(t, err, "failed to close result rows before fetching new page: close error")
+		require.False(t, nextCallResult)
+	})
+	t.Run("Failure while fetching another page", func(t *testing.T) {
+		iterator := &couchDBResultsIterator{
+			store:                                    &Store{db: &mockDB{}},
+			resultRows:                               &mockRows{},
+			queryWithPageSizeAndBookmarkPlaceholders: "%d,%s",
+		}
+
+		nextCallResult, err := iterator.Next()
+		require.EqualError(t, err, "failure while fetching new page: "+
+			"failure while sending request to CouchDB find endpoint: mockDB Find always fails")
+		require.False(t, nextCallResult)
+	})
+}
+
+func TestCouchDBResultsIterator_Release_Internal(t *testing.T) {
+	t.Run("Fail to close result rows", func(t *testing.T) {
+		iterator := &couchDBResultsIterator{
+			resultRows: &mockRows{errClose: errors.New("close error")},
+		}
+
+		err := iterator.Release()
+		require.EqualError(t, err, "failed to close result rows: close error")
+	})
+}
+
+func TestCouchDBResultsIterator_Key_Internal(t *testing.T) {
+	t.Run("Fail to get id from rows", func(t *testing.T) {
+		iterator := &couchDBResultsIterator{
+			resultRows: &mockRows{},
+		}
+
+		key, err := iterator.Key()
+		require.EqualError(t, err, "failed to get _id from rows: failure while scanning result rows: "+
+			"mockRows ScanDoc always fails")
+		require.Empty(t, key)
+	})
+}
+
+func TestCouchDBResultsIterator_Value_Internal(t *testing.T) {
+	t.Run("Fail to get value from rows", func(t *testing.T) {
+		iterator := &couchDBResultsIterator{
+			resultRows: &mockRows{},
+		}
+
+		value, err := iterator.Value()
+		require.EqualError(t, err, `failed to get payload from rows: failure while scanning result rows: `+
+			`mockRows ScanDoc always fails`)
+		require.Nil(t, value)
+	})
+}
+
+func TestCouchDBResultsIterator_Tags_Internal(t *testing.T) {
+	t.Run("Fail to scan result rows", func(t *testing.T) {
+		iterator := &couchDBResultsIterator{
+			resultRows: &mockRows{},
+		}
+
+		tags, err := iterator.Tags()
+		require.EqualError(t, err, "failure while scanning result rows: mockRows ScanDoc always fails")
+		require.Empty(t, tags)
 	})
 }
 
