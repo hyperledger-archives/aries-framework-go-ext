@@ -24,6 +24,7 @@ import ( //nolint:gci // False positive, seemingly caused by the CouchDB driver 
 
 const (
 	couchDBUsersTable = "_users"
+	idFieldKey        = "_id"
 	revIDFieldKey     = "_rev"
 	deletedFieldKey   = "_deleted"
 
@@ -45,6 +46,7 @@ const (
 	failPutValueViaClient         = "failed to put value via client: %w"
 	failWhileScanResultRows       = "failure while scanning result rows: %w"
 	failSendRequestToFindEndpoint = "failure while sending request to CouchDB find endpoint: %w"
+	failGetRawDocs                = "failure while getting raw CouchDB documents: %w"
 
 	expressionTagNameOnlyLength     = 1
 	expressionTagNameAndValueLength = 2
@@ -65,6 +67,7 @@ type db interface {
 	Delete(ctx context.Context, docID, rev string, options ...kivik.Options) (newRev string, err error)
 	BulkGet(ctx context.Context, docs []kivik.BulkGetReference, options ...kivik.Options) (*kivik.Rows, error)
 	Close(ctx context.Context) error
+	BulkDocs(ctx context.Context, docs []interface{}, options ...kivik.Options) (*kivik.BulkResults, error)
 }
 
 type rows interface {
@@ -297,19 +300,24 @@ func (s *Store) Put(k string, v []byte, tags ...newstorage.Tag) error {
 		return errors.New("value cannot be nil")
 	}
 
-	valuesMapToMarshal := make(map[string]string)
+	rawDoc := make(map[string]interface{})
 
-	valuesMapToMarshal[payloadFieldKey] = string(v)
+	rawDoc[payloadFieldKey] = string(v)
+
+	err := addTagsToRawDoc(rawDoc, tags)
+	if err != nil {
+		return fmt.Errorf("failed to add tags to the raw document: %w", err)
+	}
 
 	for _, tag := range tags {
 		if tag.Name == payloadFieldKey {
 			return errors.New(`tag name cannot be "payload" as it is a reserved keyword`)
 		}
 
-		valuesMapToMarshal[tag.Name] = tag.Value
+		rawDoc[tag.Name] = tag.Value
 	}
 
-	valueToPut, err := s.marshal(valuesMapToMarshal)
+	valueToPut, err := s.marshal(rawDoc)
 	if err != nil {
 		return fmt.Errorf("failed to marshal values map: %w", err)
 	}
@@ -334,8 +342,7 @@ func (s *Store) Get(k string) ([]byte, error) {
 
 	err := row.ScanDoc(&rawDoc)
 	if err != nil {
-		if strings.Contains(err.Error(), docNotFoundErrMsgFromKivik) ||
-			strings.Contains(err.Error(), docDeletedErrMsgFromKivik) {
+		if err.Error() == docNotFoundErrMsgFromKivik || err.Error() == docDeletedErrMsgFromKivik {
 			return nil, fmt.Errorf(failureWhileScanningRow, newstorage.ErrDataNotFound)
 		}
 
@@ -362,7 +369,7 @@ func (s *Store) GetTags(k string) ([]newstorage.Tag, error) {
 
 	err := row.ScanDoc(&rawDoc)
 	if err != nil {
-		if strings.Contains(err.Error(), docNotFoundErrMsgFromKivik) {
+		if err.Error() == docNotFoundErrMsgFromKivik || err.Error() == docDeletedErrMsgFromKivik {
 			return nil, newstorage.ErrDataNotFound
 		}
 
@@ -386,7 +393,7 @@ func (s *Store) GetBulk(keys ...string) ([][]byte, error) {
 
 	rawDocs, err := s.getRawDocs(keys)
 	if err != nil {
-		return nil, fmt.Errorf("failure while getting raw CouchDB documents: %w", err)
+		return nil, fmt.Errorf(failGetRawDocs, err)
 	}
 
 	values, err := getPayloadsFromRawDocs(rawDocs)
@@ -486,7 +493,54 @@ func (s *Store) Delete(k string) error {
 
 // Batch performs multiple Put and/or Delete operations in order.
 func (s *Store) Batch(operations []newstorage.Operation) error {
-	return errors.New("not implemented")
+	// If CouchDB receives the same key multiple times in one batch call, it will just keep the first operation and
+	// disregard the rest. We want the opposite behaviour - we need it to only keep the last operation and disregard
+	// the earlier ones as if they've been overwritten or deleted.
+	// Note that due to this, CouchDB will not have any revision history of those duplicates.
+	operations = removeDuplicatesKeepingOnlyLast(operations)
+
+	keys := make([]string, len(operations))
+
+	for i, operation := range operations {
+		keys[i] = operation.Key
+	}
+
+	existingRawDocs, err := s.getRawDocs(keys)
+	if err != nil {
+		return fmt.Errorf(failGetRawDocs, err)
+	}
+
+	rawDocsToPut := make([]interface{}, len(existingRawDocs))
+
+	for i, existingRawDoc := range existingRawDocs {
+		rawDocToPut := make(map[string]interface{})
+		rawDocToPut[idFieldKey] = keys[i]
+
+		errAddTags := addTagsToRawDoc(rawDocToPut, operations[i].Tags)
+		if errAddTags != nil {
+			return fmt.Errorf("failed to add tags to raw document: %w", err)
+		}
+
+		if existingRawDoc != nil {
+			rawDocToPut[revIDFieldKey] = existingRawDoc[revIDFieldKey]
+		}
+
+		if operations[i].Value == nil { // This operation is a delete
+			rawDocToPut["_deleted"] = true
+		} else {
+			rawDocToPut[payloadFieldKey] = string(operations[i].Value)
+		}
+
+		rawDocsToPut[i] = rawDocToPut
+	}
+
+	// TODO (#50): Examine BulkResults value returned from s.db.BulkDocs and return a newstorage.MultiError.
+	_, err = s.db.BulkDocs(context.Background(), rawDocsToPut)
+	if err != nil {
+		return fmt.Errorf("failure while doing CouchDB bulk docs call: %w", err)
+	}
+
+	return nil
 }
 
 // Close closes this store.
@@ -652,9 +706,9 @@ func (i *couchDBResultsIterator) Release() error {
 // Key returns the key of the current key-value pair.
 // A nil error likely means that the key list is exhausted.
 func (i *couchDBResultsIterator) Key() (string, error) {
-	id, err := getValueFromRows(i.resultRows, "_id")
+	id, err := getValueFromRows(i.resultRows, idFieldKey)
 	if err != nil {
-		return "", fmt.Errorf(`failed to get _id from rows: %w`, err)
+		return "", fmt.Errorf(`failed to get %s from rows: %w`, idFieldKey, err)
 	}
 
 	return id, nil
@@ -886,7 +940,7 @@ func getTagsFromRawDoc(rawDoc map[string]interface{}) ([]newstorage.Tag, error) 
 
 	for key, value := range rawDoc {
 		// Any key that isn't one of the reserved keywords below must be a tag.
-		if key != "_id" && key != revIDFieldKey && key != payloadFieldKey {
+		if key != idFieldKey && key != revIDFieldKey && key != payloadFieldKey {
 			valueString, ok := value.(string)
 			if !ok {
 				return nil, errors.New("failed to assert tag value as string")
@@ -908,4 +962,44 @@ func logAnyWarning(i *couchDBResultsIterator) {
 	if warningMsg != "" {
 		i.store.logger.Warnf(warningMsg)
 	}
+}
+
+func removeDuplicatesKeepingOnlyLast(operations []newstorage.Operation) []newstorage.Operation {
+	indexOfOperationToCheck := len(operations) - 1
+
+	for indexOfOperationToCheck > 0 {
+		var indicesToRemove []int
+
+		keyToCheck := operations[indexOfOperationToCheck].Key
+		for i := indexOfOperationToCheck - 1; i >= 0; i-- {
+			if operations[i].Key == keyToCheck {
+				indicesToRemove = append(indicesToRemove, i)
+			}
+		}
+
+		for _, indexToRemove := range indicesToRemove {
+			operations = append(operations[:indexToRemove], operations[indexToRemove+1:]...)
+		}
+
+		// At this point, we now know that any duplicates of operations[indexOfOperationToCheck] are removed,
+		// and only the last instance of it remains.
+
+		// Now we need to check the next key in order to ensure it's unique.
+		// If this sets indexOfOperationToCheck to -1, then we're done.
+		indexOfOperationToCheck = indexOfOperationToCheck - len(indicesToRemove) - 1
+	}
+
+	return operations
+}
+
+func addTagsToRawDoc(rawDoc map[string]interface{}, tags []newstorage.Tag) error {
+	for _, tag := range tags {
+		if tag.Name == payloadFieldKey {
+			return errors.New(`tag name cannot be "payload" as it is a reserved keyword`)
+		}
+
+		rawDoc[tag.Name] = tag.Value
+	}
+
+	return nil
 }

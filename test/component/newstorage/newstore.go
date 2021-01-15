@@ -32,6 +32,9 @@ func TestAll(t *testing.T, provider newstorage.Provider) {
 	t.Run("Query", func(t *testing.T) {
 		TestQuery(t, provider)
 	})
+	t.Run("Batch", func(t *testing.T) {
+		TestBatch(t, provider)
+	})
 }
 
 // TestPutGet tests common Put and Get functionality.
@@ -516,6 +519,205 @@ func TestQuery(t *testing.T, provider newstorage.Provider) { // nolint: funlen /
 			require.EqualError(t, err, "invalid expression format. it must be in the following format: TagName:TagValue")
 			require.Empty(t, iterator)
 		})
+	})
+}
+
+// TestBatch tests common Batch functionality.
+func TestBatch(t *testing.T, provider newstorage.Provider) { // nolint:funlen // Test file
+	t.Run("Success: put three new values", func(t *testing.T) {
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		operations := []newstorage.Operation{
+			{Key: "key1", Value: []byte("value1"), Tags: []newstorage.Tag{{Name: "tagName1"}}},
+			{Key: "key2", Value: []byte("value2"), Tags: []newstorage.Tag{{Name: "tagName2"}}},
+			{Key: "key3", Value: []byte("value3"), Tags: []newstorage.Tag{{Name: "tagName3"}}},
+		}
+
+		err = store.Batch(operations)
+		require.NoError(t, err)
+
+		// Check and make sure all values and tags were stored
+
+		value, err := store.Get("key1")
+		require.NoError(t, err)
+		require.Equal(t, "value1", string(value))
+
+		value, err = store.Get("key2")
+		require.NoError(t, err)
+		require.Equal(t, "value2", string(value))
+
+		value, err = store.Get("key3")
+		require.NoError(t, err)
+		require.Equal(t, "value3", string(value))
+
+		tags, err := store.GetTags("key1")
+		require.NoError(t, err)
+		require.Len(t, tags, 1)
+		require.Equal(t, "tagName1", tags[0].Name)
+
+		tags, err = store.GetTags("key2")
+		require.NoError(t, err)
+		require.Len(t, tags, 1)
+		require.Equal(t, "tagName2", tags[0].Name)
+
+		tags, err = store.GetTags("key3")
+		require.NoError(t, err)
+		require.Len(t, tags, 1)
+		require.Equal(t, "tagName3", tags[0].Name)
+	})
+	t.Run("Success: update three different previously-stored values via Batch", func(t *testing.T) {
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		err = store.Put("key1", []byte("value1"), []newstorage.Tag{{Name: "tagName1", Value: "tagValue1"}}...)
+		require.NoError(t, err)
+
+		err = store.Put("key2", []byte("value2"), []newstorage.Tag{{Name: "tagName2", Value: "tagValue2"}}...)
+		require.NoError(t, err)
+
+		err = store.Put("key3", []byte("value3"), []newstorage.Tag{{Name: "tagName3", Value: "tagValue3"}}...)
+		require.NoError(t, err)
+
+		operations := []newstorage.Operation{
+			{Key: "key1", Value: []byte("value1_new"), Tags: []newstorage.Tag{{Name: "tagName1"}}},
+			{Key: "key2", Value: []byte("value2_new"), Tags: []newstorage.Tag{{Name: "tagName2_new", Value: "tagValue2"}}},
+			{Key: "key3", Value: []byte("value3_new"), Tags: []newstorage.Tag{{Name: "tagName3_new", Value: "tagValue3_new"}}},
+		}
+
+		err = store.Batch(operations)
+		require.NoError(t, err)
+
+		// Check and make sure all values and tags were stored
+
+		value, err := store.Get("key1")
+		require.NoError(t, err)
+		require.Equal(t, "value1_new", string(value))
+
+		value, err = store.Get("key2")
+		require.NoError(t, err)
+		require.Equal(t, "value2_new", string(value))
+
+		value, err = store.Get("key3")
+		require.NoError(t, err)
+		require.Equal(t, "value3_new", string(value))
+
+		tags, err := store.GetTags("key1")
+		require.NoError(t, err)
+		require.Len(t, tags, 1)
+		require.Equal(t, "tagName1", tags[0].Name)
+		require.Equal(t, "", tags[0].Value)
+
+		tags, err = store.GetTags("key2")
+		require.NoError(t, err)
+		require.Len(t, tags, 1)
+		require.Equal(t, "tagName2_new", tags[0].Name)
+		require.Equal(t, "tagValue2", tags[0].Value)
+
+		tags, err = store.GetTags("key3")
+		require.NoError(t, err)
+		require.Len(t, tags, 1)
+		require.Equal(t, "tagName3_new", tags[0].Name)
+		require.Equal(t, "tagValue3_new", tags[0].Value)
+	})
+	t.Run("Success: Delete three different previously-stored values via Batch", func(t *testing.T) {
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		err = store.Put("key1", []byte("value1"), []newstorage.Tag{{Name: "tagName1", Value: "tagValue1"}}...)
+		require.NoError(t, err)
+
+		err = store.Put("key2", []byte("value2"), []newstorage.Tag{{Name: "tagName2", Value: "tagValue2"}}...)
+		require.NoError(t, err)
+
+		err = store.Put("key3", []byte("value3"), []newstorage.Tag{{Name: "tagName3", Value: "tagValue3"}}...)
+		require.NoError(t, err)
+
+		operations := []newstorage.Operation{
+			{Key: "key1", Value: nil, Tags: nil},
+			{Key: "key2", Value: nil, Tags: nil},
+			{Key: "key3", Value: nil, Tags: nil},
+		}
+
+		err = store.Batch(operations)
+		require.NoError(t, err)
+
+		// Check and make sure values can't be found now
+
+		value, err := store.Get("key1")
+		require.True(t, errors.Is(err, newstorage.ErrDataNotFound), "got unexpected error or no error")
+		require.Nil(t, value)
+
+		value, err = store.Get("key2")
+		require.True(t, errors.Is(err, newstorage.ErrDataNotFound), "got unexpected error or no error")
+		require.Nil(t, value)
+
+		value, err = store.Get("key3")
+		require.True(t, errors.Is(err, newstorage.ErrDataNotFound), "got unexpected error or no error")
+		require.Nil(t, value)
+
+		tags, err := store.GetTags("key1")
+		require.True(t, errors.Is(err, newstorage.ErrDataNotFound), "got unexpected error or no error")
+		require.Empty(t, tags)
+
+		tags, err = store.GetTags("key2")
+		require.True(t, errors.Is(err, newstorage.ErrDataNotFound), "got unexpected error or no error")
+		require.Empty(t, tags)
+
+		tags, err = store.GetTags("key3")
+		require.True(t, errors.Is(err, newstorage.ErrDataNotFound), "got unexpected error or no error")
+		require.Empty(t, tags)
+	})
+	t.Run("Success: Put value and then delete it in the same Batch call", func(t *testing.T) {
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		operations := []newstorage.Operation{
+			{Key: "key1", Value: []byte("value1"), Tags: []newstorage.Tag{{Name: "tagName1", Value: "tagValue1"}}},
+			{Key: "key1", Value: nil, Tags: nil},
+		}
+
+		err = store.Batch(operations)
+		require.NoError(t, err)
+
+		// Check and make sure that the delete effectively "overrode" the put in the Batch call.
+
+		value, err := store.Get("key1")
+		require.True(t, errors.Is(err, newstorage.ErrDataNotFound), "got unexpected error or no error")
+		require.Nil(t, value)
+
+		tags, err := store.GetTags("key1")
+		require.True(t, errors.Is(err, newstorage.ErrDataNotFound), "got unexpected error or no error")
+		require.Empty(t, tags)
+	})
+	t.Run("Success: Put value and update it in the same Batch call", func(t *testing.T) {
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		operations := []newstorage.Operation{
+			{Key: "key1", Value: []byte("value1"), Tags: []newstorage.Tag{{Name: "tagName1", Value: "tagValue1"}}},
+			{Key: "key1", Value: []byte("value2"), Tags: []newstorage.Tag{{Name: "tagName2", Value: "tagValue2"}}},
+		}
+
+		err = store.Batch(operations)
+		require.NoError(t, err)
+
+		// Check and make sure that the second put effectively "overrode" the first put in the Batch call.
+
+		value, err := store.Get("key1")
+		require.NoError(t, err)
+		require.Equal(t, "value2", string(value))
+
+		tags, err := store.GetTags("key1")
+		require.NoError(t, err)
+		require.Len(t, tags, 1)
+		require.Equal(t, "tagName2", tags[0].Name)
+		require.Equal(t, "tagValue2", tags[0].Value)
 	})
 }
 
