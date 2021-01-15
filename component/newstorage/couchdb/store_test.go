@@ -311,7 +311,8 @@ func TestStore_Put(t *testing.T) {
 			[]newstorage.Tag{
 				{Name: "payload"},
 			}...)
-		require.EqualError(t, err, `tag name cannot be "payload" as it is a reserved keyword`)
+		require.EqualError(t, err, `failed to add tags to the raw document: `+
+			`tag name cannot be "payload" as it is a reserved keyword`)
 	})
 }
 
@@ -387,14 +388,6 @@ func TestStore_GetBulk(t *testing.T) {
 		values, err := store.GetBulk(nil...)
 		require.EqualError(t, err, "keys string slice cannot be nil")
 		require.Nil(t, values)
-	})
-}
-
-func TestStore_Batch(t *testing.T) {
-	t.Run("Failure - not implemented", func(t *testing.T) {
-		store := &Store{}
-		err := store.Batch(nil)
-		require.EqualError(t, err, "not implemented")
 	})
 }
 

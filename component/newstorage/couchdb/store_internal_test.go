@@ -51,6 +51,10 @@ func (m *mockDB) Close(context.Context) error {
 	return errors.New("mockDB Close always fails")
 }
 
+func (m *mockDB) BulkDocs(context.Context, []interface{}, ...kivik.Options) (*kivik.BulkResults, error) {
+	panic("implement me")
+}
+
 type mockRows struct {
 	err      error
 	errClose error
