@@ -23,6 +23,9 @@ func TestAll(t *testing.T, provider newstorage.Provider) {
 	t.Run("Store Put and Get", func(t *testing.T) {
 		TestPutGet(t, provider)
 	})
+	t.Run("Store GetBulk and Get", func(t *testing.T) {
+		TestGetBulk(t, provider)
+	})
 	t.Run("Delete", func(t *testing.T) {
 		TestDelete(t, provider)
 	})
@@ -84,6 +87,108 @@ func TestPutGet(t *testing.T, provider newstorage.Provider) {
 	require.Equal(t, data, doc)
 
 	tryNilOrBlankValues(t, store1, data, commonKey)
+}
+
+// TestGetBulk tests common GetBulk functionality.
+func TestGetBulk(t *testing.T, provider newstorage.Provider) { //nolint: funlen // Test file
+	t.Run("Success: all values found", func(t *testing.T) {
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		err = store.Put("key1", []byte("value1"),
+			[]newstorage.Tag{
+				{Name: "tagName1", Value: "tagValue1"},
+				{Name: "tagName2", Value: "tagValue2"},
+			}...)
+		require.NoError(t, err)
+
+		err = store.Put("key2", []byte("value2"),
+			[]newstorage.Tag{
+				{Name: "tagName1", Value: "tagValue1"},
+				{Name: "tagName2", Value: "tagValue2"},
+			}...)
+		require.NoError(t, err)
+
+		values, err := store.GetBulk("key1", "key2")
+		require.NoError(t, err)
+		require.Len(t, values, 2)
+		require.Equal(t, "value1", string(values[0]))
+		require.Equal(t, "value2", string(values[1]))
+	})
+	t.Run("Success: one value found, one not", func(t *testing.T) {
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		err = store.Put("key1", []byte("value1"),
+			[]newstorage.Tag{
+				{Name: "tagName1", Value: "tagValue1"},
+				{Name: "tagName2", Value: "tagValue2"},
+			}...)
+		require.NoError(t, err)
+
+		values, err := store.GetBulk("key1", "key2")
+		require.NoError(t, err)
+		require.Len(t, values, 2)
+		require.Equal(t, "value1", string(values[0]))
+		require.Nil(t, values[1])
+	})
+	t.Run("Success: one value found, one not because it was deleted", func(t *testing.T) {
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		err = store.Put("key1", []byte("value1"),
+			[]newstorage.Tag{
+				{Name: "tagName1", Value: "tagValue1"},
+				{Name: "tagName2", Value: "tagValue2"},
+			}...)
+		require.NoError(t, err)
+
+		err = store.Put("key2", []byte("value2"),
+			[]newstorage.Tag{
+				{Name: "tagName1", Value: "tagValue1"},
+				{Name: "tagName2", Value: "tagValue2"},
+			}...)
+		require.NoError(t, err)
+
+		err = store.Delete("key2")
+		require.NoError(t, err)
+
+		values, err := store.GetBulk("key1", "key2")
+		require.NoError(t, err)
+		require.Len(t, values, 2)
+		require.Equal(t, "value1", string(values[0]))
+		require.Nil(t, values[1])
+	})
+	t.Run("Success: no values found", func(t *testing.T) {
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		err = store.Put("key1", []byte("value1"),
+			[]newstorage.Tag{
+				{Name: "tagName1", Value: "tagValue1"},
+				{Name: "tagName2", Value: "tagValue2"},
+			}...)
+		require.NoError(t, err)
+
+		values, err := store.GetBulk("key3", "key4")
+		require.NoError(t, err)
+		require.Len(t, values, 2)
+		require.Nil(t, values[0])
+		require.Nil(t, values[1])
+	})
+	t.Run("Failure: keys string slice cannot be nil", func(t *testing.T) {
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		values, err := store.GetBulk(nil...)
+		require.EqualError(t, err, "keys string slice cannot be nil")
+		require.Nil(t, values)
+	})
 }
 
 // TestDelete tests common Delete functionality.

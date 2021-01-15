@@ -25,12 +25,14 @@ import ( //nolint:gci // False positive, seemingly caused by the CouchDB driver 
 const (
 	couchDBUsersTable = "_users"
 	revIDFieldKey     = "_rev"
+	deletedFieldKey   = "_deleted"
 
 	designDocumentName = "AriesStorageDesignDocument"
 	payloadFieldKey    = "payload"
 
 	// Hardcoded strings returned from Kivik/CouchDB that we check for.
 	docNotFoundErrMsgFromKivik            = "Not Found: missing"
+	bulkGetDocNotFoundErrMsgFromKivik     = "not_found: missing"
 	docDeletedErrMsgFromKivik             = "Not Found: deleted"
 	databaseNotFoundErrMsgFromKivik       = "Not Found: Database does not exist."
 	documentUpdateConflictErrMsgFromKivik = "Conflict: Document update conflict."
@@ -61,6 +63,7 @@ type db interface {
 	Put(ctx context.Context, docID string, doc interface{}, options ...kivik.Options) (rev string, err error)
 	Find(ctx context.Context, query interface{}, options ...kivik.Options) (*kivik.Rows, error)
 	Delete(ctx context.Context, docID, rev string, options ...kivik.Options) (newRev string, err error)
+	BulkGet(ctx context.Context, docs []kivik.BulkGetReference, options ...kivik.Options) (*kivik.Rows, error)
 	Close(ctx context.Context) error
 }
 
@@ -339,7 +342,7 @@ func (s *Store) Get(k string) ([]byte, error) {
 		return nil, fmt.Errorf(failureWhileScanningRow, err)
 	}
 
-	storedValue, err := getValueFromRawDoc(rawDoc, payloadFieldKey)
+	storedValue, err := getStringValueFromRawDoc(rawDoc, payloadFieldKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get payload from raw document: %w", err)
 	}
@@ -377,7 +380,21 @@ func (s *Store) GetTags(k string) ([]newstorage.Tag, error) {
 // GetBulk fetches the values associated with the given keys.
 // If a key doesn't exist, then a nil []byte is returned for that value. It is not considered an error.
 func (s *Store) GetBulk(keys ...string) ([][]byte, error) {
-	return nil, errors.New("not implemented")
+	if keys == nil {
+		return nil, errors.New("keys string slice cannot be nil")
+	}
+
+	rawDocs, err := s.getRawDocs(keys)
+	if err != nil {
+		return nil, fmt.Errorf("failure while getting raw CouchDB documents: %w", err)
+	}
+
+	values, err := getPayloadsFromRawDocs(rawDocs)
+	if err != nil {
+		return nil, fmt.Errorf("failure while getting stored values from raw docs: %w", err)
+	}
+
+	return values, nil
 }
 
 // Query returns all data that satisfies the expression. Expression format: TagName:TagValue.
@@ -535,12 +552,37 @@ func (s *Store) getRevID(k string) (string, error) {
 		return "", err
 	}
 
-	revID, err := getValueFromRawDoc(rawDoc, revIDFieldKey)
+	revID, err := getStringValueFromRawDoc(rawDoc, revIDFieldKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to get revision ID from the raw document: %w", err)
 	}
 
 	return revID, nil
+}
+
+// getRawDocs returns the raw documents from CouchDB using a bulk REST call.
+// If a document is not found, then the raw document will be nil. It is not considered an error.
+func (s *Store) getRawDocs(keys []string) ([]map[string]interface{}, error) {
+	bulkGetReferences := make([]kivik.BulkGetReference, len(keys))
+	for i, key := range keys {
+		bulkGetReferences[i].ID = key
+	}
+
+	rows, err := s.db.BulkGet(context.Background(), bulkGetReferences)
+	if err != nil {
+		return nil, fmt.Errorf("failure while sending request to CouchDB bulk docs endpoint: %w", err)
+	}
+
+	rawDocs, err := getRawDocsFromRows(rows)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get raw documents from rows: %w", err)
+	}
+
+	if len(rawDocs) != len(keys) {
+		return nil, fmt.Errorf("received %d raw documents, but %d were expected", len(rawDocs), len(keys))
+	}
+
+	return rawDocs, nil
 }
 
 type couchDBResultsIterator struct {
@@ -733,13 +775,10 @@ func createIndexes(db *kivik.DB, tagNamesNeedIndexCreation []string) error {
 
 func getQueryOptions(options []newstorage.QueryOption) newstorage.QueryOptions {
 	var queryOptions newstorage.QueryOptions
+	queryOptions.PageSize = 25
 
 	for _, option := range options {
 		option(&queryOptions)
-	}
-
-	if queryOptions.PageSize == 0 {
-		queryOptions.PageSize = 25
 	}
 
 	return queryOptions
@@ -753,7 +792,7 @@ func getValueFromRows(rows rows, rawDocKey string) (string, error) {
 		return "", fmt.Errorf(failWhileScanResultRows, err)
 	}
 
-	value, err := getValueFromRawDoc(rawDoc, rawDocKey)
+	value, err := getStringValueFromRawDoc(rawDoc, rawDocKey)
 	if err != nil {
 		return "", fmt.Errorf(`failure while getting the value associated with the "%s" key`+
 			`from the raw document`, rawDocKey)
@@ -762,7 +801,7 @@ func getValueFromRows(rows rows, rawDocKey string) (string, error) {
 	return value, nil
 }
 
-func getValueFromRawDoc(rawDoc map[string]interface{}, rawDocKey string) (string, error) {
+func getStringValueFromRawDoc(rawDoc map[string]interface{}, rawDocKey string) (string, error) {
 	value, ok := rawDoc[rawDocKey]
 	if !ok {
 		return "", fmt.Errorf(`"%s" is missing from the raw document`, rawDocKey)
@@ -776,6 +815,70 @@ func getValueFromRawDoc(rawDoc map[string]interface{}, rawDocKey string) (string
 	}
 
 	return valueString, nil
+}
+
+func getPayloadsFromRawDocs(rawDocs []map[string]interface{}) ([][]byte, error) {
+	storedValues := make([][]byte, len(rawDocs))
+
+	for i, rawDoc := range rawDocs {
+		// If the rawDoc is nil, this means that the value could not be found.
+		// It is not considered an error.
+		if rawDoc == nil {
+			storedValues[i] = nil
+
+			continue
+		}
+
+		// CouchDB still returns a raw document if the key has been deleted, so if this is a "deleted" raw document
+		// then we need to return nil to indicate that the value could not be found
+		isDeleted, containsIsDeleted := rawDoc[deletedFieldKey]
+		if containsIsDeleted {
+			isDeletedBool, ok := isDeleted.(bool)
+			if !ok {
+				return nil, errors.New("failed to assert the retrieved deleted field value as a bool")
+			}
+
+			if isDeletedBool {
+				storedValues[i] = nil
+
+				continue
+			}
+		}
+
+		storedValue, err := getStringValueFromRawDoc(rawDoc, payloadFieldKey)
+		if err != nil {
+			return nil, fmt.Errorf(`failed to get the payload from the raw document: %w`, err)
+		}
+
+		storedValues[i] = []byte(storedValue)
+	}
+
+	return storedValues, nil
+}
+
+func getRawDocsFromRows(rows rows) ([]map[string]interface{}, error) {
+	moreDocumentsToRead := rows.Next()
+
+	var rawDocs []map[string]interface{}
+
+	for moreDocumentsToRead {
+		var rawDoc map[string]interface{}
+		err := rows.ScanDoc(&rawDoc)
+		// For the regular Get method, Kivik actually returns a different error message if a document was deleted.
+		// When doing a bulk get, however,  Kivik doesn't return an error message, and we have to check the "_deleted"
+		// field in the raw doc later. This is done in the getPayloadsFromRawDocs method.
+		// If the document wasn't found, we allow the nil raw doc to be appended since we don't consider it to be
+		// an error.
+		if err != nil && !strings.Contains(err.Error(), bulkGetDocNotFoundErrMsgFromKivik) {
+			return nil, fmt.Errorf(failWhileScanResultRows, err)
+		}
+
+		rawDocs = append(rawDocs, rawDoc)
+
+		moreDocumentsToRead = rows.Next()
+	}
+
+	return rawDocs, nil
 }
 
 func getTagsFromRawDoc(rawDoc map[string]interface{}) ([]newstorage.Tag, error) {
