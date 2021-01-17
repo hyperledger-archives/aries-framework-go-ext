@@ -15,6 +15,7 @@ import (
 	"crypto/ed25519"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr/create"
 	"github.com/trustbloc/sidetree-core-go/pkg/commitment"
 	"github.com/trustbloc/sidetree-core-go/pkg/jws"
 	"github.com/trustbloc/sidetree-core-go/pkg/patch"
@@ -32,7 +34,6 @@ import (
 	"github.com/trustbloc/sidetree-core-go/pkg/versions/0_1/client"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/create"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/deactivate"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/recovery"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/update"
@@ -51,21 +52,6 @@ type Client struct {
 	authToken string
 }
 
-// DIDResolution did resolution.
-// TODO Add missing fields
-// TODO move DIDResolution logic to github.com/hyperledger/aries-framework-go/pkg/doc/did.
-type DIDResolution struct {
-	DIDDocument *docdid.Doc
-}
-
-// TODO move DIDResolution logic to github.com/hyperledger/aries-framework-go/pkg/doc/did.
-type didResolution struct {
-	Context          interface{}     `json:"@context"`
-	DIDDocument      json.RawMessage `json:"didDocument"`
-	ResolverMetadata json.RawMessage `json:"resolverMetadata"`
-	MethodMetadata   json.RawMessage `json:"methodMetadata"`
-}
-
 // New return did bloc client.
 func New(opts ...Option) *Client {
 	c := &Client{client: &http.Client{}}
@@ -81,7 +67,7 @@ func New(opts ...Option) *Client {
 }
 
 // CreateDID create did doc.
-func (c *Client) CreateDID(opts ...create.Option) (*DIDResolution, error) { //
+func (c *Client) CreateDID(opts ...create.Option) (*docdid.DocResolution, error) { //
 	createDIDOpts := &create.Opts{MultiHashAlgorithm: defaultHashAlgorithm}
 	// Apply options
 	for _, opt := range opts {
@@ -112,24 +98,23 @@ func (c *Client) CreateDID(opts ...create.Option) (*DIDResolution, error) { //
 		return nil, fmt.Errorf("failed to send create sidetree request: %w", err)
 	}
 
-	// TODO move DIDResolution logic to github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	var r didResolution
-	if errUnmarshal := json.Unmarshal(responseBytes, &r); errUnmarshal != nil {
-		return nil, fmt.Errorf("failed unmarshal data return from sidtree %w", errUnmarshal)
-	}
-
-	didDocBytes := responseBytes
-	// check if data is did resolution
-	if len(r.DIDDocument) != 0 {
-		didDocBytes = r.DIDDocument
-	}
-
-	didDoc, err := docdid.ParseDocument(didDocBytes)
+	documentResolution, err := docdid.ParseDocumentResolution(responseBytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse public DID document: %s", err)
+		if !errors.Is(err, docdid.ErrDIDDocumentNotExist) {
+			return nil, fmt.Errorf("failed to parse document resolution: %w", err)
+		}
+
+		logger.Warnf("failed to parse document resolution %w", err)
+	} else {
+		return documentResolution, nil
 	}
 
-	return &DIDResolution{DIDDocument: didDoc}, nil
+	didDoc, err := docdid.ParseDocument(responseBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse did document: %w", err)
+	}
+
+	return &docdid.DocResolution{DIDDocument: didDoc}, nil
 }
 
 // UpdateDID update did doc.

@@ -14,7 +14,7 @@ import (
 	"fmt"
 
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	gojose "github.com/square/go-jose/v3"
+	vdrdoc "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr/doc"
 	"github.com/trustbloc/sidetree-core-go/pkg/jws"
 	"github.com/trustbloc/sidetree-core-go/pkg/util/pubkey"
 )
@@ -55,16 +55,8 @@ type rawDoc struct {
 
 // Doc DID Document definition.
 type Doc struct {
-	PublicKey []PublicKey
+	PublicKey []vdrdoc.PublicKey
 	Service   []docdid.Service
-}
-
-// PublicKey struct.
-type PublicKey struct {
-	ID       string
-	Type     string
-	Purposes []string
-	JWK      gojose.JSONWebKey
 }
 
 // JSONBytes converts document to json bytes.
@@ -88,7 +80,7 @@ func (doc *Doc) JSONBytes() ([]byte, error) {
 }
 
 // PopulateRawPublicKeys populate raw public keys.
-func PopulateRawPublicKeys(pks []PublicKey) ([]map[string]interface{}, error) {
+func PopulateRawPublicKeys(pks []vdrdoc.PublicKey) ([]map[string]interface{}, error) {
 	rawPKs := make([]map[string]interface{}, 0)
 
 	for i := range pks {
@@ -103,7 +95,7 @@ func PopulateRawPublicKeys(pks []PublicKey) ([]map[string]interface{}, error) {
 	return rawPKs, nil
 }
 
-func populateRawPublicKey(pk *PublicKey) (map[string]interface{}, error) {
+func populateRawPublicKey(pk *vdrdoc.PublicKey) (map[string]interface{}, error) {
 	rawPK := make(map[string]interface{})
 	rawPK[jsonldID] = pk.ID
 	rawPK[jsonldType] = pk.Type
