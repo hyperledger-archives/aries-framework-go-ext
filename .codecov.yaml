@@ -5,10 +5,11 @@
 coverage:
   status:
     project:
-      default:
+      default: false
+      vdr-sidetree:
         target: 85%
+        paths: "component/vdr/sidetree/"
     patch:
       default:
         target: 85%
         only_pulls: true
-
