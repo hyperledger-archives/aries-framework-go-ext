@@ -11,13 +11,12 @@ import (
 	"crypto"
 
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
-
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
+	vdrdoc "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr/doc"
 )
 
 // Opts recover did opts.
 type Opts struct {
-	PublicKeys            []doc.PublicKey
+	PublicKeys            []vdrdoc.PublicKey
 	Services              []docdid.Service
 	GetEndpoints          func() ([]string, error)
 	NextRecoveryPublicKey crypto.PublicKey
@@ -32,7 +31,7 @@ type Opts struct {
 type Option func(opts *Opts)
 
 // WithPublicKey add DID public key.
-func WithPublicKey(publicKey *doc.PublicKey) Option {
+func WithPublicKey(publicKey *vdrdoc.PublicKey) Option {
 	return func(opts *Opts) {
 		opts.PublicKeys = append(opts.PublicKeys, *publicKey)
 	}
