@@ -107,7 +107,7 @@ func populateRawPublicKey(pk *vdrdoc.PublicKey) (map[string]interface{}, error) 
 
 	switch key := pk.JWK.Key.(type) {
 	case ed25519.PublicKey:
-		jwk, err = pubkey.GetPublicKeyJWK(ed25519.PublicKey(fmt.Sprintf("%v", key)))
+		jwk, err = pubkey.GetPublicKeyJWK(key)
 		if err != nil {
 			return nil, err
 		}
