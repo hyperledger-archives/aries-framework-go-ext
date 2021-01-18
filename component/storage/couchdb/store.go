@@ -418,3 +418,5 @@ func (c *StoreCouchDB) getDataFromAttachment(k string) ([]byte, error) {
 
 	return data, nil
 }
+
+// test
