@@ -17,8 +17,6 @@ import (
 	"testing"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr/create"
-	vdrdoc "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr/doc"
 	gojose "github.com/square/go-jose/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/sidetree-core-go/pkg/commitment"
@@ -26,6 +24,7 @@ import (
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/create"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/deactivate"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/recovery"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/update"
@@ -285,7 +284,7 @@ func TestClient_RecoverDID(t *testing.T) {
 			recovery.WithSigningKeyID("k1"), recovery.WithNextRecoveryPublicKey(pubKey),
 			recovery.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
-			}), recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&vdrdoc.PublicKey{
+			}), recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&doc.PublicKey{
 				ID:   "key3",
 				Type: doc.JWSVerificationKey2020,
 				JWK:  gojose.JSONWebKey{},
@@ -313,7 +312,7 @@ func TestClient_RecoverDID(t *testing.T) {
 				return []string{serv.URL}, nil
 			}), recovery.WithSigningKey(ecPrivKey), recovery.WithSigningKeyID("k1"),
 			recovery.WithNextRecoveryPublicKey(pubKey),
-			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&vdrdoc.PublicKey{
+			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&doc.PublicKey{
 				ID:   "key3",
 				Type: doc.Ed25519VerificationKey2018,
 				JWK:  gojose.JSONWebKey{Key: pubKey},
@@ -355,7 +354,7 @@ func TestClient_RecoverDID(t *testing.T) {
 			return []string{serv.URL}, nil
 		}), recovery.WithSigningKey(signingKey), recovery.WithRevealValue(rv),
 			recovery.WithSigningKeyID("k1"), recovery.WithNextRecoveryPublicKey(pubKey),
-			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&vdrdoc.PublicKey{
+			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&doc.PublicKey{
 				ID:   "key3",
 				Type: doc.Ed25519VerificationKey2018,
 				JWK:  gojose.JSONWebKey{Key: pubKey},
@@ -482,7 +481,7 @@ func TestClient_UpdateDID(t *testing.T) {
 		}), update.WithSigningKey(signingKey), update.WithRevealValue(rv),
 			update.WithNextUpdatePublicKey(pubKey), update.WithRemoveService("svc1"),
 			update.WithRemoveService("svc1"), update.WithRemovePublicKey("k1"),
-			update.WithRemovePublicKey("k2"), update.WithAddPublicKey(&vdrdoc.PublicKey{
+			update.WithRemovePublicKey("k2"), update.WithAddPublicKey(&doc.PublicKey{
 				ID:   "key3",
 				Type: doc.Ed25519VerificationKey2018,
 				JWK:  gojose.JSONWebKey{Key: pubKey},
@@ -517,7 +516,7 @@ func TestClient_UpdateDID(t *testing.T) {
 		}), update.WithSigningKey(signingKey), update.WithRevealValue(rv),
 			update.WithNextUpdatePublicKey(pubKey), update.WithRemoveService("svc1"),
 			update.WithRemoveService("svc1"), update.WithRemovePublicKey("k1"),
-			update.WithRemovePublicKey("k2"), update.WithAddPublicKey(&vdrdoc.PublicKey{
+			update.WithRemovePublicKey("k2"), update.WithAddPublicKey(&doc.PublicKey{
 				ID:   "key3",
 				Type: doc.Ed25519VerificationKey2018,
 				JWK:  gojose.JSONWebKey{Key: pubKey},
@@ -540,7 +539,7 @@ func TestClient_CreateDID(t *testing.T) {
 		require.Nil(t, didResol)
 
 		didResol, err = v.CreateDID(create.WithUpdatePublicKey(pubKey), create.WithRecoveryPublicKey(pubKey),
-			create.WithEndpoints(func() ([]string, error) {
+			create.WithSidetreeEndpoint(func() ([]string, error) {
 				return nil, fmt.Errorf("failed to get endpoints")
 			}))
 		require.Error(t, err)
@@ -558,7 +557,7 @@ func TestClient_CreateDID(t *testing.T) {
 		require.NoError(t, err)
 
 		didResol, err := v.CreateDID(create.WithRecoveryPublicKey(ed25519RecoveryPubKey),
-			create.WithUpdatePublicKey(ed25519UpdatePubKey), create.WithEndpoints(func() ([]string, error) {
+			create.WithUpdatePublicKey(ed25519UpdatePubKey), create.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
 			}))
 		require.Error(t, err)
@@ -572,7 +571,7 @@ func TestClient_CreateDID(t *testing.T) {
 		defer serv.Close()
 
 		didResol, err = v.CreateDID(create.WithRecoveryPublicKey(ed25519RecoveryPubKey),
-			create.WithUpdatePublicKey(ed25519UpdatePubKey), create.WithEndpoints(func() ([]string, error) {
+			create.WithUpdatePublicKey(ed25519UpdatePubKey), create.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{serv.URL}, nil
 			}))
 		require.Error(t, err)
@@ -589,7 +588,7 @@ func TestClient_CreateDID(t *testing.T) {
 		defer serv.Close()
 
 		didResol, err = v.CreateDID(create.WithRecoveryPublicKey(ed25519RecoveryPubKey),
-			create.WithUpdatePublicKey(ed25519UpdatePubKey), create.WithEndpoints(func() ([]string, error) {
+			create.WithUpdatePublicKey(ed25519UpdatePubKey), create.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{serv.URL}, nil
 			}))
 		require.Error(t, err)
@@ -623,16 +622,16 @@ func TestClient_CreateDID(t *testing.T) {
 		v := sidetree.New(sidetree.WithTLSConfig(nil))
 
 		didResol, err := v.CreateDID(create.WithRecoveryPublicKey(ed25519RecoveryPubKey),
-			create.WithEndpoints(func() ([]string, error) {
+			create.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{serv.URL}, nil
 			}), create.WithUpdatePublicKey(ecUpdatePrivKey.Public()),
-			create.WithPublicKey(&vdrdoc.PublicKey{
+			create.WithPublicKey(&doc.PublicKey{
 				ID:       "key1",
 				Type:     doc.JWSVerificationKey2020,
 				JWK:      gojose.JSONWebKey{Key: ed25519RecoveryPubKey},
 				Purposes: []string{doc.KeyPurposeAuthentication},
 			}),
-			create.WithPublicKey(&vdrdoc.PublicKey{
+			create.WithPublicKey(&doc.PublicKey{
 				ID:       "key2",
 				Type:     doc.JWSVerificationKey2020,
 				JWK:      gojose.JSONWebKey{Key: ecPrivKey.Public()},
@@ -664,7 +663,7 @@ func TestClient_CreateDID(t *testing.T) {
 		v := sidetree.New(sidetree.WithTLSConfig(nil))
 
 		_, err = v.CreateDID(create.WithRecoveryPublicKey(ed25519RecoveryPubKey),
-			create.WithEndpoints(func() ([]string, error) {
+			create.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{serv.URL}, nil
 			}), create.WithUpdatePublicKey(ecUpdatePrivKey.Public()),
 			create.WithService(&did.Service{
@@ -689,7 +688,8 @@ func TestClient_CreateDID(t *testing.T) {
 		v := sidetree.New()
 
 		didResol, err := v.CreateDID(create.WithRecoveryPublicKey("wrongkey"),
-			create.WithUpdatePublicKey("wrongvalue"), create.WithEndpoints(func() ([]string, error) {
+			create.WithUpdatePublicKey("wrongvalue"),
+			create.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
 			}))
 		require.Error(t, err)
@@ -729,7 +729,7 @@ func TestClient_CreateDID(t *testing.T) {
 		v := sidetree.New()
 
 		didResol, err := v.CreateDID(create.WithRecoveryPublicKey(pubKey),
-			create.WithEndpoints(func() ([]string, error) {
+			create.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
 			}))
 		require.Error(t, err)

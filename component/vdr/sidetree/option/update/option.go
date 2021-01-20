@@ -11,7 +11,8 @@ import (
 	"crypto"
 
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	vdrdoc "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr/doc"
+
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
 )
 
 // Option is a update DID option.
@@ -19,7 +20,7 @@ type Option func(opts *Opts)
 
 // Opts update did opts.
 type Opts struct {
-	AddPublicKeys       []vdrdoc.PublicKey
+	AddPublicKeys       []doc.PublicKey
 	AddServices         []docdid.Service
 	RemovePublicKeys    []string
 	RemoveServices      []string
@@ -32,7 +33,7 @@ type Opts struct {
 }
 
 // WithAddPublicKey add DID public key.
-func WithAddPublicKey(publicKey *vdrdoc.PublicKey) Option {
+func WithAddPublicKey(publicKey *doc.PublicKey) Option {
 	return func(opts *Opts) {
 		opts.AddPublicKeys = append(opts.AddPublicKeys, *publicKey)
 	}
