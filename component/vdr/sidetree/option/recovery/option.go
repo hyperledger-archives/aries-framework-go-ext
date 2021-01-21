@@ -24,7 +24,7 @@ type Opts struct {
 	NextUpdatePublicKey   crypto.PublicKey
 	SigningKey            crypto.PrivateKey
 	SigningKeyID          string
-	RevealValue           string
+	OperationCommitment   string
 	MultiHashAlgorithm    uint
 }
 
@@ -80,16 +80,16 @@ func WithSigningKeyID(id string) Option {
 	}
 }
 
-// WithRevealValue sets reveal value.
-func WithRevealValue(rv string) Option {
-	return func(opts *Opts) {
-		opts.RevealValue = rv
-	}
-}
-
 // WithMultiHashAlgorithm set multi hash algorithm for sidetree request.
 func WithMultiHashAlgorithm(multiHashAlgorithm uint) Option {
 	return func(opts *Opts) {
 		opts.MultiHashAlgorithm = multiHashAlgorithm
+	}
+}
+
+// WithOperationCommitment sets last operation commitment.
+func WithOperationCommitment(operationCommitment string) Option {
+	return func(opts *Opts) {
+		opts.OperationCommitment = operationCommitment
 	}
 }
