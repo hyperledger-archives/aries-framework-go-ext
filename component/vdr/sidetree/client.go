@@ -25,6 +25,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/trustbloc/sidetree-core-go/pkg/commitment"
+	"github.com/trustbloc/sidetree-core-go/pkg/hashing"
 	"github.com/trustbloc/sidetree-core-go/pkg/jws"
 	"github.com/trustbloc/sidetree-core-go/pkg/patch"
 	"github.com/trustbloc/sidetree-core-go/pkg/util/ecsigner"
@@ -247,8 +248,8 @@ func validateUpdateReq(updateDIDOpts *update.Opts) error {
 		return fmt.Errorf("next update public key is required")
 	}
 
-	if updateDIDOpts.RevealValue == "" {
-		return fmt.Errorf("reveal value is required")
+	if updateDIDOpts.OperationCommitment == "" {
+		return fmt.Errorf("operation commitment is required")
 	}
 
 	if updateDIDOpts.GetEndpoints == nil {
@@ -271,8 +272,8 @@ func validateRecoverReq(recoverDIDOpts *recovery.Opts) error {
 		return fmt.Errorf("signing key is required")
 	}
 
-	if recoverDIDOpts.RevealValue == "" {
-		return fmt.Errorf("reveal value is required")
+	if recoverDIDOpts.OperationCommitment == "" {
+		return fmt.Errorf("operation commitment is required")
 	}
 
 	if recoverDIDOpts.GetEndpoints == nil {
@@ -287,8 +288,8 @@ func validateDeactivateReq(deactivateDIDOpts *deactivate.Opts) error {
 		return fmt.Errorf("signing key is required")
 	}
 
-	if deactivateDIDOpts.RevealValue == "" {
-		return fmt.Errorf("reveal value is required")
+	if deactivateDIDOpts.OperationCommitment == "" {
+		return fmt.Errorf("operation commitment is required")
 	}
 
 	if deactivateDIDOpts.GetEndpoints == nil {
@@ -373,9 +374,19 @@ func (c *Client) buildUpdateRequest(did string, multiHashAlgorithm uint,
 		return nil, err
 	}
 
+	multihashCode, err := hashing.GetMultihashCode(updateDIDOpts.OperationCommitment)
+	if err != nil {
+		return nil, err
+	}
+
+	rv, err := commitment.GetRevealValue(updateKey, uint(multihashCode))
+	if err != nil {
+		return nil, err
+	}
+
 	return client.NewUpdateRequest(&client.UpdateRequestInfo{
 		DidSuffix:        didSuffix,
-		RevealValue:      updateDIDOpts.RevealValue,
+		RevealValue:      rv,
 		UpdateCommitment: nextUpdateCommitment,
 		UpdateKey:        updateKey,
 		Patches:          patches,
@@ -411,8 +422,18 @@ func buildRecoverRequest(did string, multiHashAlgorithm uint, recoverDIDOpts *re
 		return nil, err
 	}
 
+	multihashCode, err := hashing.GetMultihashCode(recoverDIDOpts.OperationCommitment)
+	if err != nil {
+		return nil, err
+	}
+
+	rv, err := commitment.GetRevealValue(recoveryKey, uint(multihashCode))
+	if err != nil {
+		return nil, err
+	}
+
 	req, err := client.NewRecoverRequest(&client.RecoverRequestInfo{
-		DidSuffix: didSuffix, RevealValue: recoverDIDOpts.RevealValue, OpaqueDocument: string(docBytes),
+		DidSuffix: didSuffix, RevealValue: rv, OpaqueDocument: string(docBytes),
 		RecoveryCommitment: nextRecoveryCommitment, UpdateCommitment: nextUpdateCommitment,
 		MultihashCode: multiHashAlgorithm, Signer: signer, RecoveryKey: recoveryKey,
 	})
@@ -435,9 +456,19 @@ func buildDeactivateRequest(did string, deactivateDIDOpts *deactivate.Opts) ([]b
 		return nil, err
 	}
 
+	multihashCode, err := hashing.GetMultihashCode(deactivateDIDOpts.OperationCommitment)
+	if err != nil {
+		return nil, err
+	}
+
+	rv, err := commitment.GetRevealValue(publicKey, uint(multihashCode))
+	if err != nil {
+		return nil, err
+	}
+
 	return client.NewDeactivateRequest(&client.DeactivateRequestInfo{
 		DidSuffix:   didSuffix,
-		RevealValue: deactivateDIDOpts.RevealValue,
+		RevealValue: rv,
 		RecoveryKey: publicKey,
 		Signer:      signer,
 	})
