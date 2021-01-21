@@ -13,10 +13,10 @@ import (
 
 // Opts deactivate did opts.
 type Opts struct {
-	GetEndpoints func() ([]string, error)
-	SigningKey   crypto.PrivateKey
-	SigningKeyID string
-	RevealValue  string
+	GetEndpoints       func() ([]string, error)
+	SigningKey         crypto.PrivateKey
+	SigningKeyID       string
+	MultiHashAlgorithm uint
 }
 
 // Option is a deactivate DID option.
@@ -43,9 +43,9 @@ func WithSigningKeyID(id string) Option {
 	}
 }
 
-// WithRevealValue sets reveal value.
-func WithRevealValue(rv string) Option {
+// WithMultiHashAlgorithm set multi hash algorithm for sidetree request.
+func WithMultiHashAlgorithm(multiHashAlgorithm uint) Option {
 	return func(opts *Opts) {
-		opts.RevealValue = rv
+		opts.MultiHashAlgorithm = multiHashAlgorithm
 	}
 }

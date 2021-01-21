@@ -247,10 +247,6 @@ func validateUpdateReq(updateDIDOpts *update.Opts) error {
 		return fmt.Errorf("next update public key is required")
 	}
 
-	if updateDIDOpts.RevealValue == "" {
-		return fmt.Errorf("reveal value is required")
-	}
-
 	if updateDIDOpts.GetEndpoints == nil {
 		return fmt.Errorf("sidetree get endpoints func is required")
 	}
@@ -271,10 +267,6 @@ func validateRecoverReq(recoverDIDOpts *recovery.Opts) error {
 		return fmt.Errorf("signing key is required")
 	}
 
-	if recoverDIDOpts.RevealValue == "" {
-		return fmt.Errorf("reveal value is required")
-	}
-
 	if recoverDIDOpts.GetEndpoints == nil {
 		return fmt.Errorf("sidetree get endpoints func is required")
 	}
@@ -285,10 +277,6 @@ func validateRecoverReq(recoverDIDOpts *recovery.Opts) error {
 func validateDeactivateReq(deactivateDIDOpts *deactivate.Opts) error {
 	if deactivateDIDOpts.SigningKey == nil {
 		return fmt.Errorf("signing key is required")
-	}
-
-	if deactivateDIDOpts.RevealValue == "" {
-		return fmt.Errorf("reveal value is required")
 	}
 
 	if deactivateDIDOpts.GetEndpoints == nil {
@@ -373,9 +361,14 @@ func (c *Client) buildUpdateRequest(did string, multiHashAlgorithm uint,
 		return nil, err
 	}
 
+	rv, err := commitment.GetRevealValue(updateKey, updateDIDOpts.MultiHashAlgorithm)
+	if err != nil {
+		return nil, err
+	}
+
 	return client.NewUpdateRequest(&client.UpdateRequestInfo{
 		DidSuffix:        didSuffix,
-		RevealValue:      updateDIDOpts.RevealValue,
+		RevealValue:      rv,
 		UpdateCommitment: nextUpdateCommitment,
 		UpdateKey:        updateKey,
 		Patches:          patches,
@@ -411,8 +404,13 @@ func buildRecoverRequest(did string, multiHashAlgorithm uint, recoverDIDOpts *re
 		return nil, err
 	}
 
+	rv, err := commitment.GetRevealValue(recoveryKey, recoverDIDOpts.MultiHashAlgorithm)
+	if err != nil {
+		return nil, err
+	}
+
 	req, err := client.NewRecoverRequest(&client.RecoverRequestInfo{
-		DidSuffix: didSuffix, RevealValue: recoverDIDOpts.RevealValue, OpaqueDocument: string(docBytes),
+		DidSuffix: didSuffix, RevealValue: rv, OpaqueDocument: string(docBytes),
 		RecoveryCommitment: nextRecoveryCommitment, UpdateCommitment: nextUpdateCommitment,
 		MultihashCode: multiHashAlgorithm, Signer: signer, RecoveryKey: recoveryKey,
 	})
@@ -435,9 +433,14 @@ func buildDeactivateRequest(did string, deactivateDIDOpts *deactivate.Opts) ([]b
 		return nil, err
 	}
 
+	rv, err := commitment.GetRevealValue(publicKey, deactivateDIDOpts.MultiHashAlgorithm)
+	if err != nil {
+		return nil, err
+	}
+
 	return client.NewDeactivateRequest(&client.DeactivateRequestInfo{
 		DidSuffix:   didSuffix,
-		RevealValue: deactivateDIDOpts.RevealValue,
+		RevealValue: rv,
 		RecoveryKey: publicKey,
 		Signer:      signer,
 	})

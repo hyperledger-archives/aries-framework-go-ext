@@ -28,7 +28,6 @@ type Opts struct {
 	NextUpdatePublicKey crypto.PublicKey
 	SigningKey          crypto.PrivateKey
 	SigningKeyID        string
-	RevealValue         string
 	MultiHashAlgorithm  uint
 }
 
@@ -85,13 +84,6 @@ func WithSigningKeyID(id string) Option {
 func WithSidetreeEndpoint(getEndpoints func() ([]string, error)) Option {
 	return func(opts *Opts) {
 		opts.GetEndpoints = getEndpoints
-	}
-}
-
-// WithRevealValue sets reveal value.
-func WithRevealValue(rv string) Option {
-	return func(opts *Opts) {
-		opts.RevealValue = rv
 	}
 }
 
