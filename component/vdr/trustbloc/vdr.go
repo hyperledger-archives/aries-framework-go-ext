@@ -229,13 +229,13 @@ func (v *VDRI) Create(keyManager kms.KeyManager, did *docdid.Doc,
 	}
 
 	// get verification method
-	pks, err := getSidetreePublicKeys(did.VerificationMethod)
+	pks, err := getSidetreePublicKeys(did)
 	if err != nil {
 		return nil, err
 	}
 
-	for i := range pks {
-		createOpt = append(createOpt, create.WithPublicKey(&pks[i]))
+	for k := range pks {
+		createOpt = append(createOpt, create.WithPublicKey(pks[k]))
 	}
 
 	createOpt = append(createOpt, create.WithSidetreeEndpoint(getEndpoints),
@@ -287,13 +287,13 @@ func (v *VDRI) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error 
 	updateOpt = append(updateOpt, getRemovedSvcKeysID(docResolution.DIDDocument.Service, didDoc.Service)...)
 
 	// get verification method
-	pks, err := getSidetreePublicKeys(didDoc.VerificationMethod)
+	pks, err := getSidetreePublicKeys(didDoc)
 	if err != nil {
 		return err
 	}
 
-	for i := range pks {
-		updateOpt = append(updateOpt, update.WithAddPublicKey(&pks[i]))
+	for k := range pks {
+		updateOpt = append(updateOpt, update.WithAddPublicKey(pks[k]))
 	}
 
 	// get keys
@@ -329,13 +329,13 @@ func (v *VDRI) recover(didDoc *docdid.Doc, sidetreeConfig *models.SidetreeConfig
 	}
 
 	// get verification method
-	pks, err := getSidetreePublicKeys(didDoc.VerificationMethod)
+	pks, err := getSidetreePublicKeys(didDoc)
 	if err != nil {
 		return err
 	}
 
-	for i := range pks {
-		recoveryOpt = append(recoveryOpt, recovery.WithPublicKey(&pks[i]))
+	for k := range pks {
+		recoveryOpt = append(recoveryOpt, recovery.WithPublicKey(pks[k]))
 	}
 
 	// get keys
@@ -399,23 +399,60 @@ func (v *VDRI) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 	return v.sidetreeClient.DeactivateDID(didID, deactivateOpt...)
 }
 
-func getSidetreePublicKeys(verificationMethod []docdid.VerificationMethod) ([]doc.PublicKey, error) {
-	pks := make([]doc.PublicKey, 0)
+func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error) { //nolint:gocyclo
+	pksMap := make(map[string]*doc.PublicKey)
 
-	for _, vm := range verificationMethod {
-		if vm.JSONWebKey() == nil {
+	if len(didDoc.VerificationMethod) > 0 {
+		return nil,
+			fmt.Errorf("verificationMethod not supported use other verificationMethod like Authentication")
+	}
+
+	ver := make([]docdid.Verification, 0)
+
+	ver = append(ver, didDoc.Authentication...)
+	ver = append(ver, didDoc.AssertionMethod...)
+	ver = append(ver, didDoc.CapabilityDelegation...)
+	ver = append(ver, didDoc.CapabilityInvocation...)
+	ver = append(ver, didDoc.KeyAgreement...)
+
+	for _, v := range ver {
+		purpose := ""
+
+		switch v.Relationship { //nolint: exhaustive
+		case docdid.Authentication:
+			purpose = doc.KeyPurposeAuthentication
+		case docdid.AssertionMethod:
+			purpose = doc.KeyPurposeAssertionMethod
+		case docdid.CapabilityDelegation:
+			purpose = doc.KeyPurposeCapabilityDelegation
+		case docdid.CapabilityInvocation:
+			purpose = doc.KeyPurposeCapabilityInvocation
+		case docdid.KeyAgreement:
+			purpose = doc.KeyPurposeKeyAgreement
+		default:
+			return nil, fmt.Errorf("vm relationship %d not supported", v.Relationship)
+		}
+
+		value, ok := pksMap[v.VerificationMethod.ID]
+		if ok {
+			value.Purposes = append(value.Purposes, purpose)
+
+			continue
+		}
+
+		if v.VerificationMethod.JSONWebKey() == nil {
 			return nil, fmt.Errorf("verificationMethod JSONWebKey is nil")
 		}
 
-		pks = append(pks, doc.PublicKey{
-			ID:       vm.ID,
-			Type:     vm.Type,
-			Purposes: []string{doc.KeyPurposeAuthentication}, // TODO add did method option for Purposes
-			JWK:      vm.JSONWebKey().JSONWebKey,
-		})
+		pksMap[v.VerificationMethod.ID] = &doc.PublicKey{
+			ID:       v.VerificationMethod.ID,
+			Type:     v.VerificationMethod.Type,
+			Purposes: []string{purpose},
+			JWK:      v.VerificationMethod.JSONWebKey().JSONWebKey,
+		}
 	}
 
-	return pks, nil
+	return pksMap, nil
 }
 
 func (v *VDRI) getSidetreeEndpoints(didMethodOpts *vdrapi.DIDMethodOpts) func() ([]string, error) {
