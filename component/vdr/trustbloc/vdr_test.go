@@ -139,11 +139,25 @@ func TestVDRI_Create(t *testing.T) {
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
 		require.NoError(t, err)
 
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+		verAssertionMethod := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"}, did.AssertionMethod)
+		verKeyAgreement := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"}, did.KeyAgreement)
+		verCapabilityDelegation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"},
+			did.CapabilityDelegation)
+		verCapabilityInvocation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"},
+			did.CapabilityInvocation)
+
 		docResolution, err := v.Create(nil, &did.Doc{
 			Service: []did.Service{
 				{ID: "svc"},
 			},
-			VerificationMethod: []did.VerificationMethod{*vm},
+			Authentication: []did.Verification{
+				*ver,
+				*verAssertionMethod,
+				*verKeyAgreement,
+				*verCapabilityDelegation,
+				*verCapabilityInvocation,
+			},
 		}, vdrapi.WithOption(UpdatePublicKeyOpt, []byte{}),
 			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}))
 		require.NoError(t, err)
@@ -176,11 +190,13 @@ func TestVDRI_Create(t *testing.T) {
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
 		require.NoError(t, err)
 
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+
 		_, err = v.Create(nil, &did.Doc{
 			Service: []did.Service{
 				{ID: "svc"},
 			},
-			VerificationMethod: []did.VerificationMethod{*vm},
+			Authentication: []did.Verification{*ver},
 		}, vdrapi.WithOption(EndpointsOpt, []string{"url"}),
 			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}))
 		require.Error(t, err)
@@ -213,11 +229,13 @@ func TestVDRI_Create(t *testing.T) {
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
 		require.NoError(t, err)
 
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+
 		_, err = v.Create(nil, &did.Doc{
 			Service: []did.Service{
 				{ID: "svc"},
 			},
-			VerificationMethod: []did.VerificationMethod{*vm},
+			Authentication: []did.Verification{*ver},
 		}, vdrapi.WithOption(EndpointsOpt, []string{"url"}),
 			vdrapi.WithOption(UpdatePublicKeyOpt, []byte{}))
 		require.Error(t, err)
@@ -364,11 +382,13 @@ func TestVDRI_Update(t *testing.T) {
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
 		require.NoError(t, err)
 
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+
 		err = v.Update(&did.Doc{
 			Service: []did.Service{
 				{ID: "svc"},
 			},
-			VerificationMethod: []did.VerificationMethod{*vm},
+			Authentication: []did.Verification{*ver},
 		}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}))
 		require.NoError(t, err)
 	})
@@ -473,11 +493,13 @@ func TestVDRI_Recover(t *testing.T) {
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
 		require.NoError(t, err)
 
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+
 		err = v.Update(&did.Doc{
 			Service: []did.Service{
 				{ID: "svc"},
 			},
-			VerificationMethod: []did.VerificationMethod{*vm},
+			Authentication: []did.Verification{*ver},
 		}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true))
 		require.NoError(t, err)
@@ -503,14 +525,40 @@ func TestVDRI_Recover(t *testing.T) {
 			DIDDocument: &did.Doc{ID: "did"},
 		}}
 
+		verAuthentication := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"}, did.Authentication)
+
 		err := v.Update(&did.Doc{
-			Service:            []did.Service{{ID: "svc"}},
-			VerificationMethod: []did.VerificationMethod{{ID: "id"}},
+			Service:        []did.Service{{ID: "svc"}},
+			Authentication: []did.Verification{*verAuthentication},
 		},
 			vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "verificationMethod JSONWebKey is nil")
+
+		verAuthentication.Relationship = did.VerificationRelationshipGeneral
+
+		err = v.Update(&did.Doc{
+			Service:        []did.Service{{ID: "svc"}},
+			Authentication: []did.Verification{*verAuthentication},
+		},
+			vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+			vdrapi.WithOption(RecoverOpt, true))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "vm relationship 0 not supported")
+
+		err = v.Update(&did.Doc{
+			Service: []did.Service{
+				{ID: "svc"},
+			},
+			VerificationMethod: []did.VerificationMethod{
+				{ID: "id"},
+			},
+		},
+			vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+			vdrapi.WithOption(RecoverOpt, true))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "verificationMethod not supported")
 	})
 }
 
