@@ -594,7 +594,7 @@ func (v *VDRI) Read(did string, opts ...vdrapi.ResolveOption) (*docdid.DocResolu
 		domain = v.domain
 	}
 
-	if v.enableSignatureVerification {
+	if v.enableSignatureVerification || v.useUpdateValidation {
 		if _, ok := v.validatedConsortium[domain]; !ok {
 			_, err := v.ValidateConsortium(domain)
 			if err != nil {
@@ -630,7 +630,7 @@ func (v *VDRI) Read(did string, opts ...vdrapi.ResolveOption) (*docdid.DocResolu
 		}
 
 		if docResolution != nil && !bytes.Equal(docBytes, respBytes) {
-			log.Debugf("mismatch in document contents for did %s. Doc 1: %s, Doc 2: %s",
+			log.Warnf("mismatch in document contents for did %s. Doc 1: %s, Doc 2: %s",
 				did, string(docBytes), string(respBytes))
 		}
 

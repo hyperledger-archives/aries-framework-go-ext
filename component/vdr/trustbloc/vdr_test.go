@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package trustbloc
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -17,11 +18,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	ariesjose "github.com/hyperledger/aries-framework-go/pkg/doc/jose"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
+	log "github.com/sirupsen/logrus"
 	"github.com/square/go-jose/v3"
 	"github.com/stretchr/testify/require"
 
@@ -821,31 +824,50 @@ func TestVDRI_Read(t *testing.T) {
 		require.Nil(t, doc)
 	})
 
-	//nolint:gocritic
-	// t.Run("test error from mismatch", func(t *testing.T) {
-	// 	v := New()
-	//
-	// 	v.endpointService = &mockendpoint.MockEndpointService{
-	// 		GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
-	// 			return []*models.Endpoint{{URL: "url"}, {URL: "url.2"}}, nil
-	// 		}}
-	//
-	// 	counter := 0
-	//
-	// 	v.getHTTPVDRI = func(url string) (v vdri, err error) {
-	// 		return &mockvdr.MockVDRI{
-	// 			ReadFunc: func(didID string, opts ...vdrapi.ResolveOpts) (*did.Doc, error) {
-	// 				counter++
-	// 				return generateDIDDoc("test:" + string(counter)), nil
-	// 			}}, nil
-	// 	}
-	//
-	// 	_, err := v.Read("did:trustbloc:testnet:123")
-	// 	require.Error(t, err)
-	// 	require.Contains(t, err.Error(), "mismatch")
-	// })
+	t.Run("test error from mismatch", func(t *testing.T) {
+		prevOut := log.StandardLogger().Out
+		defer func() {
+			log.SetOutput(prevOut)
+		}()
+
+		var logBuf bytes.Buffer
+		log.SetOutput(&logBuf)
+
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
+
+		v.endpointService = &mockendpoint.MockEndpointService{
+			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
+				return []*models.Endpoint{{URL: "url"}, {URL: "url.2"}}, nil
+			},
+		}
+
+		counter := 0
+
+		v.getHTTPVDRI = func(url string) (v vdri, err error) {
+			return &mockvdr.MockVDR{
+				ReadFunc: func(didID string, opts ...vdrapi.ResolveOption) (*did.DocResolution, error) {
+					counter++
+
+					return generateDIDDoc("test:" + fmt.Sprint(counter)), nil
+				},
+			}, nil
+		}
+
+		_, err = v.Read("did:trustbloc:testnet:123")
+		require.NoError(t, err)
+		require.Contains(t, logBuf.String(), "mismatch")
+	})
 
 	t.Run("test success", func(t *testing.T) {
+		prevOut := log.StandardLogger().Out
+		defer func() {
+			log.SetOutput(prevOut)
+		}()
+
+		var logBuf bytes.Buffer
+		log.SetOutput(&logBuf)
+
 		sigKey := ed25519SigningKey(t, keyJSON)
 
 		cfd := signedConsortiumFileData(t, &models.Consortium{
@@ -878,6 +900,8 @@ func TestVDRI_Read(t *testing.T) {
 		doc, err := v.Read("did:trustbloc:testnet:123")
 		require.NoError(t, err)
 		require.Equal(t, "did:trustbloc:testnet:123", doc.DIDDocument.ID)
+
+		require.NotContains(t, logBuf.String(), "mismatch")
 	})
 }
 
@@ -900,14 +924,6 @@ func TestVDRI_loadGenesisFiles(t *testing.T) {
 	})
 
 	t.Run("fail: bad consortium data", func(t *testing.T) {
-		confFile := "this is not a consortium config jws"
-
-		_, err := New(&mockKeyRetriever{}, UseGenesisFile("url", "domain", []byte(confFile)))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error loading consortium genesis config")
-	})
-
-	t.Run("fail: try to read using a vdri with a bad genesis file", func(t *testing.T) {
 		confFile := "this is not a consortium config jws"
 
 		_, err := New(&mockKeyRetriever{}, UseGenesisFile("url", "domain", []byte(confFile)))
@@ -1597,4 +1613,34 @@ func (m *mockKeyRetriever) GetSigningKey(didID string, ot OperationType) (crypto
 	}
 
 	return nil, nil
+}
+
+func generateDIDDoc(id string) *did.DocResolution {
+	t := time.Unix(0, 0)
+
+	return &did.DocResolution{DIDDocument: &did.Doc{
+		Context: []string{"https://w3id.org/did/v1"},
+		ID:      id,
+
+		Service: []did.Service{{
+			ID:              "",
+			Type:            "",
+			Priority:        0,
+			RecipientKeys:   []string{""},
+			RoutingKeys:     []string{""},
+			ServiceEndpoint: "",
+			Properties:      map[string]interface{}{},
+		}},
+		Authentication: []did.Verification{{}},
+		Created:        nil,
+		Updated:        nil,
+		Proof: []did.Proof{{
+			Type:       "",
+			Created:    &t,
+			Creator:    id,
+			ProofValue: nil,
+			Domain:     id,
+			Nonce:      nil,
+		}},
+	}}
 }
