@@ -127,7 +127,7 @@ type KeyRetriever interface {
 }
 
 // New creates new bloc vdri.
-func New(keyRetriever KeyRetriever, opts ...Option) *VDRI {
+func New(keyRetriever KeyRetriever, opts ...Option) (*VDRI, error) {
 	v := &VDRI{}
 
 	for _, opt := range opts {
@@ -165,7 +165,12 @@ func New(keyRetriever KeyRetriever, opts ...Option) *VDRI {
 
 	v.keyRetriever = keyRetriever
 
-	return v
+	err := v.loadGenesisFiles()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize VDR, invalid genesis file: %w", err)
+	}
+
+	return v, nil
 }
 
 // Accept did method.
@@ -573,12 +578,7 @@ const (
 	domainDIDPart             = 2
 )
 
-func (v *VDRI) Read(did string, opts ...vdrapi.ResolveOption) (*docdid.DocResolution, error) { //nolint: gocyclo,funlen
-	err := v.loadGenesisFiles()
-	if err != nil {
-		return nil, fmt.Errorf("invalid genesis file: %w", err)
-	}
-
+func (v *VDRI) Read(did string, opts ...vdrapi.ResolveOption) (*docdid.DocResolution, error) { //nolint: gocyclo
 	if v.resolverURL != "" {
 		return v.sidetreeResolve(v.resolverURL, did, opts...)
 	}
@@ -596,7 +596,7 @@ func (v *VDRI) Read(did string, opts ...vdrapi.ResolveOption) (*docdid.DocResolu
 
 	if v.enableSignatureVerification {
 		if _, ok := v.validatedConsortium[domain]; !ok {
-			_, err = v.ValidateConsortium(domain)
+			_, err := v.ValidateConsortium(domain)
 			if err != nil {
 				return nil, fmt.Errorf("invalid consortium: %w", err)
 			}
