@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package trustbloc
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -17,11 +18,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	ariesjose "github.com/hyperledger/aries-framework-go/pkg/doc/jose"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
+	log "github.com/sirupsen/logrus"
 	"github.com/square/go-jose/v3"
 	"github.com/stretchr/testify/require"
 
@@ -102,19 +105,22 @@ const validDoc = `{
 
 func TestVDRI_Accept(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 		require.True(t, v.Accept(DIDMethod))
 	})
 
 	t.Run("test return false", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 		require.False(t, v.Accept("bloc1"))
 	})
 }
 
 func TestVDRI_Create(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -165,7 +171,8 @@ func TestVDRI_Create(t *testing.T) {
 	})
 
 	t.Run("test update public key opt is empty", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -204,7 +211,8 @@ func TestVDRI_Create(t *testing.T) {
 	})
 
 	t.Run("test recovery public key opt is empty", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -243,7 +251,8 @@ func TestVDRI_Create(t *testing.T) {
 	})
 
 	t.Run("test error from get endpoints", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -259,13 +268,14 @@ func TestVDRI_Create(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
 
-		_, err := v.Create(nil, &did.Doc{})
+		_, err = v.Create(nil, &did.Doc{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get endpoints")
 	})
 
 	t.Run("test error from get sidetree config", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -281,7 +291,7 @@ func TestVDRI_Create(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
 
-		_, err := v.Create(nil, &did.Doc{})
+		_, err = v.Create(nil, &did.Doc{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get sidetree config")
 	})
@@ -296,7 +306,8 @@ func TestVDRI_Deactivate(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{}
 
@@ -306,12 +317,13 @@ func TestVDRI_Deactivate(t *testing.T) {
 			},
 		}
 
-		err := v.Deactivate("did:ex:123", vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}))
+		err = v.Deactivate("did:ex:123", vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}))
 		require.NoError(t, err)
 	})
 
 	t.Run("test error from get endpoints", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -327,7 +339,7 @@ func TestVDRI_Deactivate(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{}
 
-		err := v.Deactivate("")
+		err = v.Deactivate("")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get endpoints")
 	})
@@ -338,7 +350,8 @@ func TestVDRI_Deactivate(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -348,7 +361,7 @@ func TestVDRI_Deactivate(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{}
 
-		err := v.Deactivate("")
+		err = v.Deactivate("")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to resolve did")
 	})
@@ -363,7 +376,8 @@ func TestVDRI_Update(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.configService = &mockconfig.MockConfigService{
 			GetSidetreeConfigFunc: func(s string) (*models.SidetreeConfig, error) {
@@ -394,7 +408,8 @@ func TestVDRI_Update(t *testing.T) {
 	})
 
 	t.Run("test error from get endpoints", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -410,13 +425,14 @@ func TestVDRI_Update(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
 
-		err := v.Update(&did.Doc{})
+		err = v.Update(&did.Doc{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get endpoints")
 	})
 
 	t.Run("test error from get sidetree config", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -432,7 +448,7 @@ func TestVDRI_Update(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
 
-		err := v.Update(&did.Doc{})
+		err = v.Update(&did.Doc{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get sidetree config")
 	})
@@ -443,7 +459,8 @@ func TestVDRI_Update(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -459,7 +476,7 @@ func TestVDRI_Update(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
 
-		err := v.Update(&did.Doc{})
+		err = v.Update(&did.Doc{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to resolve did")
 	})
@@ -474,7 +491,8 @@ func TestVDRI_Recover(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.configService = &mockconfig.MockConfigService{
 			GetSidetreeConfigFunc: func(s string) (*models.SidetreeConfig, error) {
@@ -513,7 +531,8 @@ func TestVDRI_Recover(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.configService = &mockconfig.MockConfigService{
 			GetSidetreeConfigFunc: func(s string) (*models.SidetreeConfig, error) {
@@ -527,7 +546,7 @@ func TestVDRI_Recover(t *testing.T) {
 
 		verAuthentication := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"}, did.Authentication)
 
-		err := v.Update(&did.Doc{
+		err = v.Update(&did.Doc{
 			Service:        []did.Service{{ID: "svc"}},
 			Authentication: []did.Verification{*verAuthentication},
 		},
@@ -669,9 +688,10 @@ func signedStakeholderFileData(t *testing.T, stakeholder *models.Stakeholder, ke
 
 func TestVDRI_Read(t *testing.T) {
 	t.Run("test error from get http vdri for resolver url", func(t *testing.T) {
-		v := New(&mockKeyRetriever{}, WithResolverURL("url"))
+		v, err := New(&mockKeyRetriever{}, WithResolverURL("url"))
+		require.NoError(t, err)
 
-		_, err := v.getHTTPVDRI("")
+		_, err = v.getHTTPVDRI("")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "empty url")
 
@@ -686,7 +706,8 @@ func TestVDRI_Read(t *testing.T) {
 	})
 
 	t.Run("test error from http vdri build for resolver url", func(t *testing.T) {
-		v := New(&mockKeyRetriever{}, WithResolverURL("url"))
+		v, err := New(&mockKeyRetriever{}, WithResolverURL("url"))
+		require.NoError(t, err)
 
 		v.getHTTPVDRI = httpVdriFunc(nil, fmt.Errorf("read error"))
 
@@ -697,7 +718,8 @@ func TestVDRI_Read(t *testing.T) {
 	})
 
 	t.Run("test success for resolver url", func(t *testing.T) {
-		v := New(&mockKeyRetriever{}, WithResolverURL("url"))
+		v, err := New(&mockKeyRetriever{}, WithResolverURL("url"))
+		require.NoError(t, err)
 
 		v.getHTTPVDRI = httpVdriFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)
 
@@ -707,7 +729,8 @@ func TestVDRI_Read(t *testing.T) {
 	})
 
 	t.Run("test error parsing did", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.getHTTPVDRI = func(url string) (v vdri, err error) {
 			return nil, nil
@@ -720,7 +743,8 @@ func TestVDRI_Read(t *testing.T) {
 	})
 
 	t.Run("test error from get endpoints", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -759,7 +783,8 @@ func TestVDRI_Read(t *testing.T) {
 	})
 
 	t.Run("test error from get http vdri", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -780,7 +805,8 @@ func TestVDRI_Read(t *testing.T) {
 	})
 
 	t.Run("test error from http vdri read", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -798,31 +824,50 @@ func TestVDRI_Read(t *testing.T) {
 		require.Nil(t, doc)
 	})
 
-	//nolint:gocritic
-	// t.Run("test error from mismatch", func(t *testing.T) {
-	// 	v := New()
-	//
-	// 	v.endpointService = &mockendpoint.MockEndpointService{
-	// 		GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
-	// 			return []*models.Endpoint{{URL: "url"}, {URL: "url.2"}}, nil
-	// 		}}
-	//
-	// 	counter := 0
-	//
-	// 	v.getHTTPVDRI = func(url string) (v vdri, err error) {
-	// 		return &mockvdr.MockVDRI{
-	// 			ReadFunc: func(didID string, opts ...vdrapi.ResolveOpts) (*did.Doc, error) {
-	// 				counter++
-	// 				return generateDIDDoc("test:" + string(counter)), nil
-	// 			}}, nil
-	// 	}
-	//
-	// 	_, err := v.Read("did:trustbloc:testnet:123")
-	// 	require.Error(t, err)
-	// 	require.Contains(t, err.Error(), "mismatch")
-	// })
+	t.Run("test error from mismatch", func(t *testing.T) {
+		prevOut := log.StandardLogger().Out
+		defer func() {
+			log.SetOutput(prevOut)
+		}()
+
+		var logBuf bytes.Buffer
+		log.SetOutput(&logBuf)
+
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
+
+		v.endpointService = &mockendpoint.MockEndpointService{
+			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
+				return []*models.Endpoint{{URL: "url"}, {URL: "url.2"}}, nil
+			},
+		}
+
+		counter := 0
+
+		v.getHTTPVDRI = func(url string) (v vdri, err error) {
+			return &mockvdr.MockVDR{
+				ReadFunc: func(didID string, opts ...vdrapi.ResolveOption) (*did.DocResolution, error) {
+					counter++
+
+					return generateDIDDoc("test:" + fmt.Sprint(counter)), nil
+				},
+			}, nil
+		}
+
+		_, err = v.Read("did:trustbloc:testnet:123")
+		require.NoError(t, err)
+		require.Contains(t, logBuf.String(), "mismatch")
+	})
 
 	t.Run("test success", func(t *testing.T) {
+		prevOut := log.StandardLogger().Out
+		defer func() {
+			log.SetOutput(prevOut)
+		}()
+
+		var logBuf bytes.Buffer
+		log.SetOutput(&logBuf)
+
 		sigKey := ed25519SigningKey(t, keyJSON)
 
 		cfd := signedConsortiumFileData(t, &models.Consortium{
@@ -832,10 +877,11 @@ func TestVDRI_Read(t *testing.T) {
 			Previous: "",
 		}, sigKey)
 
-		v := New(&mockKeyRetriever{},
+		v, err := New(&mockKeyRetriever{},
 			WithDomain("domain"),
 			UseGenesisFile("testnet", "testnet", []byte(cfd.JWS.FullSerialize())),
 		)
+		require.NoError(t, err)
 
 		v.endpointService = &mockendpoint.MockEndpointService{
 			GetEndpointsFunc: func(domain string) (endpoints []*models.Endpoint, err error) {
@@ -854,6 +900,8 @@ func TestVDRI_Read(t *testing.T) {
 		doc, err := v.Read("did:trustbloc:testnet:123")
 		require.NoError(t, err)
 		require.Equal(t, "did:trustbloc:testnet:123", doc.DIDDocument.ID)
+
+		require.NotContains(t, logBuf.String(), "mismatch")
 	})
 }
 
@@ -871,31 +919,16 @@ func TestVDRI_loadGenesisFiles(t *testing.T) {
 		confFile, err := signConfig(conf, []jose.SigningKey{*sigKey})
 		require.NoError(t, err)
 
-		v := New(&mockKeyRetriever{}, UseGenesisFile("url", "domain", []byte(confFile)))
-
-		err = v.loadGenesisFiles()
+		_, err = New(&mockKeyRetriever{}, UseGenesisFile("url", "domain", []byte(confFile)))
 		require.NoError(t, err)
 	})
 
 	t.Run("fail: bad consortium data", func(t *testing.T) {
 		confFile := "this is not a consortium config jws"
 
-		v := New(&mockKeyRetriever{}, UseGenesisFile("url", "domain", []byte(confFile)))
-
-		err := v.loadGenesisFiles()
+		_, err := New(&mockKeyRetriever{}, UseGenesisFile("url", "domain", []byte(confFile)))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error loading consortium genesis config")
-	})
-
-	t.Run("fail: try to read using a vdri with a bad genesis file", func(t *testing.T) {
-		confFile := "this is not a consortium config jws"
-
-		v := New(&mockKeyRetriever{}, UseGenesisFile("url", "domain", []byte(confFile)))
-
-		doc, err := v.Read("blah blah")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error loading consortium genesis config")
-		require.Nil(t, doc)
 	})
 }
 
@@ -948,7 +981,8 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 	sigKey := ed25519SigningKey(t, keyJSON)
 
 	t.Run("success - no stakeholders to verify", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		var confFile string
 
@@ -964,7 +998,6 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 			Previous: "",
 		}
 
-		var err error
 		confFile, err = signConfig(conf, []jose.SigningKey{*sigKey})
 		require.NoError(t, err)
 
@@ -973,7 +1006,8 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 	})
 
 	t.Run("failure - consortium invalid", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		confFile := `RU^&I*&*&OH`
 
@@ -982,13 +1016,14 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 		}))
 		defer consortiumServer.Close()
 
-		_, err := v.ValidateConsortium(consortiumServer.URL)
+		_, err = v.ValidateConsortium(consortiumServer.URL)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "consortium invalid")
 	})
 
 	t.Run("failure - stakeholders don't sign consortium config", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		var consortiumFile, stakeholderFile, didConfFile string
 
@@ -1008,7 +1043,6 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 
 		consortium := dummyConsortium(consortiumServer.URL, stakeholderServer.URL)
 
-		var err error
 		consortiumFile, err = signConfig(consortium, []jose.SigningKey{*sigKey})
 		require.NoError(t, err)
 
@@ -1037,7 +1071,8 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 	})
 
 	t.Run("success - verify with one stakeholder", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		var consortiumFile, stakeholderFile, didConfFile string
 
@@ -1057,8 +1092,6 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 			}
 		}))
 		defer stakeholderServer.Close()
-
-		var err error
 
 		consortium := dummyConsortium(consortiumServer.URL, stakeholderServer.URL)
 		consortiumFile, err = signConfig(consortium, []jose.SigningKey{*sigKey})
@@ -1087,7 +1120,8 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 	})
 
 	t.Run("failure - can't resolve stakeholder DID", func(t *testing.T) {
-		v := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
 
 		var consortiumFile, stakeholderFile, didConfFile string
 
@@ -1104,8 +1138,6 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 			}
 		}))
 		defer stakeholderServer.Close()
-
-		var err error
 
 		consortium := dummyConsortium(consortiumServer.URL, stakeholderServer.URL)
 		consortiumFile, err = signConfig(consortium, []jose.SigningKey{*sigKey})
@@ -1184,7 +1216,8 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 
 		didConfFile = string(didConfBytes)
 
-		v := New(&mockKeyRetriever{}, EnableSignatureVerification(true))
+		v, err := New(&mockKeyRetriever{}, EnableSignatureVerification(true))
+		require.NoError(t, err)
 
 		v.configService = &mockconfig.MockConfigService{
 			GetConsortiumFunc: func(u string, d string) (*models.ConsortiumFileData, error) {
@@ -1274,7 +1307,8 @@ func Test_verifyStakeholder(t *testing.T) {
 				test.consortiumKey)
 			sfd := signedStakeholderFileData(t, dummyStakeholder(test.stakeholderDomain), test.stakeholderKey)
 
-			v := New(&mockKeyRetriever{})
+			v, err := New(&mockKeyRetriever{})
+			require.NoError(t, err)
 
 			v.getHTTPVDRI = httpVdriFunc(&did.DocResolution{DIDDocument: mockDoc}, nil)
 
@@ -1297,7 +1331,8 @@ func Test_verifyStakeholder(t *testing.T) {
 }
 
 func TestVDRI_Close(t *testing.T) {
-	v := New(&mockKeyRetriever{})
+	v, err := New(&mockKeyRetriever{})
+	require.NoError(t, err)
 	require.NoError(t, v.Close())
 }
 
@@ -1578,4 +1613,34 @@ func (m *mockKeyRetriever) GetSigningKey(didID string, ot OperationType) (crypto
 	}
 
 	return nil, nil
+}
+
+func generateDIDDoc(id string) *did.DocResolution {
+	t := time.Unix(0, 0)
+
+	return &did.DocResolution{DIDDocument: &did.Doc{
+		Context: []string{"https://w3id.org/did/v1"},
+		ID:      id,
+
+		Service: []did.Service{{
+			ID:              "",
+			Type:            "",
+			Priority:        0,
+			RecipientKeys:   []string{""},
+			RoutingKeys:     []string{""},
+			ServiceEndpoint: "",
+			Properties:      map[string]interface{}{},
+		}},
+		Authentication: []did.Verification{{}},
+		Created:        nil,
+		Updated:        nil,
+		Proof: []did.Proof{{
+			Type:       "",
+			Created:    &t,
+			Creator:    id,
+			ProofValue: nil,
+			Domain:     id,
+			Nonce:      nil,
+		}},
+	}}
 }
