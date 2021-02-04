@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-name: license
+name: repolint
 on:
   push:
   pull_request:
@@ -18,3 +18,13 @@ jobs:
       - name: Checks Apache license
         timeout-minutes: 10
         run: make license
+
+  repoLint:
+    name: repolint
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v1.0.0
+      - name: repolinter
+        uses: philips-labs/github-action-repolinter@v1.0.0
+        env:
+          CUSTOM_REPOLINT_FILE: .repolint.json
