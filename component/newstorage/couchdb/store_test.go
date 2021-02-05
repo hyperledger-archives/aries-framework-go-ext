@@ -316,6 +316,26 @@ func TestStore_Put(t *testing.T) {
 	})
 }
 
+func TestStore_Get(t *testing.T) {
+	t.Run("Successfully get a value "+
+		"that was stored under a key containing special characters", func(t *testing.T) {
+		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
+		require.NoError(t, err)
+		require.NotNil(t, provider)
+
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		err = store.Put("https://example.com/", []byte("value"))
+		require.NoError(t, err)
+
+		value, err := store.Get("https://example.com/")
+		require.NoError(t, err)
+		require.Equal(t, string(value), "value")
+	})
+}
+
 func TestStore_GetTags(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
