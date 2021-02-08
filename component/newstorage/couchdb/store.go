@@ -11,15 +11,17 @@ import ( //nolint:gci // False positive, seemingly caused by the CouchDB driver 
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
 	// The CouchDB driver. This import must be here for the Kivik client instantiation with a CouchDB driver to work.
 	_ "github.com/go-kivik/couchdb/v3"
 	"github.com/go-kivik/kivik/v3"
-	"github.com/hyperledger/aries-framework-go/pkg/common/log"
-	"github.com/hyperledger/aries-framework-go/pkg/newstorage"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 )
 
 const (
@@ -60,6 +62,20 @@ var errInvalidQueryExpressionFormat = errors.New("invalid expression format. " +
 
 type marshalFunc func(interface{}) ([]byte, error)
 
+type closer func(storeName string)
+
+type logger interface {
+	Warnf(msg string, args ...interface{})
+}
+
+type defaultLogger struct {
+	logger *log.Logger
+}
+
+func (d *defaultLogger) Warnf(msg string, args ...interface{}) {
+	d.logger.Printf(msg, args...)
+}
+
 type db interface {
 	Get(ctx context.Context, docID string, options ...kivik.Options) *kivik.Row
 	Put(ctx context.Context, docID string, doc interface{}, options ...kivik.Options) (rev string, err error)
@@ -79,14 +95,16 @@ type rows interface {
 	Bookmark() string
 }
 
-// Provider represents a CouchDB implementation of the newstorage.Provider interface.
+// Provider represents a CouchDB implementation of the storage.Provider interface.
 type Provider struct {
-	logger                        log.Logger
+	logger                        logger
 	hostURL                       string
 	couchDBClient                 *kivik.Client
 	dbPrefix                      string
+	openStores                    map[string]*store
 	maxDocumentConflictRetriesSet bool
 	maxDocumentConflictRetries    int
+	lock                          sync.RWMutex
 }
 
 // Option represents an option for a CouchDB Provider.
@@ -105,6 +123,14 @@ func WithMaxDocumentConflictRetries(maxRetries int) Option {
 	return func(opts *Provider) {
 		opts.maxDocumentConflictRetries = maxRetries
 		opts.maxDocumentConflictRetriesSet = true
+	}
+}
+
+// WithLogger is an option for specifying a custom logger.
+// The standard Golang logger will be used if this option is not provided.
+func WithLogger(logger logger) Option {
+	return func(opts *Provider) {
+		opts.logger = logger
 	}
 }
 
@@ -145,10 +171,20 @@ func NewProvider(hostURL string, opts ...Option) (*Provider, error) {
 		return nil, fmt.Errorf("failed to create new CouchDB client: %w", err)
 	}
 
-	p := &Provider{hostURL: hostURL, couchDBClient: client, logger: log.New("CouchDBProvider")}
+	p := &Provider{
+		hostURL:       hostURL,
+		couchDBClient: client,
+		openStores:    make(map[string]*store),
+	}
 
 	for _, opt := range opts {
 		opt(p)
+	}
+
+	if p.logger == nil {
+		p.logger = &defaultLogger{
+			log.New(os.Stdout, "CouchDB-Provider ", log.Ldate|log.Ltime|log.LUTC),
+		}
 	}
 
 	return p, nil
@@ -156,11 +192,130 @@ func NewProvider(hostURL string, opts ...Option) (*Provider, error) {
 
 // OpenStore opens a store with the given name and returns a handle.
 // If the store has never been opened before, then it is created.
-func (p *Provider) OpenStore(name string) (newstorage.Store, error) {
-	if p.dbPrefix != "" {
-		name = p.dbPrefix + "_" + name
+func (p *Provider) OpenStore(name string) (storage.Store, error) {
+	if name == "" {
+		return nil, fmt.Errorf("store name cannot be empty")
 	}
 
+	name = strings.ToLower(p.dbPrefix + name)
+
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	openStore := p.openStores[name]
+	if openStore == nil {
+		return p.createStore(name)
+	}
+
+	return openStore, nil
+}
+
+// SetStoreConfig sets the configuration on a store.
+// Indexes are created based on the tag names in config. This allows the store.Query method to operate faster.
+// Existing tag names/indexes in the store that are not in the config passed in here will be removed.
+// The store must be created prior to calling this method.
+// If duplicate tags are provided, then CouchDB will ignore them.
+func (p *Provider) SetStoreConfig(name string, config storage.StoreConfiguration) error {
+	err := validateTagNames(config)
+	if err != nil {
+		return fmt.Errorf("invalid tag names: %w", err)
+	}
+
+	name = strings.ToLower(p.dbPrefix + name)
+
+	db := p.couchDBClient.DB(context.Background(), name)
+
+	err = db.Err()
+	if err != nil {
+		return fmt.Errorf(failGetDatabaseHandle, err)
+	}
+
+	err = p.setIndexes(db, config)
+	if err != nil {
+		return fmt.Errorf("failure while setting indexes: %w", err)
+	}
+
+	return nil
+}
+
+// GetStoreConfig gets the current store configuration.
+func (p *Provider) GetStoreConfig(name string) (storage.StoreConfiguration, error) {
+	name = strings.ToLower(p.dbPrefix + name)
+
+	db := p.couchDBClient.DB(context.Background(), name)
+
+	err := db.Err()
+	if err != nil {
+		return storage.StoreConfiguration{}, fmt.Errorf(failGetDatabaseHandle, err)
+	}
+
+	indexes, err := db.GetIndexes(context.Background())
+	if err != nil {
+		if err.Error() == databaseNotFoundErrMsgFromKivik {
+			return storage.StoreConfiguration{}, fmt.Errorf(failGetExistingIndexes, storage.ErrStoreNotFound)
+		}
+
+		return storage.StoreConfiguration{}, fmt.Errorf(failGetExistingIndexes, err)
+	}
+
+	var tags []string
+
+	for _, index := range indexes {
+		if index.Name != "_all_docs" { // _all_docs is the CouchDB default index on the document ID
+			tags = append(tags, strings.TrimSuffix(index.Name, "_index"))
+		}
+	}
+
+	return storage.StoreConfiguration{TagNames: tags}, nil
+}
+
+// GetOpenStores returns all currently open stores.
+func (p *Provider) GetOpenStores() []storage.Store {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	openStores := make([]storage.Store, len(p.openStores))
+
+	var counter int
+
+	for _, store := range p.openStores {
+		openStores[counter] = store
+		counter++
+	}
+
+	return openStores
+}
+
+// Close closes the provider.
+func (p *Provider) Close() error {
+	p.lock.RLock()
+
+	openStoresSnapshot := make([]*store, len(p.openStores))
+
+	var counter int
+
+	for _, openStore := range p.openStores {
+		openStoresSnapshot[counter] = openStore
+		counter++
+	}
+	p.lock.RUnlock()
+
+	for _, openStore := range openStoresSnapshot {
+		err := openStore.Close()
+		if err != nil {
+			return fmt.Errorf(`failed to close open store with name "%s": %w`, openStore.name, err)
+		}
+	}
+
+	err := p.couchDBClient.Close(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to close database via client: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Provider) createStore(name string) (storage.Store, error) {
 	err := p.couchDBClient.CreateDB(context.Background(), name)
 	if err != nil {
 		if err.Error() != "Precondition Failed: The database could not be created, the file already exists." {
@@ -181,90 +336,21 @@ func (p *Provider) OpenStore(name string) (newstorage.Store, error) {
 		maxDocumentConflictRetries = p.maxDocumentConflictRetries
 	}
 
-	return &Store{
-		logger: p.logger, db: db, maxDocumentConflictRetries: maxDocumentConflictRetries,
-		marshal: json.Marshal,
-	}, nil
+	newStore := &store{
+		name: name, logger: p.logger, db: db, maxDocumentConflictRetries: maxDocumentConflictRetries,
+		marshal: json.Marshal, close: p.removeStore,
+	}
+
+	p.openStores[name] = newStore
+
+	return newStore, nil
 }
 
-// SetStoreConfig sets the configuration on a store.
-// Indexes are created based on the tag names in config. This allows the Store.Query method to operate faster.
-// Existing tag names/indexes in the store that are not in the config passed in here will be removed.
-// The store must be created prior to calling this method.
-// If duplicate tags are provided, then CouchDB will ignore them.
-func (p *Provider) SetStoreConfig(name string, config newstorage.StoreConfiguration) error {
-	err := validateTagNames(config)
-	if err != nil {
-		return fmt.Errorf("invalid tag names: %w", err)
-	}
-
-	if p.dbPrefix != "" {
-		name = p.dbPrefix + "_" + name
-	}
-
-	db := p.couchDBClient.DB(context.Background(), name)
-
-	err = db.Err()
-	if err != nil {
-		return fmt.Errorf(failGetDatabaseHandle, err)
-	}
-
-	err = p.setIndexes(db, config)
-	if err != nil {
-		return fmt.Errorf("failure while setting indexes: %w", err)
-	}
-
-	return nil
-}
-
-// GetStoreConfig gets the current store configuration.
-func (p *Provider) GetStoreConfig(name string) (newstorage.StoreConfiguration, error) {
-	if p.dbPrefix != "" {
-		name = p.dbPrefix + "_" + name
-	}
-
-	db := p.couchDBClient.DB(context.Background(), name)
-
-	err := db.Err()
-	if err != nil {
-		return newstorage.StoreConfiguration{}, fmt.Errorf(failGetDatabaseHandle, err)
-	}
-
-	indexes, err := db.GetIndexes(context.Background())
-	if err != nil {
-		if err.Error() == databaseNotFoundErrMsgFromKivik {
-			return newstorage.StoreConfiguration{}, fmt.Errorf(failGetExistingIndexes, newstorage.ErrStoreNotFound)
-		}
-
-		return newstorage.StoreConfiguration{}, fmt.Errorf(failGetExistingIndexes, err)
-	}
-
-	var tags []string
-
-	for _, index := range indexes {
-		if index.Name != "_all_docs" { // _all_docs is the CouchDB default index on the document ID
-			tags = append(tags, strings.TrimSuffix(index.Name, "_index"))
-		}
-	}
-
-	return newstorage.StoreConfiguration{TagNames: tags}, nil
-}
-
-// Close closes the provider.
-func (p *Provider) Close() error {
-	err := p.couchDBClient.Close(context.Background())
-	if err != nil {
-		return fmt.Errorf("failed to close database via client: %w", err)
-	}
-
-	return nil
-}
-
-func (p *Provider) setIndexes(db *kivik.DB, config newstorage.StoreConfiguration) error {
+func (p *Provider) setIndexes(db *kivik.DB, config storage.StoreConfiguration) error {
 	existingIndexes, err := db.GetIndexes(context.Background())
 	if err != nil {
 		if err.Error() == databaseNotFoundErrMsgFromKivik {
-			return fmt.Errorf(failGetExistingIndexes, newstorage.ErrStoreNotFound)
+			return fmt.Errorf(failGetExistingIndexes, storage.ErrStoreNotFound)
 		}
 
 		return fmt.Errorf(failGetExistingIndexes, err)
@@ -278,12 +364,24 @@ func (p *Provider) setIndexes(db *kivik.DB, config newstorage.StoreConfiguration
 	return nil
 }
 
-// Store represents a CouchDB-backed database.
-type Store struct {
-	logger                     log.Logger
+func (p *Provider) removeStore(name string) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	_, ok := p.openStores[name]
+	if ok {
+		delete(p.openStores, name)
+	}
+}
+
+// store represents a CouchDB-backed database.
+type store struct {
+	name                       string
+	logger                     logger
 	db                         db
 	maxDocumentConflictRetries int
 	marshal                    marshalFunc
+	close                      closer
 }
 
 // Put stores the key + value pair along with the (optional) tags.
@@ -291,7 +389,7 @@ type Store struct {
 //  are not retrievable due to a bug in the underlying Kivik library.
 // TODO (#44) Tags do not have to be defined in the store config prior to storing data that uses them.
 //  Should all store implementations require tags to be defined in store config before allowing them to be used?
-func (s *Store) Put(k string, v []byte, tags ...newstorage.Tag) error {
+func (s *store) Put(k string, v []byte, tags ...storage.Tag) error {
 	if k == "" {
 		return errors.New("key cannot be empty")
 	}
@@ -331,7 +429,7 @@ func (s *Store) Put(k string, v []byte, tags ...newstorage.Tag) error {
 }
 
 // Get fetches the value associated with the given key.
-func (s *Store) Get(k string) ([]byte, error) {
+func (s *store) Get(k string) ([]byte, error) {
 	if k == "" {
 		return nil, errors.New("key is mandatory")
 	}
@@ -343,7 +441,7 @@ func (s *Store) Get(k string) ([]byte, error) {
 	err := row.ScanDoc(&rawDoc)
 	if err != nil {
 		if err.Error() == docNotFoundErrMsgFromKivik || err.Error() == docDeletedErrMsgFromKivik {
-			return nil, fmt.Errorf(failureWhileScanningRow, newstorage.ErrDataNotFound)
+			return nil, fmt.Errorf(failureWhileScanningRow, storage.ErrDataNotFound)
 		}
 
 		return nil, fmt.Errorf(failureWhileScanningRow, err)
@@ -358,7 +456,7 @@ func (s *Store) Get(k string) ([]byte, error) {
 }
 
 // GetTags fetches all tags associated with the given key.
-func (s *Store) GetTags(k string) ([]newstorage.Tag, error) {
+func (s *store) GetTags(k string) ([]storage.Tag, error) {
 	if k == "" {
 		return nil, errors.New("key is mandatory")
 	}
@@ -370,7 +468,7 @@ func (s *Store) GetTags(k string) ([]newstorage.Tag, error) {
 	err := row.ScanDoc(&rawDoc)
 	if err != nil {
 		if err.Error() == docNotFoundErrMsgFromKivik || err.Error() == docDeletedErrMsgFromKivik {
-			return nil, newstorage.ErrDataNotFound
+			return nil, storage.ErrDataNotFound
 		}
 
 		return nil, err
@@ -386,9 +484,9 @@ func (s *Store) GetTags(k string) ([]newstorage.Tag, error) {
 
 // GetBulk fetches the values associated with the given keys.
 // If a key doesn't exist, then a nil []byte is returned for that value. It is not considered an error.
-func (s *Store) GetBulk(keys ...string) ([][]byte, error) {
-	if keys == nil {
-		return nil, errors.New("keys string slice cannot be nil")
+func (s *store) GetBulk(keys ...string) ([][]byte, error) {
+	if len(keys) == 0 {
+		return nil, errors.New("keys slice must contain at least one key")
 	}
 
 	rawDocs, err := s.getRawDocs(keys)
@@ -411,7 +509,7 @@ func (s *Store) GetBulk(keys ...string) ([][]byte, error) {
 // For improved performance, ensure that the tag name you are querying is included in the store config, as this
 // will ensure that it's indexed in CouchDB.
 // TODO (#44) Should we make the store config mandatory?
-func (s *Store) Query(expression string, options ...newstorage.QueryOption) (newstorage.Iterator, error) {
+func (s *store) Query(expression string, options ...storage.QueryOption) (storage.Iterator, error) {
 	if expression == "" {
 		return &couchDBResultsIterator{}, errInvalidQueryExpressionFormat
 	}
@@ -467,7 +565,7 @@ func (s *Store) Query(expression string, options ...newstorage.QueryOption) (new
 }
 
 // Delete deletes the key + value pair (and all tags) associated with k.
-func (s *Store) Delete(k string) error {
+func (s *store) Delete(k string) error {
 	if k == "" {
 		return errors.New("key is mandatory")
 	}
@@ -492,7 +590,7 @@ func (s *Store) Delete(k string) error {
 }
 
 // Batch performs multiple Put and/or Delete operations in order.
-func (s *Store) Batch(operations []newstorage.Operation) error {
+func (s *store) Batch(operations []storage.Operation) error {
 	// If CouchDB receives the same key multiple times in one batch call, it will just keep the first operation and
 	// disregard the rest. We want the opposite behaviour - we need it to only keep the last operation and disregard
 	// the earlier ones as if they've been overwritten or deleted.
@@ -534,7 +632,7 @@ func (s *Store) Batch(operations []newstorage.Operation) error {
 		rawDocsToPut[i] = rawDocToPut
 	}
 
-	// TODO (#50): Examine BulkResults value returned from s.db.BulkDocs and return a newstorage.MultiError.
+	// TODO (#50): Examine BulkResults value returned from s.db.BulkDocs and return a storage.MultiError.
 	_, err = s.db.BulkDocs(context.Background(), rawDocsToPut)
 	if err != nil {
 		return fmt.Errorf("failure while doing CouchDB bulk docs call: %w", err)
@@ -544,7 +642,9 @@ func (s *Store) Batch(operations []newstorage.Operation) error {
 }
 
 // Close closes this store.
-func (s *Store) Close() error {
+func (s *store) Close() error {
+	s.close(s.name)
+
 	err := s.db.Close(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to close database client: %w", err)
@@ -553,7 +653,12 @@ func (s *Store) Close() error {
 	return nil
 }
 
-func (s *Store) put(k string, value []byte) error {
+// This store type doesn't queue values, so there's never anything to flush.
+func (s *store) Flush() error {
+	return nil
+}
+
+func (s *store) put(k string, value []byte) error {
 	err := backoff.Retry(func() error {
 		revID, err := s.getRevID(k)
 		if err != nil {
@@ -592,7 +697,7 @@ func (s *Store) put(k string, value []byte) error {
 }
 
 // If the document can't be found, then a blank ID is returned.
-func (s *Store) getRevID(k string) (string, error) {
+func (s *store) getRevID(k string) (string, error) {
 	rawDoc := make(map[string]interface{})
 
 	row := s.db.Get(context.Background(), k)
@@ -616,7 +721,7 @@ func (s *Store) getRevID(k string) (string, error) {
 
 // getRawDocs returns the raw documents from CouchDB using a bulk REST call.
 // If a document is not found, then the raw document will be nil. It is not considered an error.
-func (s *Store) getRawDocs(keys []string) ([]map[string]interface{}, error) {
+func (s *store) getRawDocs(keys []string) ([]map[string]interface{}, error) {
 	bulkGetReferences := make([]kivik.BulkGetReference, len(keys))
 	for i, key := range keys {
 		bulkGetReferences[i].ID = key
@@ -640,7 +745,7 @@ func (s *Store) getRawDocs(keys []string) ([]map[string]interface{}, error) {
 }
 
 type couchDBResultsIterator struct {
-	store                                    *Store
+	store                                    *store
 	resultRows                               rows
 	pageSize                                 int
 	queryWithPageSizeAndBookmarkPlaceholders string
@@ -692,9 +797,9 @@ func (i *couchDBResultsIterator) Next() (bool, error) {
 	return nextCallResult, nil
 }
 
-// Release releases associated resources. Release should always result in success
+// Close releases associated resources. Release should always result in success
 // and can be called multiple times without causing an error.
-func (i *couchDBResultsIterator) Release() error {
+func (i *couchDBResultsIterator) Close() error {
 	err := i.resultRows.Close()
 	if err != nil {
 		return fmt.Errorf("failed to close result rows: %w", err)
@@ -724,7 +829,7 @@ func (i *couchDBResultsIterator) Value() ([]byte, error) {
 	return []byte(value), nil
 }
 
-func (i *couchDBResultsIterator) Tags() ([]newstorage.Tag, error) {
+func (i *couchDBResultsIterator) Tags() ([]storage.Tag, error) {
 	rawDoc := make(map[string]interface{})
 
 	err := i.resultRows.ScanDoc(&rawDoc)
@@ -759,7 +864,7 @@ func (i *couchDBResultsIterator) fetchAnotherPage() (bool, error) {
 	return followupNextCallResult, nil
 }
 
-func validateTagNames(config newstorage.StoreConfiguration) error {
+func validateTagNames(config storage.StoreConfiguration) error {
 	for _, tagName := range config.TagNames {
 		if tagName == payloadFieldKey {
 			return errors.New(`tag name cannot be "payload" as it is a reserved keyword`)
@@ -769,7 +874,7 @@ func validateTagNames(config newstorage.StoreConfiguration) error {
 	return nil
 }
 
-func updateIndexes(db *kivik.DB, config newstorage.StoreConfiguration, existingIndexes []kivik.Index) error {
+func updateIndexes(db *kivik.DB, config storage.StoreConfiguration, existingIndexes []kivik.Index) error {
 	tagNameIndexesAlreadyConfigured := make(map[string]struct{})
 
 	for _, existingIndex := range existingIndexes {
@@ -827,8 +932,8 @@ func createIndexes(db *kivik.DB, tagNamesNeedIndexCreation []string) error {
 	return nil
 }
 
-func getQueryOptions(options []newstorage.QueryOption) newstorage.QueryOptions {
-	var queryOptions newstorage.QueryOptions
+func getQueryOptions(options []storage.QueryOption) storage.QueryOptions {
+	var queryOptions storage.QueryOptions
 	queryOptions.PageSize = 25
 
 	for _, option := range options {
@@ -935,8 +1040,8 @@ func getRawDocsFromRows(rows rows) ([]map[string]interface{}, error) {
 	return rawDocs, nil
 }
 
-func getTagsFromRawDoc(rawDoc map[string]interface{}) ([]newstorage.Tag, error) {
-	var tags []newstorage.Tag
+func getTagsFromRawDoc(rawDoc map[string]interface{}) ([]storage.Tag, error) {
+	var tags []storage.Tag
 
 	for key, value := range rawDoc {
 		// Any key that isn't one of the reserved keywords below must be a tag.
@@ -946,7 +1051,7 @@ func getTagsFromRawDoc(rawDoc map[string]interface{}) ([]newstorage.Tag, error) 
 				return nil, errors.New("failed to assert tag value as string")
 			}
 
-			tags = append(tags, newstorage.Tag{
+			tags = append(tags, storage.Tag{
 				Name:  key,
 				Value: valueString,
 			})
@@ -964,7 +1069,7 @@ func logAnyWarning(i *couchDBResultsIterator) {
 	}
 }
 
-func removeDuplicatesKeepingOnlyLast(operations []newstorage.Operation) []newstorage.Operation {
+func removeDuplicatesKeepingOnlyLast(operations []storage.Operation) []storage.Operation {
 	indexOfOperationToCheck := len(operations) - 1
 
 	for indexOfOperationToCheck > 0 {
@@ -992,7 +1097,8 @@ func removeDuplicatesKeepingOnlyLast(operations []newstorage.Operation) []newsto
 	return operations
 }
 
-func addTagsToRawDoc(rawDoc map[string]interface{}, tags []newstorage.Tag) error {
+// TODO (#65) Store tags as a nested object so we don't need to do this "payload" name check.
+func addTagsToRawDoc(rawDoc map[string]interface{}, tags []storage.Tag) error {
 	for _, tag := range tags {
 		if tag.Name == payloadFieldKey {
 			return errors.New(`tag name cannot be "payload" as it is a reserved keyword`)

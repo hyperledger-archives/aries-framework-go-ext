@@ -87,13 +87,13 @@ func (m *mockRows) Bookmark() string {
 
 func TestStore_Put_Internal(t *testing.T) {
 	t.Run("Fail to marshal values maps", func(t *testing.T) {
-		store := &Store{marshal: failingMarshal}
+		store := &store{marshal: failingMarshal}
 
 		err := store.Put("key", []byte("value"))
 		require.EqualError(t, err, "failed to marshal values map: failingMarshal always fails")
 	})
 	t.Run("Document update conflict: exceed maximum number of retries", func(t *testing.T) {
-		store := &Store{
+		store := &store{
 			db: &mockDB{
 				errPut:         errors.New(documentUpdateConflictErrMsgFromKivik),
 				getRowBodyData: `{"_rev":"SomeRevID"}`,
@@ -106,7 +106,7 @@ func TestStore_Put_Internal(t *testing.T) {
 			"retry attempts (3) exceeded: failed to put value via client: Conflict: Document update conflict.")
 	})
 	t.Run("Other error while putting value via client", func(t *testing.T) {
-		store := &Store{
+		store := &store{
 			db: &mockDB{
 				errPut:         errors.New("other error"),
 				getRowBodyData: `{"_rev":"SomeRevID"}`,
@@ -119,7 +119,7 @@ func TestStore_Put_Internal(t *testing.T) {
 			"client: other error")
 	})
 	t.Run("Fail to get revision ID", func(t *testing.T) {
-		store := &Store{
+		store := &store{
 			db: &mockDB{
 				errGetRow: errors.New("get error"),
 			},
@@ -131,7 +131,7 @@ func TestStore_Put_Internal(t *testing.T) {
 			"failed to get revision ID: get error")
 	})
 	t.Run("Revision ID missing from document", func(t *testing.T) {
-		store := &Store{
+		store := &store{
 			db: &mockDB{
 				getRowBodyData: `{}`,
 			},
@@ -144,7 +144,7 @@ func TestStore_Put_Internal(t *testing.T) {
 			`failed to get revision ID from the raw document: "_rev" is missing from the raw document`)
 	})
 	t.Run("Unable to assert revision ID as a string", func(t *testing.T) {
-		store := &Store{
+		store := &store{
 			db: &mockDB{
 				getRowBodyData: `{"_rev":1}`,
 			},
@@ -160,14 +160,14 @@ func TestStore_Put_Internal(t *testing.T) {
 
 func TestStore_Get_Internal(t *testing.T) {
 	t.Run("Other failure while scanning row", func(t *testing.T) {
-		store := &Store{db: &mockDB{errGetRow: errors.New("get error")}}
+		store := &store{db: &mockDB{errGetRow: errors.New("get error")}}
 
 		value, err := store.Get("key")
 		require.EqualError(t, err, "failure while scanning row: get error")
 		require.Nil(t, value)
 	})
 	t.Run("Payload field key missing from raw document", func(t *testing.T) {
-		store := &Store{db: &mockDB{getRowBodyData: `{}`}}
+		store := &store{db: &mockDB{getRowBodyData: `{}`}}
 
 		value, err := store.Get("key")
 		require.EqualError(t, err, `failed to get payload from raw document: `+
@@ -175,7 +175,7 @@ func TestStore_Get_Internal(t *testing.T) {
 		require.Nil(t, value)
 	})
 	t.Run("Failed to assert stored value as a string", func(t *testing.T) {
-		store := &Store{db: &mockDB{getRowBodyData: `{"payload":1}`}}
+		store := &store{db: &mockDB{getRowBodyData: `{"payload":1}`}}
 
 		value, err := store.Get("key")
 		require.EqualError(t, err, "failed to get payload from raw document: "+
@@ -186,7 +186,7 @@ func TestStore_Get_Internal(t *testing.T) {
 
 func TestStore_GetBulk_Internal(t *testing.T) {
 	t.Run("Failure while getting raw CouchDB documents", func(t *testing.T) {
-		store := &Store{db: &mockDB{errBulkGet: errors.New("mockDB BulkGet always fails")}}
+		store := &store{db: &mockDB{errBulkGet: errors.New("mockDB BulkGet always fails")}}
 
 		values, err := store.GetBulk("key")
 		require.EqualError(t, err, "failure while getting raw CouchDB documents: "+
@@ -197,7 +197,7 @@ func TestStore_GetBulk_Internal(t *testing.T) {
 
 func TestStore_Query_Internal(t *testing.T) {
 	t.Run("Failure sending tag name only query to find endpoint", func(t *testing.T) {
-		store := &Store{db: &mockDB{}}
+		store := &store{db: &mockDB{}}
 
 		iterator, err := store.Query("tagName")
 		require.EqualError(t, err,
@@ -205,7 +205,7 @@ func TestStore_Query_Internal(t *testing.T) {
 		require.Empty(t, iterator)
 	})
 	t.Run("Failure sending tag name and value query to find endpoint", func(t *testing.T) {
-		store := &Store{db: &mockDB{}}
+		store := &store{db: &mockDB{}}
 
 		iterator, err := store.Query("tagName:tagValue")
 		require.EqualError(t, err,
@@ -216,7 +216,7 @@ func TestStore_Query_Internal(t *testing.T) {
 
 func TestStore_Close_Internal(t *testing.T) {
 	t.Run("Failure", func(t *testing.T) {
-		store := &Store{db: &mockDB{}}
+		store := &store{db: &mockDB{}, close: func(string) {}}
 
 		err := store.Close()
 		require.EqualError(t, err, "failed to close database client: mockDB Close always fails")
@@ -225,13 +225,13 @@ func TestStore_Close_Internal(t *testing.T) {
 
 func TestStore_Delete_Internal(t *testing.T) {
 	t.Run("Failed to get revision ID", func(t *testing.T) {
-		store := &Store{db: &mockDB{errGetRow: errors.New("get error")}}
+		store := &store{db: &mockDB{errGetRow: errors.New("get error")}}
 
 		err := store.Delete("key")
 		require.EqualError(t, err, "failed to get revision ID: get error")
 	})
 	t.Run("Failed to delete via client", func(t *testing.T) {
-		store := &Store{db: &mockDB{getRowBodyData: `{"_rev":"SomeRevID"}`}}
+		store := &store{db: &mockDB{getRowBodyData: `{"_rev":"SomeRevID"}`}}
 
 		err := store.Delete("key")
 		require.EqualError(t, err, "failed to delete document via client: mockDB Delete always fails")
@@ -288,7 +288,7 @@ func TestCouchDBResultsIterator_Next_Internal(t *testing.T) {
 	})
 	t.Run("Failure while fetching another page", func(t *testing.T) {
 		iterator := &couchDBResultsIterator{
-			store:                                    &Store{db: &mockDB{}},
+			store:                                    &store{db: &mockDB{}},
 			resultRows:                               &mockRows{},
 			queryWithPageSizeAndBookmarkPlaceholders: "%d,%s",
 		}
@@ -306,7 +306,7 @@ func TestCouchDBResultsIterator_Release_Internal(t *testing.T) {
 			resultRows: &mockRows{errClose: errors.New("close error")},
 		}
 
-		err := iterator.Release()
+		err := iterator.Close()
 		require.EqualError(t, err, "failed to close result rows: close error")
 	})
 }
