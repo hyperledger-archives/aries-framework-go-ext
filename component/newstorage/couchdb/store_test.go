@@ -7,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package couchdb_test
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -17,13 +16,13 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
-	"github.com/hyperledger/aries-framework-go/pkg/newstorage"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
+	commontest "github.com/hyperledger/aries-framework-go/test/component/storage"
 	dctest "github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
 
 	. "github.com/hyperledger/aries-framework-go-ext/component/newstorage/couchdb"
-	common "github.com/hyperledger/aries-framework-go-ext/test/component/newstorage"
 )
 
 const (
@@ -32,6 +31,12 @@ const (
 	dockerCouchdbTag    = "3.1.0"
 	dockerCouchdbVolume = "%s/testdata/single-node.ini:/opt/couchdb/etc/local.d/single-node.ini"
 )
+
+type mockLogger struct{}
+
+func (*mockLogger) Warnf(string, ...interface{}) {
+	log.Printf("mock logger output")
+}
 
 func TestMain(m *testing.M) {
 	code := 1
@@ -85,6 +90,72 @@ func checkCouchDB() error {
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), retries))
 }
 
+func TestCommon(t *testing.T) {
+	t.Run("Without prefix option", func(t *testing.T) {
+		t.Run("Without max document conflict retries option", func(t *testing.T) {
+			t.Run("Without custom logger option", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL)
+				require.NoError(t, err)
+
+				commontest.TestAll(t, prov)
+			})
+			t.Run("With custom logger option", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithLogger(&mockLogger{}))
+				require.NoError(t, err)
+
+				commontest.TestAll(t, prov)
+			})
+		})
+		t.Run("With Max Document Conflict Retries option set to 2", func(t *testing.T) {
+			t.Run("Without custom logger", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithMaxDocumentConflictRetries(2))
+				require.NoError(t, err)
+
+				commontest.TestAll(t, prov)
+			})
+			t.Run("With custom logger", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithMaxDocumentConflictRetries(2),
+					WithLogger(&mockLogger{}))
+				require.NoError(t, err)
+
+				commontest.TestAll(t, prov)
+			})
+		})
+	})
+	t.Run("With prefix option", func(t *testing.T) {
+		t.Run("Without max document conflict retries option", func(t *testing.T) {
+			t.Run("Without custom logger option", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithDBPrefix("test-prefix"))
+				require.NoError(t, err)
+
+				commontest.TestAll(t, prov)
+			})
+			t.Run("With custom logger", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithDBPrefix("test-prefix"), WithLogger(&mockLogger{}))
+				require.NoError(t, err)
+
+				commontest.TestAll(t, prov)
+			})
+		})
+		t.Run("With max document conflict retries option set to 2", func(t *testing.T) {
+			t.Run("Without custom logger", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithDBPrefix("test-prefix"),
+					WithMaxDocumentConflictRetries(2))
+				require.NoError(t, err)
+
+				commontest.TestAll(t, prov)
+			})
+			t.Run("With custom logger", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithDBPrefix("test-prefix"),
+					WithMaxDocumentConflictRetries(2), WithLogger(&mockLogger{}))
+				require.NoError(t, err)
+
+				commontest.TestAll(t, prov)
+			})
+		})
+	})
+}
+
 func TestNewProvider(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
@@ -99,144 +170,20 @@ func TestNewProvider(t *testing.T) {
 }
 
 func TestProvider_OpenStore(t *testing.T) {
-	t.Run("Success", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"), WithMaxDocumentConflictRetries(0))
+	t.Run("Failure: store name cannot start with a number", func(t *testing.T) {
+		provider, err := NewProvider(couchDBURL)
 		require.NoError(t, err)
 		require.NotNil(t, provider)
 
-		store, err := provider.OpenStore(randomStoreName())
-		require.NoError(t, err)
-		require.NotNil(t, store)
-	})
-	t.Run("Failure: store name cannot contain capital letters", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		store, err := provider.OpenStore("StoreNameWithCapitalLetters")
+		store, err := provider.OpenStore("3StoreNameStartingWithANumber")
 		require.EqualError(t, err, "failed to create database in CouchDB: Bad Request: Name: "+
-			"'prefix_StoreNameWithCapitalLetters'. Only lowercase characters (a-z), digits (0-9), "+
+			"'3storenamestartingwithanumber'. Only lowercase characters (a-z), digits (0-9), "+
 			"and any of the characters _, $, (, ), +, -, and / are allowed. Must begin with a letter.")
 		require.Nil(t, store)
 	})
 }
 
 func TestProvider_SetStoreConfig(t *testing.T) {
-	t.Run("Success: all new tags", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		storeName := randomStoreName()
-
-		store, err := provider.OpenStore(storeName)
-		require.NoError(t, err)
-		require.NotNil(t, store)
-
-		err = provider.SetStoreConfig(storeName,
-			newstorage.StoreConfiguration{TagNames: []string{"tagName1", "tagName2"}})
-		require.NoError(t, err)
-
-		// Verify that the config is set
-		config, err := provider.GetStoreConfig(storeName)
-		require.NoError(t, err)
-		require.Equal(t, "tagName1", config.TagNames[0])
-		require.Equal(t, "tagName2", config.TagNames[1])
-	})
-	t.Run("Success: merge a new tag in with existing tags", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		storeName := randomStoreName()
-
-		store, err := provider.OpenStore(storeName)
-		require.NoError(t, err)
-		require.NotNil(t, store)
-
-		// Set initial tags.
-		err = provider.SetStoreConfig(storeName,
-			newstorage.StoreConfiguration{TagNames: []string{"tagName1", "tagName2"}})
-		require.NoError(t, err)
-
-		// Now we want another tag to be indexed, so we set the store config again, but include the new tag as well
-		// as the old ones.
-		err = provider.SetStoreConfig(storeName,
-			newstorage.StoreConfiguration{TagNames: []string{"tagName1", "tagName2", "tagName3"}})
-		require.NoError(t, err)
-
-		// Verify that the new config is set.
-		config, err := provider.GetStoreConfig(storeName)
-		require.NoError(t, err)
-		require.Equal(t, "tagName1", config.TagNames[0])
-		require.Equal(t, "tagName2", config.TagNames[1])
-		require.Equal(t, "tagName3", config.TagNames[2])
-	})
-	t.Run("Success: delete all existing tags", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		storeName := randomStoreName()
-
-		store, err := provider.OpenStore(storeName)
-		require.NoError(t, err)
-		require.NotNil(t, store)
-
-		// Set initial tags.
-		err = provider.SetStoreConfig(storeName,
-			newstorage.StoreConfiguration{TagNames: []string{"tagName1", "tagName2"}})
-		require.NoError(t, err)
-
-		// Delete all existing indices by passing in an empty newstorage.StoreConfiguration.
-		err = provider.SetStoreConfig(storeName, newstorage.StoreConfiguration{})
-		require.NoError(t, err)
-
-		// Verify that the new config is set, resulting in no indexes existing anymore.
-		config, err := provider.GetStoreConfig(storeName)
-		require.NoError(t, err)
-		require.Empty(t, config)
-	})
-	t.Run("Success: merge a new tag in with existing tags while deleting some too", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		storeName := randomStoreName()
-
-		store, err := provider.OpenStore(storeName)
-		require.NoError(t, err)
-		require.NotNil(t, store)
-
-		// Set initial tags.
-		err = provider.SetStoreConfig(storeName,
-			newstorage.StoreConfiguration{TagNames: []string{"tagName1", "tagName2"}})
-		require.NoError(t, err)
-
-		// Now we want tagName1 to be kept, tagName2 to be removed, and tagName3 to be indexed.
-		err = provider.SetStoreConfig(storeName,
-			newstorage.StoreConfiguration{TagNames: []string{"tagName1", "tagName3"}})
-		require.NoError(t, err)
-
-		// Verify that the new config is set.
-		config, err := provider.GetStoreConfig(storeName)
-		require.NoError(t, err)
-		require.Equal(t, "tagName1", config.TagNames[0])
-		require.Equal(t, "tagName3", config.TagNames[1])
-	})
-	t.Run("Failure: database does not exist", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		storeName := randomStoreName()
-
-		err = provider.SetStoreConfig(storeName,
-			newstorage.StoreConfiguration{TagNames: []string{"tagName1", "tagName2"}})
-		require.EqualError(t, err,
-			"failure while setting indexes: failed to get existing indexes: "+
-				newstorage.ErrStoreNotFound.Error())
-	})
 	t.Run("Failure: invalid tag name", func(t *testing.T) {
 		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
 		require.NoError(t, err)
@@ -245,55 +192,9 @@ func TestProvider_SetStoreConfig(t *testing.T) {
 		storeName := randomStoreName()
 
 		err = provider.SetStoreConfig(storeName,
-			newstorage.StoreConfiguration{TagNames: []string{"payload"}})
+			storage.StoreConfiguration{TagNames: []string{"payload"}})
 		require.EqualError(t, err,
 			`invalid tag names: tag name cannot be "payload" as it is a reserved keyword`)
-	})
-}
-
-func TestProvider_GetStoreConfig(t *testing.T) {
-	t.Run("Success", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		storeName := randomStoreName()
-
-		store, err := provider.OpenStore(storeName)
-		require.NoError(t, err)
-		require.NotNil(t, store)
-
-		err = provider.SetStoreConfig(storeName,
-			newstorage.StoreConfiguration{TagNames: []string{"tagName1", "tagName2"}})
-		require.NoError(t, err)
-
-		config, err := provider.GetStoreConfig(storeName)
-		require.NoError(t, err)
-		require.Len(t, config.TagNames, 2)
-		require.Equal(t, "tagName1", config.TagNames[0])
-		require.Equal(t, "tagName2", config.TagNames[1])
-	})
-	t.Run("Failure: database does not exist", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		storeName := randomStoreName()
-
-		config, err := provider.GetStoreConfig(storeName)
-		require.EqualError(t, err, "failed to get existing indexes: "+newstorage.ErrStoreNotFound.Error())
-		require.Empty(t, config)
-	})
-}
-
-func TestProvider_Close(t *testing.T) {
-	t.Run("Success", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		err = provider.Close()
-		require.NoError(t, err)
 	})
 }
 
@@ -308,7 +209,7 @@ func TestStore_Put(t *testing.T) {
 		require.NotNil(t, store)
 
 		err = store.Put("key", []byte("value"),
-			[]newstorage.Tag{
+			[]storage.Tag{
 				{Name: "payload"},
 			}...)
 		require.EqualError(t, err, `failed to add tags to the raw document: `+
@@ -333,111 +234,6 @@ func TestStore_Get(t *testing.T) {
 		value, err := store.Get("https://example.com/")
 		require.NoError(t, err)
 		require.Equal(t, string(value), "value")
-	})
-}
-
-func TestStore_GetTags(t *testing.T) {
-	t.Run("Success", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		store, err := provider.OpenStore(randomStoreName())
-		require.NoError(t, err)
-		require.NotNil(t, store)
-
-		err = store.Put("key", []byte("value"),
-			[]newstorage.Tag{
-				{Name: "tagName1", Value: "tagValue1"},
-				{Name: "tagName2", Value: "tagValue2"},
-			}...)
-		require.NoError(t, err)
-
-		tags, err := store.GetTags("key")
-		require.NoError(t, err)
-
-		// CouchDB can return the tags in either order, so we need to check for either order
-		var gotExpectedTags bool
-		if tags[0].Name == "tagName1" && tags[0].Value == "tagValue1" &&
-			tags[1].Name == "tagName2" && tags[1].Value == "tagValue2" {
-			gotExpectedTags = true
-		} else if tags[0].Name == "tagName2" && tags[0].Value == "tagValue2" &&
-			tags[1].Name == "tagName1" && tags[1].Value == "tagValue1" {
-			gotExpectedTags = true
-		}
-		require.Truef(t, gotExpectedTags, "got unexpected tag contents")
-	})
-	t.Run("Failure: blank key", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		store, err := provider.OpenStore(randomStoreName())
-		require.NoError(t, err)
-		require.NotNil(t, store)
-
-		tags, err := store.GetTags("")
-		require.EqualError(t, err, "key is mandatory")
-		require.Nil(t, tags)
-	})
-	t.Run("Failure: data not found", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		store, err := provider.OpenStore(randomStoreName())
-		require.NoError(t, err)
-		require.NotNil(t, store)
-
-		tags, err := store.GetTags("key")
-		require.True(t, errors.Is(err, newstorage.ErrDataNotFound), "got unexpected error or no error")
-		require.Nil(t, tags)
-	})
-}
-
-func TestStore_GetBulk(t *testing.T) {
-	t.Run("Failure: keys string slice cannot be nil", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		store, err := provider.OpenStore(randomStoreName())
-		require.NoError(t, err)
-		require.NotNil(t, store)
-
-		values, err := store.GetBulk(nil...)
-		require.EqualError(t, err, "keys string slice cannot be nil")
-		require.Nil(t, values)
-	})
-}
-
-func TestStore_Close(t *testing.T) {
-	t.Run("Success", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		store, err := provider.OpenStore(randomStoreName())
-		require.NoError(t, err)
-		require.NotNil(t, store)
-
-		err = store.Close()
-		require.NoError(t, err)
-	})
-}
-
-func TestCouchDBStore_Common(t *testing.T) {
-	t.Run("Without prefix", func(t *testing.T) {
-		prov, err := NewProvider(couchDBURL)
-		require.NoError(t, err)
-
-		common.TestAll(t, prov)
-	})
-	t.Run("With prefix", func(t *testing.T) {
-		prov, err := NewProvider(couchDBURL, WithDBPrefix("test-prefix"))
-		require.NoError(t, err)
-
-		common.TestAll(t, prov)
 	})
 }
 
