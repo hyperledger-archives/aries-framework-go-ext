@@ -21,7 +21,7 @@ import (
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
 
-	. "github.com/hyperledger/aries-framework-go-ext/component/newstorage/mysql"
+	. "github.com/hyperledger/aries-framework-go-ext/component/storage/mysql"
 )
 
 type mysqlLogger struct{}
