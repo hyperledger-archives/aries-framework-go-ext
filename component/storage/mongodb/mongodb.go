@@ -1,23 +1,21 @@
 /*
-Copyright Scoir Inc Technologies Inc. All Rights Reserved.
+Copyright Scoir Inc Technologies Inc, SecureKey Technologies Inc. All Rights Reserved.
 
 SPDX-License-Identifier: Apache-2.0
 */
 
 // Package mongodb implements a storage interface for Aries (aries-framework-go).
-//
+// TODO #69 - This implementation needs to be updated to support the new functionality.
+//  Until that happens, this storage provider will not work correctly in aries-framework-go.
 package mongodb
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"sync"
 
-	"github.com/hyperledger/aries-framework-go/pkg/storage"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/pkg/errors"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -94,52 +92,24 @@ func (r *Provider) OpenStore(name string) (storage.Store, error) {
 	return store, nil
 }
 
-// Close closes all stores created under this store provider.
-func (r *Provider) Close() error {
-	r.Lock()
-	defer r.Unlock()
-
-	if len(r.dbs) == 0 {
-		return nil
-	}
-
-	i := 0
-
-	names := make([]string, len(r.dbs))
-	for name := range r.dbs {
-		names[i] = name
-		i++
-	}
-
-	for _, name := range names {
-		err := r.CloseStore(name)
-		if err != nil {
-			return errors.Wrap(err, "unable to close provder, error in store")
-		}
-	}
-
-	r.dbs = make(map[string]*mongodbStore)
-
-	return nil
+// SetStoreConfig is not implemented.
+func (r *Provider) SetStoreConfig(string, storage.StoreConfiguration) error {
+	return errors.New("not implemented")
 }
 
-// CloseStore closes level name store of given name.
-func (r *Provider) CloseStore(name string) error {
-	if r.dbPrefix != "" {
-		name = r.dbPrefix + "_" + name
-	}
+// GetStoreConfig is not implemented.
+func (r *Provider) GetStoreConfig(string) (storage.StoreConfiguration, error) {
+	return storage.StoreConfiguration{}, errors.New("not implemented")
+}
 
-	store, ok := r.dbs[name]
-	if ok {
-		err := store.client.Disconnect(context.Background())
-		if err != nil {
-			return errors.Wrap(err, "unable to disconnect from mongo")
-		}
+// GetOpenStores is not implemented and will always panic when called.
+func (r *Provider) GetOpenStores() []storage.Store {
+	panic("not implemented")
+}
 
-		delete(r.dbs, name)
-	}
-
-	return nil
+// Close closes all stores created under this store provider.
+func (r *Provider) Close() error {
+	return errors.New("not implemented")
 }
 
 // Stores returns the number of stores.
@@ -155,7 +125,11 @@ type mongodbStore struct {
 }
 
 // Put stores the key and the record.
-func (r *mongodbStore) Put(k string, v []byte) error {
+func (r *mongodbStore) Put(k string, v []byte, tags ...storage.Tag) error {
+	if len(tags) > 0 {
+		return errors.New("tag storage not implemented")
+	}
+
 	if k == "" || v == nil {
 		return errors.New("key and value are mandatory")
 	}
@@ -190,31 +164,16 @@ func (r *mongodbStore) Get(k string) ([]byte, error) {
 	return data.Value, nil
 }
 
-// Iterator returns iterator for the latest snapshot of the underlying db.
-func (r *mongodbStore) Iterator(start, end string) storage.StoreIterator {
-	q := bson.M{}
+func (r *mongodbStore) GetTags(string) ([]storage.Tag, error) {
+	return nil, errors.New("not implemented")
+}
 
-	if strings.Contains(end, storage.EndKeySuffix) {
-		newEnd := strings.Replace(end, storage.EndKeySuffix, "", 1)
+func (r *mongodbStore) GetBulk(...string) ([][]byte, error) {
+	return nil, errors.New("not implemented")
+}
 
-		if start == newEnd {
-			q = bson.M{"_id": bson.M{"$regex": primitive.Regex{
-				Pattern: fmt.Sprintf("^%s", start),
-				Options: "",
-			}}}
-		}
-	} else {
-		q = bson.M{"_id": bson.M{"$gte": start, "$lt": end}}
-	}
-
-	opts := options.Find().SetSort(bson.M{"_id": 1})
-
-	cur, err := r.coll.Find(context.Background(), q, opts)
-	if err != nil {
-		return nil
-	}
-
-	return &mongodbIterator{cursor: cur}
+func (r *mongodbStore) Query(string, ...storage.QueryOption) (storage.Iterator, error) {
+	return nil, errors.New("not implemented")
 }
 
 // Delete will delete record with k key.
@@ -228,52 +187,14 @@ func (r *mongodbStore) Delete(k string) error {
 	return err
 }
 
-type mongodbIterator struct {
-	cursor *mongo.Cursor
-	err    error
+func (r *mongodbStore) Batch([]storage.Operation) error {
+	return errors.New("not implemented")
 }
 
-func (r *mongodbIterator) Next() bool {
-	return r.cursor.Next(context.Background())
+func (r *mongodbStore) Flush() error {
+	return errors.New("not implemented")
 }
 
-func (r *mongodbIterator) Release() {
-	r.cursor.Current = nil
-
-	err := r.cursor.Close(context.Background())
-	if err != nil {
-		return
-	}
-
-	r.err = errors.New("iterator is closed")
-}
-
-func (r *mongodbIterator) Error() error {
-	if r.cursor.Err() != nil {
-		return r.cursor.Err()
-	}
-
-	return r.err
-}
-
-func (r *mongodbIterator) Key() []byte {
-	d := &data{}
-
-	err := r.cursor.Decode(d)
-	if err != nil {
-		return nil
-	}
-
-	return []byte(d.Key)
-}
-
-func (r *mongodbIterator) Value() []byte {
-	d := &data{}
-
-	err := r.cursor.Decode(d)
-	if err != nil {
-		return nil
-	}
-
-	return d.Value
+func (r *mongodbStore) Close() error {
+	return errors.New("not implemented")
 }

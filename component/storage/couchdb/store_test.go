@@ -8,6 +8,7 @@ package couchdb_test
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,20 +16,27 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
+	commontest "github.com/hyperledger/aries-framework-go/test/component/storage"
 	dctest "github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
 
-	. "github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb"
-	common "github.com/hyperledger/aries-framework-go-ext/test/component/storage"
+	. "github.com/hyperledger/aries-framework-go-ext/component/newstorage/couchdb"
 )
 
 const (
-	couchDBURL          = "admin:password@localhost:5982"
+	couchDBURL          = "admin:password@localhost:5984"
 	dockerCouchdbImage  = "couchdb"
 	dockerCouchdbTag    = "3.1.0"
 	dockerCouchdbVolume = "%s/testdata/single-node.ini:/opt/couchdb/etc/local.d/single-node.ini"
 )
+
+type mockLogger struct{}
+
+func (*mockLogger) Warnf(string, ...interface{}) {
+	log.Printf("mock logger output")
+}
 
 func TestMain(m *testing.M) {
 	code := 1
@@ -51,10 +59,13 @@ func TestMain(m *testing.M) {
 		Env:        []string{"COUCHDB_USER=admin", "COUCHDB_PASSWORD=password"},
 		Mounts:     []string{fmt.Sprintf(dockerCouchdbVolume, path)},
 		PortBindings: map[dc.Port][]dc.PortBinding{
-			"5984/tcp": {{HostIP: "", HostPort: "5982"}},
+			"5984/tcp": {{HostIP: "", HostPort: "5984"}},
 		},
 	})
 	if err != nil {
+		log.Println(`Failed to start CouchDB Docker image.` +
+			` This can happen if there is a CouchDB container still running from a previous unit test run.` +
+			` Try "docker ps" from the command line and kill the old container if it's still running.`)
 		panic(fmt.Sprintf("run with options: %v", err))
 	}
 
@@ -79,77 +90,153 @@ func checkCouchDB() error {
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), retries))
 }
 
-func TestCouchDBStore(t *testing.T) {
-	t.Run("Test couchdb store failures", func(t *testing.T) {
-		prov, err := NewProvider("")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "hostURL for new CouchDB provider can't be blank")
-		require.Nil(t, prov)
+func TestCommon(t *testing.T) {
+	t.Run("Without prefix option", func(t *testing.T) {
+		t.Run("Without max document conflict retries option", func(t *testing.T) {
+			t.Run("Without custom logger option", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL)
+				require.NoError(t, err)
 
-		_, err = NewProvider("wrongURL")
-		require.Error(t, err)
+				commontest.TestAll(t, prov)
+			})
+			t.Run("With custom logger option", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithLogger(&mockLogger{}))
+				require.NoError(t, err)
+
+				commontest.TestAll(t, prov)
+			})
+		})
+		t.Run("With Max Document Conflict Retries option set to 2", func(t *testing.T) {
+			t.Run("Without custom logger", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithMaxDocumentConflictRetries(2))
+				require.NoError(t, err)
+
+				commontest.TestAll(t, prov)
+			})
+			t.Run("With custom logger", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithMaxDocumentConflictRetries(2),
+					WithLogger(&mockLogger{}))
+				require.NoError(t, err)
+
+				commontest.TestAll(t, prov)
+			})
+		})
 	})
+	t.Run("With prefix option", func(t *testing.T) {
+		t.Run("Without max document conflict retries option", func(t *testing.T) {
+			t.Run("Without custom logger option", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithDBPrefix("test-prefix"))
+				require.NoError(t, err)
 
-	t.Run("Test couchdb multi store close by name", func(t *testing.T) {
-		prov, err := NewProvider(couchDBURL, WithDBPrefix("dbprefix"))
-		require.NoError(t, err)
+				commontest.TestAll(t, prov)
+			})
+			t.Run("With custom logger", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithDBPrefix("test-prefix"), WithLogger(&mockLogger{}))
+				require.NoError(t, err)
 
-		const commonKey = "did:example:1"
-		data := []byte("value1")
+				commontest.TestAll(t, prov)
+			})
+		})
+		t.Run("With max document conflict retries option set to 2", func(t *testing.T) {
+			t.Run("Without custom logger", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithDBPrefix("test-prefix"),
+					WithMaxDocumentConflictRetries(2))
+				require.NoError(t, err)
 
-		storeNames := []string{randomKey(), randomKey(), randomKey(), randomKey(), randomKey()}
-		storesToClose := []string{storeNames[0], storeNames[2], storeNames[4]}
+				commontest.TestAll(t, prov)
+			})
+			t.Run("With custom logger", func(t *testing.T) {
+				prov, err := NewProvider(couchDBURL, WithDBPrefix("test-prefix"),
+					WithMaxDocumentConflictRetries(2), WithLogger(&mockLogger{}))
+				require.NoError(t, err)
 
-		for _, name := range storeNames {
-			store, e := prov.OpenStore(name)
-			require.NoError(t, e)
-
-			e = store.Put(commonKey, data)
-			require.NoError(t, e)
-		}
-
-		for _, name := range storeNames {
-			store, e := prov.OpenStore(name)
-			require.NoError(t, e)
-			require.NotNil(t, store)
-
-			dataRead, e := store.Get(commonKey)
-			require.NoError(t, e)
-			require.Equal(t, data, dataRead)
-		}
-
-		for _, name := range storesToClose {
-			store, e := prov.OpenStore(name)
-			require.NoError(t, e)
-			require.NotNil(t, store)
-
-			e = prov.CloseStore(name)
-			require.NoError(t, e)
-		}
-
-		// try to close non existing db
-		err = prov.CloseStore("store_x")
-		require.NoError(t, err)
-
-		err = prov.Close()
-		require.NoError(t, err)
-
-		// try close all again
-		err = prov.Close()
-		require.NoError(t, err)
+				commontest.TestAll(t, prov)
+			})
+		})
 	})
 }
 
-func TestCouchDBStore_Common(t *testing.T) {
-	prov, err := NewProvider(couchDBURL)
-	require.NoError(t, err)
-
-	common.TestAll(t, prov)
+func TestNewProvider(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
+		require.NoError(t, err)
+		require.NotNil(t, provider)
+	})
+	t.Run("Fail to ping CouchDB: blank URL", func(t *testing.T) {
+		provider, err := NewProvider("")
+		require.EqualError(t, err, "failed to ping couchDB: url can't be blank")
+		require.Nil(t, provider)
+	})
 }
 
-func randomKey() string {
-	// prefix `key` is needed for couchdb due to error e.g Name: '7c80bdcd-b0e3-405a-bb82-fae75f9f2470'.
-	// Only lowercase characters (a-z), digits (0-9), and any of the characters _, $, (, ), +, -, and / are allowed.
-	// Must begin with a letter.
-	return "key" + uuid.New().String()
+func TestProvider_OpenStore(t *testing.T) {
+	t.Run("Failure: store name cannot start with a number", func(t *testing.T) {
+		provider, err := NewProvider(couchDBURL)
+		require.NoError(t, err)
+		require.NotNil(t, provider)
+
+		store, err := provider.OpenStore("3StoreNameStartingWithANumber")
+		require.EqualError(t, err, "failed to create database in CouchDB: Bad Request: Name: "+
+			"'3storenamestartingwithanumber'. Only lowercase characters (a-z), digits (0-9), "+
+			"and any of the characters _, $, (, ), +, -, and / are allowed. Must begin with a letter.")
+		require.Nil(t, store)
+	})
+}
+
+func TestProvider_SetStoreConfig(t *testing.T) {
+	t.Run("Failure: invalid tag name", func(t *testing.T) {
+		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
+		require.NoError(t, err)
+		require.NotNil(t, provider)
+
+		storeName := randomStoreName()
+
+		err = provider.SetStoreConfig(storeName,
+			storage.StoreConfiguration{TagNames: []string{"payload"}})
+		require.EqualError(t, err,
+			`invalid tag names: tag name cannot be "payload" as it is a reserved keyword`)
+	})
+}
+
+func TestStore_Put(t *testing.T) {
+	t.Run("Failure: tag name is a reserved keyword", func(t *testing.T) {
+		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
+		require.NoError(t, err)
+		require.NotNil(t, provider)
+
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		err = store.Put("key", []byte("value"),
+			[]storage.Tag{
+				{Name: "payload"},
+			}...)
+		require.EqualError(t, err, `failed to add tags to the raw document: `+
+			`tag name cannot be "payload" as it is a reserved keyword`)
+	})
+}
+
+func TestStore_Get(t *testing.T) {
+	t.Run("Successfully get a value "+
+		"that was stored under a key containing special characters", func(t *testing.T) {
+		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
+		require.NoError(t, err)
+		require.NotNil(t, provider)
+
+		store, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		err = store.Put("https://example.com/", []byte("value"))
+		require.NoError(t, err)
+
+		value, err := store.Get("https://example.com/")
+		require.NoError(t, err)
+		require.Equal(t, string(value), "value")
+	})
+}
+
+func randomStoreName() string {
+	return "store-" + uuid.New().String()
 }
