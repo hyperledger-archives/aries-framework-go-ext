@@ -11,12 +11,11 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/hyperledger/aries-framework-go/pkg/storage"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	dctest "github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/pkg/errors"
@@ -26,7 +25,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
-	. "github.com/hyperledger/aries-framework-go-ext/component/storage/mongodb"
+	"github.com/hyperledger/aries-framework-go-ext/component/storage/mongodb"
 )
 
 const (
@@ -102,7 +101,7 @@ func pingMongoDB() error {
 
 func TestMongoDBStore(t *testing.T) {
 	t.Run("Test mongodb store put and get", func(t *testing.T) {
-		prov := NewProvider(mongoStoreDBURL, WithDBPrefix("dbPrefix"))
+		prov := mongodb.NewProvider(mongoStoreDBURL, mongodb.WithDBPrefix("dbPrefix"))
 		require.NotNil(t, prov)
 
 		store, err := prov.OpenStore("test")
@@ -154,13 +153,10 @@ func TestMongoDBStore(t *testing.T) {
 		// nil key
 		err = store.Put("", data)
 		require.Error(t, err)
-
-		err = prov.Close()
-		require.NoError(t, err)
 	})
 
 	t.Run("Test mongodb multi store put and get", func(t *testing.T) {
-		prov := NewProvider(mongoStoreDBURL, WithDBPrefix("dbPrefix"))
+		prov := mongodb.NewProvider(mongoStoreDBURL, mongodb.WithDBPrefix("dbPrefix"))
 		require.NotNil(t, prov)
 
 		const commonKey = "did:example:1"
@@ -213,7 +209,7 @@ func TestMongoDBStore(t *testing.T) {
 	})
 
 	t.Run("Test mongodb store failures", func(t *testing.T) {
-		prov := NewProvider("wrongURL")
+		prov := mongodb.NewProvider("wrongURL")
 		require.NotNil(t, prov)
 
 		store, err := prov.OpenStore("sample")
@@ -222,14 +218,13 @@ func TestMongoDBStore(t *testing.T) {
 	})
 
 	t.Run("Test mongodb multi store close by name", func(t *testing.T) {
-		prov := NewProvider(mongoStoreDBURL, WithDBPrefix("dbPrefix"))
+		prov := mongodb.NewProvider(mongoStoreDBURL, mongodb.WithDBPrefix("dbPrefix"))
 		require.NotNil(t, prov)
 
 		const commonKey = "did:example:1"
 		data := []byte("value1")
 
 		storeNames := []string{"store_1", "store_2", "store_3", "store_4", "store_5"}
-		storesToClose := []string{"store_1", "store_3", "store_5"}
 
 		for _, name := range storeNames {
 			store, e := prov.OpenStore(name)
@@ -251,92 +246,13 @@ func TestMongoDBStore(t *testing.T) {
 
 		// verify store length
 		require.Equal(t, prov.Stores(), 5)
-
-		for _, name := range storesToClose {
-			store, e := prov.OpenStore(name)
-			require.NoError(t, e)
-			require.NotNil(t, store)
-
-			e = prov.CloseStore(name)
-			require.NoError(t, e)
-		}
-
-		// verify store length
-		require.Equal(t, prov.Stores(), 2)
-
-		// try to close non existing db
-		err := prov.CloseStore("store_x")
-		require.NoError(t, err)
-
-		// verify store length
-		require.Equal(t, prov.Stores(), 2)
-
-		err = prov.Close()
-		require.NoError(t, err)
-
-		// verify store length
-		require.Equal(t, prov.Stores(), 0)
-
-		// try close all again
-		err = prov.Close()
-		require.NoError(t, err)
 	})
-
-	t.Run("Test mongodb store iterator", func(t *testing.T) {
-		prov := NewProvider(mongoStoreDBURL, WithDBPrefix("dbPrefix"))
-		require.NotNil(t, prov)
-
-		store, err := prov.OpenStore("test_iterator")
-		require.NoError(t, err)
-
-		const valPrefix = "val-for-%s"
-		keys := []string{"abc_123", "abc_124", "abc_125", "abc_126", "jkl_123", "mno_123", "dab_123"}
-
-		for _, key := range keys {
-			err = store.Put(key, []byte(fmt.Sprintf(valPrefix, key)))
-			require.NoError(t, err)
-		}
-
-		itr := store.Iterator("abc_", "abc_"+storage.EndKeySuffix)
-		verifyItr(t, itr, 4, "abc_")
-
-		itr = store.Iterator("", "")
-		verifyItr(t, itr, 0, "")
-
-		itr = store.Iterator("abc_", "mno_"+storage.EndKeySuffix)
-		verifyItr(t, itr, 7, "")
-
-		itr = store.Iterator("abc_", "mno_123")
-		verifyItr(t, itr, 6, "")
-	})
-}
-
-func verifyItr(t *testing.T, itr storage.StoreIterator, count int, prefix string) {
-	t.Helper()
-
-	var vals []string
-
-	for itr.Next() {
-		if prefix != "" {
-			require.True(t, strings.HasPrefix(string(itr.Key()), prefix))
-		}
-
-		vals = append(vals, string(itr.Value()))
-	}
-	require.Len(t, vals, count)
-
-	itr.Release()
-	require.False(t, itr.Next())
-	require.Empty(t, itr.Key())
-	require.Empty(t, itr.Value())
-	require.Error(t, itr.Error())
-	require.Contains(t, itr.Error().Error(), "iterator is closed")
 }
 
 func TestMongodbStore_Delete(t *testing.T) {
 	const commonKey = "did:example:1234"
 
-	prov := NewProvider(mongoStoreDBURL, WithDBPrefix("dbPrefix"))
+	prov := mongodb.NewProvider(mongoStoreDBURL, mongodb.WithDBPrefix("dbPrefix"))
 	require.NotNil(t, prov)
 
 	data := []byte("value1")

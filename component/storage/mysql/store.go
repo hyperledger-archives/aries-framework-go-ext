@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 //
 package mysql
 
-import (
+import ( //nolint:gci // False positive, seemingly caused by the MySQL driver comment.
 	"database/sql"
 	"errors"
 	"fmt"
@@ -16,32 +16,24 @@ import (
 
 	// Add as per the documentation - https://github.com/go-sql-driver/mysql
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/hyperledger/aries-framework-go/pkg/storage"
+
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 )
 
-// ErrStoreNotFound is used when a given store was not found in a provider.
-var ErrStoreNotFound = errors.New("store not found")
+// TODO (#67): Fully implement all methods.
 
 // ErrKeyRequired is returned when key is mandatory.
 var ErrKeyRequired = errors.New("key is mandatory")
+
+type closer func(storeName string)
 
 // Provider represents a MySQL DB implementation of the storage.Provider interface.
 type Provider struct {
 	dbURL    string
 	db       *sql.DB
-	dbs      map[string]*sqlDBStore
+	dbs      map[string]*store
 	dbPrefix string
-	sync.RWMutex
-}
-
-type sqlDBStore struct {
-	db        *sql.DB
-	tableName string
-}
-
-type result struct {
-	key   string
-	value []byte
+	lock     sync.RWMutex
 }
 
 const createDBQuery = "CREATE DATABASE IF NOT EXISTS `%s`"
@@ -79,7 +71,7 @@ func NewProvider(dbPath string, opts ...Option) (*Provider, error) {
 	p := &Provider{
 		dbURL: dbPath,
 		db:    db,
-		dbs:   map[string]*sqlDBStore{},
+		dbs:   map[string]*store{},
 	}
 
 	for _, opt := range opts {
@@ -89,10 +81,14 @@ func NewProvider(dbPath string, opts ...Option) (*Provider, error) {
 	return p, nil
 }
 
-// OpenStore opens and returns new db for given name space.
-func (p *Provider) OpenStore(name string) (s storage.Store, openErr error) {
-	p.Lock()
-	defer p.Unlock()
+// OpenStore opens a store with the given name and returns a handle.
+// If the store has never been opened before, then it is created.
+// Store names are not case-sensitive. If name is blank, then an error will be returned.
+func (p *Provider) OpenStore(name string) (storage.Store, error) {
+	name = strings.ToLower(name)
+
+	p.lock.Lock()
+	defer p.lock.Unlock()
 
 	if name == "" {
 		return nil, errBlankStoreName
@@ -114,7 +110,6 @@ func (p *Provider) OpenStore(name string) (s storage.Store, openErr error) {
 		return nil, fmt.Errorf(failureWhileCreatingDBErrMsg, name, err)
 	}
 
-	// TODO: Issue-1940 Store the hashed key to control the width of the key varchar column
 	createTableStmt := fmt.Sprintf(
 		"CREATE Table IF NOT EXISTS `%s`.`%s` (`key` varchar(255) NOT NULL ,`value` BLOB, PRIMARY KEY (`key`))",
 		name, name)
@@ -125,15 +120,17 @@ func (p *Provider) OpenStore(name string) (s storage.Store, openErr error) {
 		return nil, fmt.Errorf(failureWhileCreatingTableErrMsg, name, err)
 	}
 
-	// Opening new db connection
+	// Opening new DB connection
 	storeDB, err := sql.Open("mysql", p.dbURL)
 	if err != nil {
 		return nil, fmt.Errorf(failureWhileOpeningMySQLConnectionErrMsg, p.dbURL, err)
 	}
 
-	store := &sqlDBStore{
+	store := &store{
 		db:        storeDB,
+		name:      name,
 		tableName: fmt.Sprintf("`%s`.`%s`", name, name),
+		close:     p.removeStore,
 	}
 
 	p.dbs[name] = store
@@ -141,61 +138,71 @@ func (p *Provider) OpenStore(name string) (s storage.Store, openErr error) {
 	return store, nil
 }
 
-// Close closes the provider.
-func (p *Provider) Close() error {
-	p.Lock()
-	defer p.Unlock()
+// SetStoreConfig is currently not implemented.
+func (p *Provider) SetStoreConfig(string, storage.StoreConfiguration) error {
+	return errors.New("not implemented")
+}
 
-	for _, store := range p.dbs {
-		err := store.db.Close()
+// GetStoreConfig is currently not implemented.
+func (p *Provider) GetStoreConfig(string) (storage.StoreConfiguration, error) {
+	return storage.StoreConfiguration{}, errors.New("not implemented")
+}
+
+// GetOpenStores is currently not implemented.
+func (p *Provider) GetOpenStores() []storage.Store {
+	return nil
+}
+
+// Close closes all stores created under this store provider.
+func (p *Provider) Close() error {
+	p.lock.RLock()
+
+	openStoresSnapshot := make([]*store, len(p.dbs))
+
+	var counter int
+
+	for _, openStore := range p.dbs {
+		openStoresSnapshot[counter] = openStore
+		counter++
+	}
+	p.lock.RUnlock()
+
+	for _, openStore := range openStoresSnapshot {
+		err := openStore.Close()
 		if err != nil {
-			return fmt.Errorf(failureWhileClosingMySQLConnection, err)
+			return fmt.Errorf(`failed to close open store with name "%s": %w`, openStore.name, err)
 		}
 	}
 
-	if err := p.db.Close(); err != nil {
-		return err
-	}
-
-	p.dbs = make(map[string]*sqlDBStore)
-
 	return nil
 }
 
-// CloseStore closes a previously opened store.
-func (p *Provider) CloseStore(name string) error {
-	p.Lock()
-	defer p.Unlock()
+func (p *Provider) removeStore(name string) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
 
-	if p.dbPrefix != "" {
-		name = p.dbPrefix + "_" + name
+	_, ok := p.dbs[name]
+	if ok {
+		delete(p.dbs, name)
 	}
-
-	store, exists := p.dbs[name]
-	if !exists {
-		return ErrStoreNotFound
-	}
-
-	delete(p.dbs, name)
-
-	err := store.db.Close()
-	if err != nil {
-		return fmt.Errorf(failureWhileClosingMySQLConnection, err)
-	}
-
-	return nil
 }
 
-// Put stores the key and the value.
-func (s *sqlDBStore) Put(k string, v []byte) error {
-	if k == "" || v == nil {
+type store struct {
+	db        *sql.DB
+	name      string
+	tableName string
+	close     closer
+}
+
+func (s *store) Put(key string, value []byte, _ ...storage.Tag) error {
+	if key == "" || value == nil {
 		return errors.New("key and value are mandatory")
 	}
 
 	// create upsert query to insert the record, checking whether the key is already mapped to a value in the store.
 	insertStmt := "INSERT INTO " + s.tableName + " VALUES (?, ?) ON DUPLICATE KEY UPDATE value=?"
 	// executing the prepared insert statement
-	_, err := s.db.Exec(insertStmt, k, v, v)
+	_, err := s.db.Exec(insertStmt, key, value, value)
 	if err != nil {
 		return fmt.Errorf(failureWhileExecutingInsertStatementErrMsg, s.tableName, err)
 	}
@@ -203,8 +210,7 @@ func (s *sqlDBStore) Put(k string, v []byte) error {
 	return nil
 }
 
-// Get fetches the value based on key.
-func (s *sqlDBStore) Get(k string) ([]byte, error) {
+func (s *store) Get(k string) ([]byte, error) {
 	if k == "" {
 		return nil, ErrKeyRequired
 	}
@@ -225,8 +231,20 @@ func (s *sqlDBStore) Get(k string) ([]byte, error) {
 	return value, nil
 }
 
+func (s *store) GetTags(string) ([]storage.Tag, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *store) GetBulk(...string) ([][]byte, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *store) Query(string, ...storage.QueryOption) (storage.Iterator, error) {
+	return nil, errors.New("not implemented")
+}
+
 // Delete will delete record with k key.
-func (s *sqlDBStore) Delete(k string) error {
+func (s *store) Delete(k string) error {
 	if k == "" {
 		return ErrKeyRequired
 	}
@@ -240,86 +258,22 @@ func (s *sqlDBStore) Delete(k string) error {
 	return nil
 }
 
-type sqlDBResultsIterator struct {
-	resultRows *sql.Rows
-	result     result
-	err        error
+func (s *store) Batch([]storage.Operation) error {
+	return errors.New("not implemented")
 }
 
-func (s *sqlDBStore) Iterator(startKey, endKey string) storage.StoreIterator {
-	// reference : https://dev.mysql.com/doc/refman/8.0/en/fulltext-boolean.html
-	equal := ""
+// SQL store doesn't queue values, so there's never anything to flush.
+func (s *store) Flush() error {
+	return nil
+}
 
-	if strings.HasSuffix(endKey, storage.EndKeySuffix) {
-		endKey = strings.TrimSuffix(endKey, storage.EndKeySuffix) + "%"
-		equal = "="
-	}
+func (s *store) Close() error {
+	s.close(s.name)
 
-	// finds the last endKey key
-	subQ := "(SELECT `key` FROM " + s.tableName + " WHERE `key` LIKE ? order by `key` DESC LIMIT 1)"
-	//nolint:gosec
-	// sub query to fetch the all the keys that have start and end key reference, simulating range behavior.
-	queryStmt := "SELECT * FROM " + s.tableName + " WHERE `key` >= ? AND `key` <" + equal + subQ + "  order by `key`"
-
-	// TODO Find a way to close Rows `defer resultRows.Close()`
-	// unless unclosed rows and statements may cause DB connection pool exhaustion
-	//nolint:sqlclosecheck
-	resultRows, err := s.db.Query(queryStmt, startKey, endKey)
+	err := s.db.Close()
 	if err != nil {
-		return &sqlDBResultsIterator{
-			err: fmt.Errorf("failed to query rows %w", err),
-		}
+		return fmt.Errorf(failureWhileClosingMySQLConnection, err)
 	}
 
-	if err = resultRows.Err(); err != nil {
-		return &sqlDBResultsIterator{
-			err: fmt.Errorf("failed to get resulted rows %w", err),
-		}
-	}
-
-	return &sqlDBResultsIterator{
-		resultRows: resultRows,
-	}
-}
-
-func (i *sqlDBResultsIterator) Next() bool {
-	return i.resultRows.Next()
-}
-
-func (i *sqlDBResultsIterator) Release() {
-	if err := i.resultRows.Close(); err != nil {
-		i.err = err
-	}
-}
-
-func (i *sqlDBResultsIterator) Error() error {
-	if i.err != nil {
-		return i.err
-	}
-
-	return i.resultRows.Err()
-}
-
-// Key returns the key of the current key-value pair.
-func (i *sqlDBResultsIterator) Key() []byte {
-	err := i.resultRows.Scan(&i.result.key, &i.result.value)
-	if err != nil {
-		i.err = err
-
-		return nil
-	}
-
-	return []byte(i.result.key)
-}
-
-// Value returns the value of the current key-value pair.
-func (i *sqlDBResultsIterator) Value() []byte {
-	err := i.resultRows.Scan(&i.result.key, &i.result.value)
-	if err != nil {
-		i.err = err
-
-		return nil
-	}
-
-	return i.result.value
+	return nil
 }
