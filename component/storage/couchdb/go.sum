@@ -41,10 +41,10 @@ github.com/gopherjs/gopherjs v0.0.0-20180825215210-0210a2f0f73c/go.mod h1:wJfORR
 github.com/gopherjs/gopherjs v0.0.0-20200217142428-fce0ec30dd00 h1:l5lAOZEym3oK3SQ2HBHWsJUfbNBiTXJDeW2QDxw9AQ0=
 github.com/gopherjs/gopherjs v0.0.0-20200217142428-fce0ec30dd00/go.mod h1:wJfORRmW1u3UXTncJ5qlYoELFm8eSnnEO6hX4iZ3EWY=
 github.com/hyperledger/aries-framework-go/spi v0.0.0-20210224230531-58e1368e5661/go.mod h1:fDr9wW00GJJl1lR1SFHmJW8utIocdvjO5RNhAYS05EY=
-github.com/hyperledger/aries-framework-go/spi v0.0.0-20210226192837-821ccd9c540e h1:FDvu6CLc3w99/tS8s5PM3TQOvsVuopXjSn0BLq5aeno=
-github.com/hyperledger/aries-framework-go/spi v0.0.0-20210226192837-821ccd9c540e/go.mod h1:fDr9wW00GJJl1lR1SFHmJW8utIocdvjO5RNhAYS05EY=
-github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210226192837-821ccd9c540e h1:DBVOKybNsJBrD8L6Y2Q5AHEF7favdlhTe1a36PlikKg=
-github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210226192837-821ccd9c540e/go.mod h1:6Za6hvu+eZDPerePXIlMuBWbQZDKqTgOrKV56WZMtcI=
+github.com/hyperledger/aries-framework-go/spi v0.0.0-20210226235232-298aa129d822 h1:3WQk2nDC/9AQ8hKCkXb9EgN5BAhJvZtMHoQBlO8tQXU=
+github.com/hyperledger/aries-framework-go/spi v0.0.0-20210226235232-298aa129d822/go.mod h1:fDr9wW00GJJl1lR1SFHmJW8utIocdvjO5RNhAYS05EY=
+github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210226235232-298aa129d822 h1:mB8V4lnFZT1cL2lA8C0aVL7C1xPFgtyUXYrdPGg1cZ4=
+github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210226235232-298aa129d822/go.mod h1:6Za6hvu+eZDPerePXIlMuBWbQZDKqTgOrKV56WZMtcI=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.2 h1:DB17ag19krx9CFsz4o3enTrPXyIXCl+2iCXH/aMAp9s=
 github.com/konsorten/go-windows-terminal-sequences v1.0.2/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=

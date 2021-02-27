@@ -9,8 +9,8 @@ require (
 	github.com/cenkalti/backoff/v4 v4.1.0
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/google/go-cmp v0.5.2 // indirect
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210208223040-55e2734dc08e
-	github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210208223040-55e2734dc08e
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210226235232-298aa129d822
+	github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210226235232-298aa129d822
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/ory/dockertest/v3 v3.6.2
 	github.com/stretchr/testify v1.6.1
