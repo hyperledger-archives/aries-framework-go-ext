@@ -620,7 +620,12 @@ func (s *store) Batch(operations []storage.Operation) error {
 		}
 
 		if existingRawDoc != nil {
-			rawDocToPut[revIDFieldKey] = existingRawDoc[revIDFieldKey]
+			// If there was a document that was previously deleted that has the same ID as a new document,
+			// then we must omit the revision ID. CouchDB won't create the new document otherwise.
+			_, containsIsDeleted := existingRawDoc[deletedFieldKey]
+			if !containsIsDeleted {
+				rawDocToPut[revIDFieldKey] = existingRawDoc[revIDFieldKey]
+			}
 		}
 
 		if operations[i].Value == nil { // This operation is a delete
@@ -704,7 +709,8 @@ func (s *store) getRevID(k string) (string, error) {
 
 	err := row.ScanDoc(&rawDoc)
 	if err != nil {
-		if strings.Contains(err.Error(), docNotFoundErrMsgFromKivik) {
+		if strings.Contains(err.Error(), docNotFoundErrMsgFromKivik) ||
+			strings.Contains(err.Error(), docDeletedErrMsgFromKivik) {
 			return "", nil
 		}
 
