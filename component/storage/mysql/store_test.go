@@ -15,6 +15,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/go-sql-driver/mysql"
+	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	commontest "github.com/hyperledger/aries-framework-go/test/component/storage"
 	dctest "github.com/ory/dockertest/v3"
@@ -178,25 +179,14 @@ func TestNotImplementedMethods(t *testing.T) {
 		prov, err := NewProvider(sqlStoreDBURL)
 		require.NoError(t, err)
 
-		err = prov.SetStoreConfig("", storage.StoreConfiguration{})
-		require.EqualError(t, err, "not implemented")
-
-		_, err = prov.GetStoreConfig("")
-		require.EqualError(t, err, "not implemented")
-
-		openStores := prov.GetOpenStores()
-		require.Nil(t, openStores)
+		require.Panics(t, func() {
+			prov.GetOpenStores()
+		})
 
 		store, err := prov.OpenStore("storename")
 		require.NoError(t, err)
 
-		_, err = store.GetTags("")
-		require.EqualError(t, err, "not implemented")
-
 		_, err = store.GetBulk()
-		require.EqualError(t, err, "not implemented")
-
-		_, err = store.Query("")
 		require.EqualError(t, err, "not implemented")
 
 		err = store.Batch(nil)
@@ -204,12 +194,139 @@ func TestNotImplementedMethods(t *testing.T) {
 	})
 }
 
+func TestSqlDBProvider_GetStoreConfig(t *testing.T) {
+	t.Run("Fail to get store configuration", func(t *testing.T) {
+		provider, err := NewProvider(sqlStoreDBURL)
+		require.NoError(t, err)
+
+		storeName := randomStoreName()
+
+		_, err = provider.OpenStore(storeName)
+		require.NoError(t, err)
+
+		config, err := provider.GetStoreConfig(storeName)
+		require.EqualError(t, err,
+			fmt.Sprintf(`failed to get store configuration for "%s": `+
+				`failed to get DB entry: data not found`, storeName))
+		require.Empty(t, config)
+	})
+}
+
+func TestSqlDBStore_Put(t *testing.T) {
+	t.Run("Fail to update tag map since the store configuration was never set", func(t *testing.T) {
+		provider, err := NewProvider(sqlStoreDBURL)
+		require.NoError(t, err)
+
+		testStore, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+
+		err = testStore.Put("key", []byte("value"), storage.Tag{})
+		require.EqualError(t, err, "failed to update tag map: failed to get tag map: tag map not found. "+
+			"Was the store configuration set? error: failed to get DB entry: data not found")
+	})
+	t.Run("Fail to update tag map since the DB connection was closed", func(t *testing.T) {
+		provider, err := NewProvider(sqlStoreDBURL)
+		require.NoError(t, err)
+
+		testStore, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+
+		err = testStore.Close()
+		require.NoError(t, err)
+
+		err = testStore.Put("key", []byte("value"), storage.Tag{})
+		require.EqualError(t, err, "failed to update tag map: failed to get tag map: failed to get tag map: "+
+			"failed to get DB entry: failure while querying row: sql: database is closed")
+	})
+	t.Run("Fail to unmarshal tag map bytes", func(t *testing.T) {
+		provider, err := NewProvider(sqlStoreDBURL)
+		require.NoError(t, err)
+
+		testStore, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+
+		err = testStore.Put("TagMap", []byte("Not a proper tag map"))
+		require.NoError(t, err)
+
+		err = testStore.Put("key", []byte("value"), storage.Tag{})
+		require.EqualError(t, err, "failed to update tag map: failed to get tag map: "+
+			"failed to unmarshal tag map bytes: invalid character 'N' looking for beginning of value")
+	})
+}
+
+func TestSqlDBStore_Query(t *testing.T) {
+	t.Run("Fail to get tag map since the DB connection was closed", func(t *testing.T) {
+		provider, err := NewProvider(sqlStoreDBURL)
+		require.NoError(t, err)
+
+		testStore, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+
+		err = testStore.Close()
+		require.NoError(t, err)
+
+		itr, err := testStore.Query("expression")
+		require.EqualError(t, err, "failed to get tag map: failed to get tag map: failed to get DB entry: "+
+			"failure while querying row: sql: database is closed")
+		require.Nil(t, itr)
+	})
+	t.Run("Fail to unmarshal tag map bytes", func(t *testing.T) {
+		provider, err := NewProvider(sqlStoreDBURL)
+		require.NoError(t, err)
+
+		testStore, err := provider.OpenStore(randomStoreName())
+		require.NoError(t, err)
+
+		err = testStore.Put("TagMap", []byte("Not a proper tag map"))
+		require.NoError(t, err)
+
+		itr, err := testStore.Query("expression")
+		require.EqualError(t, err, "failed to get tag map: failed to unmarshal tag map bytes: "+
+			"invalid character 'N' looking for beginning of value")
+		require.Nil(t, itr)
+	})
+}
+
+func TestSqlDBIterator(t *testing.T) {
+	provider, err := NewProvider(sqlStoreDBURL)
+	require.NoError(t, err)
+
+	testStoreName := randomStoreName()
+
+	testStore, err := provider.OpenStore(testStoreName)
+	require.NoError(t, err)
+
+	err = provider.SetStoreConfig(testStoreName, storage.StoreConfiguration{})
+	require.NoError(t, err)
+
+	itr, err := testStore.Query("expression")
+	require.NoError(t, err)
+
+	t.Run("Fail to get value from store", func(t *testing.T) {
+		value, errValue := itr.Value()
+		require.EqualError(t, errValue, "failed to get value from store: failed to get DB entry: key is mandatory")
+		require.Nil(t, value)
+	})
+	t.Run("Fail to get tags from store", func(t *testing.T) {
+		tags, errGetTags := itr.Tags()
+		require.EqualError(t, errGetTags, "failed to get tags from store: failed to get DB entry: key is mandatory")
+		require.Nil(t, tags)
+	})
+}
+
 func TestSqlDBStore_Common(t *testing.T) {
 	provider, err := NewProvider(sqlStoreDBURL)
 	require.NoError(t, err)
 
+	commontest.TestProviderOpenStoreSetGetConfig(t, provider)
 	commontest.TestPutGet(t, provider)
+	commontest.TestStoreGetTags(t, provider)
+	commontest.TestStoreQuery(t, provider)
 	commontest.TestStoreDelete(t, provider)
 	commontest.TestStoreClose(t, provider)
 	commontest.TestProviderClose(t, provider)
+}
+
+func randomStoreName() string {
+	return "store-" + uuid.New().String()
 }
