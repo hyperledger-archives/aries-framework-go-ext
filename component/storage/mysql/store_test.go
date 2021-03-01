@@ -315,16 +315,30 @@ func TestSqlDBIterator(t *testing.T) {
 }
 
 func TestSqlDBStore_Common(t *testing.T) {
-	provider, err := NewProvider(sqlStoreDBURL)
-	require.NoError(t, err)
+	t.Run("Without prefix", func(t *testing.T) {
+		provider, err := NewProvider(sqlStoreDBURL)
+		require.NoError(t, err)
 
-	commontest.TestProviderOpenStoreSetGetConfig(t, provider)
-	commontest.TestPutGet(t, provider)
-	commontest.TestStoreGetTags(t, provider)
-	commontest.TestStoreQuery(t, provider)
-	commontest.TestStoreDelete(t, provider)
-	commontest.TestStoreClose(t, provider)
-	commontest.TestProviderClose(t, provider)
+		commontest.TestProviderOpenStoreSetGetConfig(t, provider)
+		commontest.TestPutGet(t, provider)
+		commontest.TestStoreGetTags(t, provider)
+		commontest.TestStoreQuery(t, provider)
+		commontest.TestStoreDelete(t, provider)
+		commontest.TestStoreClose(t, provider)
+		commontest.TestProviderClose(t, provider)
+	})
+	t.Run("With prefix", func(t *testing.T) {
+		provider, err := NewProvider(sqlStoreDBURL, WithDBPrefix("db-prefix-"))
+		require.NoError(t, err)
+
+		commontest.TestProviderOpenStoreSetGetConfig(t, provider)
+		commontest.TestPutGet(t, provider)
+		commontest.TestStoreGetTags(t, provider)
+		commontest.TestStoreQuery(t, provider)
+		commontest.TestStoreDelete(t, provider)
+		commontest.TestStoreClose(t, provider)
+		commontest.TestProviderClose(t, provider)
+	})
 }
 
 func randomStoreName() string {

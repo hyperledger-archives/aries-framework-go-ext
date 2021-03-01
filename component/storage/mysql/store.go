@@ -101,18 +101,18 @@ func NewProvider(dbPath string, opts ...Option) (*Provider, error) {
 // If the store has never been opened before, then it is created.
 // Store names are not case-sensitive. If name is blank, then an error will be returned.
 func (p *Provider) OpenStore(name string) (storage.Store, error) {
-	name = strings.ToLower(name)
-
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
 	if name == "" {
 		return nil, errBlankStoreName
 	}
 
+	name = strings.ToLower(name)
+
 	if p.dbPrefix != "" {
 		name = p.dbPrefix + "_" + name
 	}
+
+	p.lock.Lock()
+	defer p.lock.Unlock()
 
 	// Check cache first
 	cachedStore, existsInCache := p.dbs[name]
@@ -158,6 +158,12 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 // of the Query method.
 // TODO (#67): Use proper MySQL indexing instead of the "Tag Map".
 func (p *Provider) SetStoreConfig(name string, config storage.StoreConfiguration) error {
+	name = strings.ToLower(name)
+
+	if p.dbPrefix != "" {
+		name = p.dbPrefix + "_" + name
+	}
+
 	openStore, ok := p.dbs[name]
 	if !ok {
 		return storage.ErrStoreNotFound
@@ -189,6 +195,12 @@ func (p *Provider) SetStoreConfig(name string, config storage.StoreConfiguration
 
 // GetStoreConfig is currently not implemented.
 func (p *Provider) GetStoreConfig(name string) (storage.StoreConfiguration, error) {
+	name = strings.ToLower(name)
+
+	if p.dbPrefix != "" {
+		name = p.dbPrefix + "_" + name
+	}
+
 	openStore, ok := p.dbs[name]
 	if !ok {
 		return storage.StoreConfiguration{}, storage.ErrStoreNotFound
