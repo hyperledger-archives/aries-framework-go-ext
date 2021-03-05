@@ -41,7 +41,7 @@ type closer func(storeName string)
 type tagMapping map[string]map[string]struct{} // map[TagName](Set of database Keys)
 
 type dbEntry struct {
-	Value string        `json:"value,omitempty"`
+	Value []byte        `json:"value,omitempty"`
 	Tags  []storage.Tag `json:"tags,omitempty"`
 }
 
@@ -274,7 +274,7 @@ func (s *store) Put(key string, value []byte, tags ...storage.Tag) error {
 	}
 
 	var newDBEntry dbEntry
-	newDBEntry.Value = string(value)
+	newDBEntry.Value = value
 
 	if len(tags) > 0 {
 		newDBEntry.Tags = tags
@@ -307,7 +307,7 @@ func (s *store) Get(k string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to get DB entry: %w", err)
 	}
 
-	return []byte(retrievedDBEntry.Value), nil
+	return retrievedDBEntry.Value, nil
 }
 
 func (s *store) GetTags(key string) ([]storage.Tag, error) {
