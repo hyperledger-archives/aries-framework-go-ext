@@ -8,6 +8,7 @@ package couchdb
 
 import ( //nolint:gci // False positive, seemingly caused by the CouchDB driver comment.
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -385,10 +386,9 @@ type store struct {
 }
 
 // Put stores the key + value pair along with the (optional) tags.
-// TODO (#40) Values stored under keys containing special URL characters like `/`
-//  are not retrievable due to a bug in the underlying Kivik library.
 // TODO (#44) Tags do not have to be defined in the store config prior to storing data that uses them.
 //  Should all store implementations require tags to be defined in store config before allowing them to be used?
+// TODO (#81) If data isn't JSON, store as CouchDB attachment instead.
 func (s *store) Put(k string, v []byte, tags ...storage.Tag) error {
 	if k == "" {
 		return errors.New("key cannot be empty")
@@ -400,7 +400,7 @@ func (s *store) Put(k string, v []byte, tags ...storage.Tag) error {
 
 	rawDoc := make(map[string]interface{})
 
-	rawDoc[payloadFieldKey] = string(v)
+	rawDoc[payloadFieldKey] = base64.StdEncoding.EncodeToString(v)
 
 	err := addTagsToRawDoc(rawDoc, tags)
 	if err != nil {
@@ -447,12 +447,12 @@ func (s *store) Get(k string) ([]byte, error) {
 		return nil, fmt.Errorf(failureWhileScanningRow, err)
 	}
 
-	storedValue, err := getStringValueFromRawDoc(rawDoc, payloadFieldKey)
+	storedValueBase64, err := getStringValueFromRawDoc(rawDoc, payloadFieldKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get payload from raw document: %w", err)
 	}
 
-	return []byte(storedValue), nil
+	return base64.StdEncoding.DecodeString(storedValueBase64)
 }
 
 // GetTags fetches all tags associated with the given key.
@@ -631,7 +631,7 @@ func (s *store) Batch(operations []storage.Operation) error {
 		if operations[i].Value == nil { // This operation is a delete
 			rawDocToPut["_deleted"] = true
 		} else {
-			rawDocToPut[payloadFieldKey] = string(operations[i].Value)
+			rawDocToPut[payloadFieldKey] = base64.StdEncoding.EncodeToString(operations[i].Value)
 		}
 
 		rawDocsToPut[i] = rawDocToPut
@@ -827,12 +827,12 @@ func (i *couchDBResultsIterator) Key() (string, error) {
 
 // Value returns the value of the current key-value pair.
 func (i *couchDBResultsIterator) Value() ([]byte, error) {
-	value, err := getValueFromRows(i.resultRows, payloadFieldKey)
+	valueBase64Encoded, err := getValueFromRows(i.resultRows, payloadFieldKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get payload from rows: %w", err)
 	}
 
-	return []byte(value), nil
+	return base64.StdEncoding.DecodeString(valueBase64Encoded)
 }
 
 func (i *couchDBResultsIterator) Tags() ([]storage.Tag, error) {
@@ -1010,12 +1010,17 @@ func getPayloadsFromRawDocs(rawDocs []map[string]interface{}) ([][]byte, error) 
 			}
 		}
 
-		storedValue, err := getStringValueFromRawDoc(rawDoc, payloadFieldKey)
+		storedValueBase64, err := getStringValueFromRawDoc(rawDoc, payloadFieldKey)
 		if err != nil {
 			return nil, fmt.Errorf(`failed to get the payload from the raw document: %w`, err)
 		}
 
-		storedValues[i] = []byte(storedValue)
+		storeValue, err := base64.StdEncoding.DecodeString(storedValueBase64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode stored value: %w", err)
+		}
+
+		storedValues[i] = storeValue
 	}
 
 	return storedValues, nil
