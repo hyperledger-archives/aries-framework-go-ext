@@ -7,7 +7,7 @@ go 1.15
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210306141947-8094fee88506
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210310174039-befc94ae410f
 	github.com/ory/dockertest/v3 v3.6.2
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.6.1
