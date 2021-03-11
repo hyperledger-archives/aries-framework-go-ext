@@ -15,8 +15,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/google/uuid"
-	"github.com/hyperledger/aries-framework-go/spi/storage"
 	commontest "github.com/hyperledger/aries-framework-go/test/component/storage"
 	dctest "github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
@@ -181,42 +179,4 @@ func TestProvider_OpenStore(t *testing.T) {
 			"and any of the characters _, $, (, ), +, -, and / are allowed. Must begin with a letter.")
 		require.Nil(t, store)
 	})
-}
-
-func TestProvider_SetStoreConfig(t *testing.T) {
-	t.Run("Failure: invalid tag name", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		storeName := randomStoreName()
-
-		err = provider.SetStoreConfig(storeName,
-			storage.StoreConfiguration{TagNames: []string{"payload"}})
-		require.EqualError(t, err,
-			`invalid tag names: tag name cannot be "payload" as it is a reserved keyword`)
-	})
-}
-
-func TestStore_Put(t *testing.T) {
-	t.Run("Failure: tag name is a reserved keyword", func(t *testing.T) {
-		provider, err := NewProvider(couchDBURL, WithDBPrefix("prefix"))
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-
-		store, err := provider.OpenStore(randomStoreName())
-		require.NoError(t, err)
-		require.NotNil(t, store)
-
-		err = store.Put("key", []byte("value"),
-			[]storage.Tag{
-				{Name: "payload"},
-			}...)
-		require.EqualError(t, err, `failed to add tags to the raw document: `+
-			`tag name cannot be "payload" as it is a reserved keyword`)
-	})
-}
-
-func randomStoreName() string {
-	return "store-" + uuid.New().String()
 }
