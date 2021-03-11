@@ -8,7 +8,6 @@ package couchdb
 
 import ( //nolint:gci // False positive, seemingly caused by the CouchDB driver comment.
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,12 +26,8 @@ import ( //nolint:gci // False positive, seemingly caused by the CouchDB driver 
 
 const (
 	couchDBUsersTable = "_users"
-	idFieldKey        = "_id"
-	revIDFieldKey     = "_rev"
-	deletedFieldKey   = "_deleted"
 
 	designDocumentName = "AriesStorageDesignDocument"
-	payloadFieldKey    = "payload"
 
 	// Hardcoded strings returned from Kivik/CouchDB that we check for.
 	docNotFoundErrMsgFromKivik            = "Not Found: missing"
@@ -44,12 +39,11 @@ const (
 	failGetDatabaseHandle         = "failed to get database handle: %w"
 	failGetExistingIndexes        = "failed to get existing indexes: %w"
 	failureWhileScanningRow       = "failure while scanning row: %w"
-	failGetTagsFromRawDoc         = "failed to get tags from raw CouchDB document: %w"
 	failGetRevisionID             = "failed to get revision ID: %w"
 	failPutValueViaClient         = "failed to put value via client: %w"
 	failWhileScanResultRows       = "failure while scanning result rows: %w"
 	failSendRequestToFindEndpoint = "failure while sending request to CouchDB find endpoint: %w"
-	failGetRawDocs                = "failure while getting raw CouchDB documents: %w"
+	failGetDocs                   = "failure while getting documents: %w"
 
 	expressionTagNameOnlyLength     = 1
 	expressionTagNameAndValueLength = 2
@@ -75,6 +69,14 @@ type defaultLogger struct {
 
 func (d *defaultLogger) Warnf(msg string, args ...interface{}) {
 	d.logger.Printf(msg, args...)
+}
+
+type document struct {
+	ID         string            `json:"_id,omitempty"`      // CouchDB-internal field
+	RevisionID string            `json:"_rev,omitempty"`     // CouchDB-internal field
+	Deleted    bool              `json:"_deleted,omitempty"` // CouchDB-internal field
+	Value      []byte            `json:"value,omitempty"`    // Our custom field
+	Tags       map[string]string `json:"tags,omitempty"`     // Our custom field
 }
 
 type db interface {
@@ -217,16 +219,11 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 // The store must be created prior to calling this method.
 // If duplicate tags are provided, then CouchDB will ignore them.
 func (p *Provider) SetStoreConfig(name string, config storage.StoreConfiguration) error {
-	err := validateTagNames(config)
-	if err != nil {
-		return fmt.Errorf("invalid tag names: %w", err)
-	}
-
 	name = strings.ToLower(p.dbPrefix + name)
 
 	db := p.couchDBClient.DB(context.Background(), name)
 
-	err = db.Err()
+	err := db.Err()
 	if err != nil {
 		return fmt.Errorf(failGetDatabaseHandle, err)
 	}
@@ -388,7 +385,7 @@ type store struct {
 // Put stores the key + value pair along with the (optional) tags.
 // TODO (#44) Tags do not have to be defined in the store config prior to storing data that uses them.
 //  Should all store implementations require tags to be defined in store config before allowing them to be used?
-// TODO (#81) If data isn't JSON, store as CouchDB attachment instead.
+// TODO (#81) If data is binary and large, store as CouchDB attachment instead.
 func (s *store) Put(k string, v []byte, tags ...storage.Tag) error {
 	if k == "" {
 		return errors.New("key cannot be empty")
@@ -398,31 +395,15 @@ func (s *store) Put(k string, v []byte, tags ...storage.Tag) error {
 		return errors.New("value cannot be nil")
 	}
 
-	rawDoc := make(map[string]interface{})
+	var newDocument document
 
-	rawDoc[payloadFieldKey] = base64.StdEncoding.EncodeToString(v)
+	newDocument.Value = v
 
-	err := addTagsToRawDoc(rawDoc, tags)
+	setDocumentTags(&newDocument, tags)
+
+	err := s.put(k, newDocument)
 	if err != nil {
-		return fmt.Errorf("failed to add tags to the raw document: %w", err)
-	}
-
-	for _, tag := range tags {
-		if tag.Name == payloadFieldKey {
-			return errors.New(`tag name cannot be "payload" as it is a reserved keyword`)
-		}
-
-		rawDoc[tag.Name] = tag.Value
-	}
-
-	valueToPut, err := s.marshal(rawDoc)
-	if err != nil {
-		return fmt.Errorf("failed to marshal values map: %w", err)
-	}
-
-	err = s.put(k, valueToPut)
-	if err != nil {
-		return fmt.Errorf("failure while putting value into CouchDB: %w", err)
+		return fmt.Errorf("failure while putting document into CouchDB database: %w", err)
 	}
 
 	return nil
@@ -434,11 +415,11 @@ func (s *store) Get(k string) ([]byte, error) {
 		return nil, errors.New("key is mandatory")
 	}
 
-	rawDoc := make(map[string]interface{})
+	var retrievedDocument document
 
 	row := s.db.Get(context.Background(), k)
 
-	err := row.ScanDoc(&rawDoc)
+	err := row.ScanDoc(&retrievedDocument)
 	if err != nil {
 		if err.Error() == docNotFoundErrMsgFromKivik || err.Error() == docDeletedErrMsgFromKivik {
 			return nil, fmt.Errorf(failureWhileScanningRow, storage.ErrDataNotFound)
@@ -447,12 +428,7 @@ func (s *store) Get(k string) ([]byte, error) {
 		return nil, fmt.Errorf(failureWhileScanningRow, err)
 	}
 
-	storedValueBase64, err := getStringValueFromRawDoc(rawDoc, payloadFieldKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get payload from raw document: %w", err)
-	}
-
-	return base64.StdEncoding.DecodeString(storedValueBase64)
+	return retrievedDocument.Value, nil
 }
 
 // GetTags fetches all tags associated with the given key.
@@ -461,11 +437,11 @@ func (s *store) GetTags(k string) ([]storage.Tag, error) {
 		return nil, errors.New("key is mandatory")
 	}
 
-	rawDoc := make(map[string]interface{})
+	var retrievedDocument document
 
 	row := s.db.Get(context.Background(), k)
 
-	err := row.ScanDoc(&rawDoc)
+	err := row.ScanDoc(&retrievedDocument)
 	if err != nil {
 		if err.Error() == docNotFoundErrMsgFromKivik || err.Error() == docDeletedErrMsgFromKivik {
 			return nil, storage.ErrDataNotFound
@@ -474,12 +450,7 @@ func (s *store) GetTags(k string) ([]storage.Tag, error) {
 		return nil, err
 	}
 
-	tags, err := getTagsFromRawDoc(rawDoc)
-	if err != nil {
-		return nil, fmt.Errorf(failGetTagsFromRawDoc, err)
-	}
-
-	return tags, nil
+	return getTagsFromDocument(&retrievedDocument), nil
 }
 
 // GetBulk fetches the values associated with the given keys.
@@ -489,17 +460,12 @@ func (s *store) GetBulk(keys ...string) ([][]byte, error) {
 		return nil, errors.New("keys slice must contain at least one key")
 	}
 
-	rawDocs, err := s.getRawDocs(keys)
+	documents, err := s.getDocuments(keys)
 	if err != nil {
-		return nil, fmt.Errorf(failGetRawDocs, err)
+		return nil, fmt.Errorf(failGetDocs, err)
 	}
 
-	values, err := getPayloadsFromRawDocs(rawDocs)
-	if err != nil {
-		return nil, fmt.Errorf("failure while getting stored values from raw docs: %w", err)
-	}
-
-	return values, nil
+	return getValuesFromDocuments(documents), nil
 }
 
 // Query returns all data that satisfies the expression. Expression format: TagName:TagValue.
@@ -522,15 +488,16 @@ func (s *store) Query(expression string, options ...storage.QueryOption) (storag
 	case expressionTagNameOnlyLength:
 		expressionTagName := expressionSplit[0]
 
-		findQuery := fmt.Sprintf(tagNameOnlyQueryTemplate, expressionTagName, queryOptions.PageSize)
+		findQuery := fmt.Sprintf(tagNameOnlyQueryTemplate, "tags."+expressionTagName, queryOptions.PageSize)
 
 		resultRows, err := s.db.Find(context.Background(), findQuery)
 		if err != nil {
 			return nil, fmt.Errorf(failSendRequestToFindEndpoint, err)
 		}
 
+		// TODO DEREKK ALSO MAKE SURE INDEX IS CREATED CORRECTLY
 		queryWithPageSizeAndBookmarkPlaceholders := `{"selector":{"` +
-			expressionTagName + `":{"$exists":true}},"limit":%d,"bookmark":"%s"}`
+			"tags." + expressionTagName + `":{"$exists":true}},"limit":%d,"bookmark":"%s"}`
 
 		return &couchDBResultsIterator{
 			store:                                    s,
@@ -543,10 +510,10 @@ func (s *store) Query(expression string, options ...storage.QueryOption) (storag
 		expressionTagValue := expressionSplit[1]
 
 		findQuery := fmt.Sprintf(tagNameAndValueQueryTemplate,
-			expressionTagName, expressionTagValue, queryOptions.PageSize)
+			"tags."+expressionTagName, expressionTagValue, queryOptions.PageSize)
 
 		queryWithPageSizeAndBookmarkPlaceholders := `{"selector":{"` +
-			expressionTagName + `":"` + expressionTagValue + `"},"limit":%d,"bookmark":"%s"}`
+			"tags." + expressionTagName + `":"` + expressionTagValue + `"},"limit":%d,"bookmark":"%s"}`
 
 		resultRows, err := s.db.Find(context.Background(), findQuery)
 		if err != nil {
@@ -603,42 +570,38 @@ func (s *store) Batch(operations []storage.Operation) error {
 		keys[i] = operation.Key
 	}
 
-	existingRawDocs, err := s.getRawDocs(keys)
+	existingDocuments, err := s.getDocuments(keys)
 	if err != nil {
-		return fmt.Errorf(failGetRawDocs, err)
+		return fmt.Errorf(failGetDocs, err)
 	}
 
-	rawDocsToPut := make([]interface{}, len(existingRawDocs))
+	documentsToPut := make([]interface{}, len(existingDocuments))
 
-	for i, existingRawDoc := range existingRawDocs {
-		rawDocToPut := make(map[string]interface{})
-		rawDocToPut[idFieldKey] = keys[i]
+	for i, existingDocument := range existingDocuments {
+		var newDocument document
+		newDocument.ID = keys[i]
 
-		errAddTags := addTagsToRawDoc(rawDocToPut, operations[i].Tags)
-		if errAddTags != nil {
-			return fmt.Errorf("failed to add tags to raw document: %w", err)
-		}
+		setDocumentTags(&newDocument, operations[i].Tags)
 
-		if existingRawDoc != nil {
+		if existingDocument != nil {
 			// If there was a document that was previously deleted that has the same ID as a new document,
 			// then we must omit the revision ID. CouchDB won't create the new document otherwise.
-			_, containsIsDeleted := existingRawDoc[deletedFieldKey]
-			if !containsIsDeleted {
-				rawDocToPut[revIDFieldKey] = existingRawDoc[revIDFieldKey]
+			if !existingDocument.Deleted {
+				newDocument.RevisionID = existingDocument.RevisionID
 			}
 		}
 
 		if operations[i].Value == nil { // This operation is a delete
-			rawDocToPut["_deleted"] = true
+			newDocument.Deleted = true
 		} else {
-			rawDocToPut[payloadFieldKey] = base64.StdEncoding.EncodeToString(operations[i].Value)
+			newDocument.Value = operations[i].Value
 		}
 
-		rawDocsToPut[i] = rawDocToPut
+		documentsToPut[i] = newDocument
 	}
 
 	// TODO (#50): Examine BulkResults value returned from s.db.BulkDocs and return a storage.MultiError.
-	_, err = s.db.BulkDocs(context.Background(), rawDocsToPut)
+	_, err = s.db.BulkDocs(context.Background(), documentsToPut)
 	if err != nil {
 		return fmt.Errorf("failure while doing CouchDB bulk docs call: %w", err)
 	}
@@ -663,7 +626,7 @@ func (s *store) Flush() error {
 	return nil
 }
 
-func (s *store) put(k string, value []byte) error {
+func (s *store) put(k string, documentToPut document) error {
 	err := backoff.Retry(func() error {
 		revID, err := s.getRevID(k)
 		if err != nil {
@@ -672,10 +635,15 @@ func (s *store) put(k string, value []byte) error {
 		}
 
 		if revID != "" {
-			value = []byte(`{"` + revIDFieldKey + `":"` + revID + `",` + string(value[1:]))
+			documentToPut.RevisionID = revID
 		}
 
-		_, err = s.db.Put(context.Background(), k, value)
+		documentBytes, err := s.marshal(documentToPut)
+		if err != nil {
+			return fmt.Errorf("failed to marshal document: %w", err)
+		}
+
+		_, err = s.db.Put(context.Background(), k, documentBytes)
 		if err != nil {
 			if err.Error() == documentUpdateConflictErrMsgFromKivik {
 				// This means that the document was updated since we got the revision ID.
@@ -703,11 +671,11 @@ func (s *store) put(k string, value []byte) error {
 
 // If the document can't be found, then a blank ID is returned.
 func (s *store) getRevID(k string) (string, error) {
-	rawDoc := make(map[string]interface{})
+	var retrievedDocument document
 
 	row := s.db.Get(context.Background(), k)
 
-	err := row.ScanDoc(&rawDoc)
+	err := row.ScanDoc(&retrievedDocument)
 	if err != nil {
 		if strings.Contains(err.Error(), docNotFoundErrMsgFromKivik) ||
 			strings.Contains(err.Error(), docDeletedErrMsgFromKivik) {
@@ -717,17 +685,12 @@ func (s *store) getRevID(k string) (string, error) {
 		return "", err
 	}
 
-	revID, err := getStringValueFromRawDoc(rawDoc, revIDFieldKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to get revision ID from the raw document: %w", err)
-	}
-
-	return revID, nil
+	return retrievedDocument.RevisionID, nil
 }
 
-// getRawDocs returns the raw documents from CouchDB using a bulk REST call.
-// If a document is not found, then the raw document will be nil. It is not considered an error.
-func (s *store) getRawDocs(keys []string) ([]map[string]interface{}, error) {
+// getDocuments returns documents from CouchDB using a bulk REST call.
+// If a document is not found, then the document will be nil. It is not considered an error.
+func (s *store) getDocuments(keys []string) ([]*document, error) {
 	bulkGetReferences := make([]kivik.BulkGetReference, len(keys))
 	for i, key := range keys {
 		bulkGetReferences[i].ID = key
@@ -738,16 +701,16 @@ func (s *store) getRawDocs(keys []string) ([]map[string]interface{}, error) {
 		return nil, fmt.Errorf("failure while sending request to CouchDB bulk docs endpoint: %w", err)
 	}
 
-	rawDocs, err := getRawDocsFromRows(rows)
+	documents, err := getDocumentsFromRows(rows)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get raw documents from rows: %w", err)
+		return nil, fmt.Errorf("failed to get documents from rows: %w", err)
 	}
 
-	if len(rawDocs) != len(keys) {
-		return nil, fmt.Errorf("received %d raw documents, but %d were expected", len(rawDocs), len(keys))
+	if len(documents) != len(keys) {
+		return nil, fmt.Errorf("received %d documents, but %d were expected", len(documents), len(keys))
 	}
 
-	return rawDocs, nil
+	return documents, nil
 }
 
 type couchDBResultsIterator struct {
@@ -817,38 +780,37 @@ func (i *couchDBResultsIterator) Close() error {
 // Key returns the key of the current key-value pair.
 // A nil error likely means that the key list is exhausted.
 func (i *couchDBResultsIterator) Key() (string, error) {
-	id, err := getValueFromRows(i.resultRows, idFieldKey)
+	var retrievedDocument document
+
+	err := i.resultRows.ScanDoc(&retrievedDocument)
 	if err != nil {
-		return "", fmt.Errorf(`failed to get %s from rows: %w`, idFieldKey, err)
+		return "", fmt.Errorf(failWhileScanResultRows, err)
 	}
 
-	return id, nil
+	return retrievedDocument.ID, nil
 }
 
 // Value returns the value of the current key-value pair.
 func (i *couchDBResultsIterator) Value() ([]byte, error) {
-	valueBase64Encoded, err := getValueFromRows(i.resultRows, payloadFieldKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get payload from rows: %w", err)
-	}
+	var retrievedDocument document
 
-	return base64.StdEncoding.DecodeString(valueBase64Encoded)
-}
-
-func (i *couchDBResultsIterator) Tags() ([]storage.Tag, error) {
-	rawDoc := make(map[string]interface{})
-
-	err := i.resultRows.ScanDoc(&rawDoc)
+	err := i.resultRows.ScanDoc(&retrievedDocument)
 	if err != nil {
 		return nil, fmt.Errorf(failWhileScanResultRows, err)
 	}
 
-	tags, err := getTagsFromRawDoc(rawDoc)
+	return retrievedDocument.Value, nil
+}
+
+func (i *couchDBResultsIterator) Tags() ([]storage.Tag, error) {
+	var retrievedDocument document
+
+	err := i.resultRows.ScanDoc(&retrievedDocument)
 	if err != nil {
-		return nil, fmt.Errorf(failGetTagsFromRawDoc, err)
+		return nil, fmt.Errorf(failWhileScanResultRows, err)
 	}
 
-	return tags, nil
+	return getTagsFromDocument(&retrievedDocument), nil
 }
 
 func (i *couchDBResultsIterator) fetchAnotherPage() (bool, error) {
@@ -868,16 +830,6 @@ func (i *couchDBResultsIterator) fetchAnotherPage() (bool, error) {
 	}
 
 	return followupNextCallResult, nil
-}
-
-func validateTagNames(config storage.StoreConfiguration) error {
-	for _, tagName := range config.TagNames {
-		if tagName == payloadFieldKey {
-			return errors.New(`tag name cannot be "payload" as it is a reserved keyword`)
-		}
-	}
-
-	return nil
 }
 
 func updateIndexes(db *kivik.DB, config storage.StoreConfiguration, existingIndexes []kivik.Index) error {
@@ -927,9 +879,9 @@ func updateIndexes(db *kivik.DB, config storage.StoreConfiguration, existingInde
 }
 
 func createIndexes(db *kivik.DB, tagNamesNeedIndexCreation []string) error {
-	for _, tag := range tagNamesNeedIndexCreation {
-		err := db.CreateIndex(context.Background(), designDocumentName, tag+"_index",
-			`{"fields": ["`+tag+`"]}`)
+	for _, tagName := range tagNamesNeedIndexCreation {
+		err := db.CreateIndex(context.Background(), designDocumentName, tagName+"_index",
+			`{"fields": ["tags.`+tagName+`"]}`)
 		if err != nil {
 			return fmt.Errorf("failed to create index in CouchDB: %w", err)
 		}
@@ -949,127 +901,72 @@ func getQueryOptions(options []storage.QueryOption) storage.QueryOptions {
 	return queryOptions
 }
 
-func getValueFromRows(rows rows, rawDocKey string) (string, error) {
-	rawDoc := make(map[string]interface{})
+func getValuesFromDocuments(documents []*document) [][]byte {
+	storedValues := make([][]byte, len(documents))
 
-	err := rows.ScanDoc(&rawDoc)
-	if err != nil {
-		return "", fmt.Errorf(failWhileScanResultRows, err)
-	}
-
-	value, err := getStringValueFromRawDoc(rawDoc, rawDocKey)
-	if err != nil {
-		return "", fmt.Errorf(`failure while getting the value associated with the "%s" key`+
-			`from the raw document`, rawDocKey)
-	}
-
-	return value, nil
-}
-
-func getStringValueFromRawDoc(rawDoc map[string]interface{}, rawDocKey string) (string, error) {
-	value, ok := rawDoc[rawDocKey]
-	if !ok {
-		return "", fmt.Errorf(`"%s" is missing from the raw document`, rawDocKey)
-	}
-
-	valueString, ok := value.(string)
-	if !ok {
-		return "",
-			fmt.Errorf(`value associated with the "%s" key in the raw document `+
-				`could not be asserted as a string`, rawDocKey)
-	}
-
-	return valueString, nil
-}
-
-func getPayloadsFromRawDocs(rawDocs []map[string]interface{}) ([][]byte, error) {
-	storedValues := make([][]byte, len(rawDocs))
-
-	for i, rawDoc := range rawDocs {
-		// If the rawDoc is nil, this means that the value could not be found.
+	for i, document := range documents {
+		// If the document is nil, this means that the value could not be found.
 		// It is not considered an error.
-		if rawDoc == nil {
+		if document == nil {
 			storedValues[i] = nil
 
 			continue
 		}
 
-		// CouchDB still returns a raw document if the key has been deleted, so if this is a "deleted" raw document
-		// then we need to return nil to indicate that the value could not be found
-		isDeleted, containsIsDeleted := rawDoc[deletedFieldKey]
-		if containsIsDeleted {
-			isDeletedBool, ok := isDeleted.(bool)
-			if !ok {
-				return nil, errors.New("failed to assert the retrieved deleted field value as a bool")
-			}
+		// CouchDB still returns a document if the key has been deleted, so if this is a "deleted" document
+		// then we need to return nil to indicate that the value could not be found.
+		if document.Deleted {
+			storedValues[i] = nil
 
-			if isDeletedBool {
-				storedValues[i] = nil
-
-				continue
-			}
+			continue
 		}
 
-		storedValueBase64, err := getStringValueFromRawDoc(rawDoc, payloadFieldKey)
-		if err != nil {
-			return nil, fmt.Errorf(`failed to get the payload from the raw document: %w`, err)
-		}
-
-		storeValue, err := base64.StdEncoding.DecodeString(storedValueBase64)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode stored value: %w", err)
-		}
-
-		storedValues[i] = storeValue
+		storedValues[i] = document.Value
 	}
 
-	return storedValues, nil
+	return storedValues
 }
 
-func getRawDocsFromRows(rows rows) ([]map[string]interface{}, error) {
+func getDocumentsFromRows(rows rows) ([]*document, error) {
 	moreDocumentsToRead := rows.Next()
 
-	var rawDocs []map[string]interface{}
+	var documents []*document
 
 	for moreDocumentsToRead {
-		var rawDoc map[string]interface{}
-		err := rows.ScanDoc(&rawDoc)
+		var retrievedDocument document
+		err := rows.ScanDoc(&retrievedDocument)
 		// For the regular Get method, Kivik actually returns a different error message if a document was deleted.
-		// When doing a bulk get, however,  Kivik doesn't return an error message, and we have to check the "_deleted"
-		// field in the raw doc later. This is done in the getPayloadsFromRawDocs method.
-		// If the document wasn't found, we allow the nil raw doc to be appended since we don't consider it to be
+		// When doing a bulk get, however, Kivik doesn't return an error message, and we have to check the "_deleted"
+		// field in the doc later. This is done in the getValuesFromDocuments method.
+		// If the document wasn't found, we allow the nil doc to be appended since we don't consider it to be
 		// an error.
 		if err != nil && !strings.Contains(err.Error(), bulkGetDocNotFoundErrMsgFromKivik) {
 			return nil, fmt.Errorf(failWhileScanResultRows, err)
 		}
 
-		rawDocs = append(rawDocs, rawDoc)
+		documents = append(documents, &retrievedDocument)
 
 		moreDocumentsToRead = rows.Next()
 	}
 
-	return rawDocs, nil
+	return documents, nil
 }
 
-func getTagsFromRawDoc(rawDoc map[string]interface{}) ([]storage.Tag, error) {
-	var tags []storage.Tag
+func getTagsFromDocument(document *document) []storage.Tag {
+	tags := make([]storage.Tag, len(document.Tags))
 
-	for key, value := range rawDoc {
-		// Any key that isn't one of the reserved keywords below must be a tag.
-		if key != idFieldKey && key != revIDFieldKey && key != payloadFieldKey {
-			valueString, ok := value.(string)
-			if !ok {
-				return nil, errors.New("failed to assert tag value as string")
-			}
+	var counter int
 
-			tags = append(tags, storage.Tag{
-				Name:  key,
-				Value: valueString,
-			})
+	for tagName, tagValue := range document.Tags {
+		tags[counter] = storage.Tag{
+			Name:  tagName,
+			Value: tagValue,
 		}
+
+		counter++
 	}
 
-	return tags, nil
+	return tags
 }
 
 func logAnyWarning(i *couchDBResultsIterator) {
@@ -1108,15 +1005,10 @@ func removeDuplicatesKeepingOnlyLast(operations []storage.Operation) []storage.O
 	return operations
 }
 
-// TODO (#65) Store tags as a nested object so we don't need to do this "payload" name check.
-func addTagsToRawDoc(rawDoc map[string]interface{}, tags []storage.Tag) error {
+//
+func setDocumentTags(document *document, tags []storage.Tag) {
+	document.Tags = make(map[string]string)
 	for _, tag := range tags {
-		if tag.Name == payloadFieldKey {
-			return errors.New(`tag name cannot be "payload" as it is a reserved keyword`)
-		}
-
-		rawDoc[tag.Name] = tag.Value
+		document.Tags[tag.Name] = tag.Value
 	}
-
-	return nil
 }
