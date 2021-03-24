@@ -153,7 +153,7 @@ func TestVDRI_Create(t *testing.T) {
 		verCapabilityInvocation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"},
 			did.CapabilityInvocation)
 
-		docResolution, err := v.Create(nil, &did.Doc{
+		docResolution, err := v.Create(&did.Doc{
 			Service: []did.Service{
 				{ID: "svc"},
 			},
@@ -199,7 +199,7 @@ func TestVDRI_Create(t *testing.T) {
 
 		ver := did.NewReferencedVerification(vm, did.Authentication)
 
-		_, err = v.Create(nil, &did.Doc{
+		_, err = v.Create(&did.Doc{
 			Service: []did.Service{
 				{ID: "svc"},
 			},
@@ -239,7 +239,7 @@ func TestVDRI_Create(t *testing.T) {
 
 		ver := did.NewReferencedVerification(vm, did.Authentication)
 
-		_, err = v.Create(nil, &did.Doc{
+		_, err = v.Create(&did.Doc{
 			Service: []did.Service{
 				{ID: "svc"},
 			},
@@ -268,7 +268,7 @@ func TestVDRI_Create(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
 
-		_, err = v.Create(nil, &did.Doc{})
+		_, err = v.Create(&did.Doc{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get endpoints")
 	})
@@ -291,7 +291,7 @@ func TestVDRI_Create(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
 
-		_, err = v.Create(nil, &did.Doc{})
+		_, err = v.Create(&did.Doc{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get sidetree config")
 	})
