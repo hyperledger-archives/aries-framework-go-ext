@@ -153,7 +153,7 @@ func TestVDRI_Create(t *testing.T) {
 		verCapabilityInvocation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"},
 			did.CapabilityInvocation)
 
-		docResolution, err := v.Create(nil, &did.Doc{
+		docResolution, err := v.Create(&did.Doc{
 			Service: []did.Service{
 				{ID: "svc"},
 			},
@@ -199,7 +199,7 @@ func TestVDRI_Create(t *testing.T) {
 
 		ver := did.NewReferencedVerification(vm, did.Authentication)
 
-		_, err = v.Create(nil, &did.Doc{
+		_, err = v.Create(&did.Doc{
 			Service: []did.Service{
 				{ID: "svc"},
 			},
@@ -239,7 +239,7 @@ func TestVDRI_Create(t *testing.T) {
 
 		ver := did.NewReferencedVerification(vm, did.Authentication)
 
-		_, err = v.Create(nil, &did.Doc{
+		_, err = v.Create(&did.Doc{
 			Service: []did.Service{
 				{ID: "svc"},
 			},
@@ -268,7 +268,7 @@ func TestVDRI_Create(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
 
-		_, err = v.Create(nil, &did.Doc{})
+		_, err = v.Create(&did.Doc{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get endpoints")
 	})
@@ -291,7 +291,7 @@ func TestVDRI_Create(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
 
-		_, err = v.Create(nil, &did.Doc{})
+		_, err = v.Create(&did.Doc{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get sidetree config")
 	})
@@ -950,7 +950,7 @@ const (
 
 	testDoc = `{
   "@context": ["https://w3id.org/did/v1"],
-  "publicKey": [{
+  "verificationMethod": [{
     "id": "did:example:123456789abcdefghi#key-2",
     "controller": "did:example:123456789abcdefghi",
     "publicKeyJwk":{
@@ -1342,7 +1342,7 @@ func Test_canonicalizeDoc(t *testing.T) {
 		{
 			`{
   "@context": ["https://w3id.org/did/v1"],
-  "publicKey": [{
+  "verificationMethod": [{
     "id": "did:example:123456789abcdefghi#keys-3",
     "publicKeyBase58": "H3C2AVvLMv6gmMNam3uVAjZpfkcJCwDwnZn6z3wXmqPV",
     "type": "Secp256k1VerificationKey2018",
@@ -1391,7 +1391,7 @@ func Test_canonicalizeDoc(t *testing.T) {
 }`,
 			`{
   "@context": ["https://w3id.org/did/v1"],
-  "publicKey": [{
+  "verificationMethod": [{
     "id": "did:example:123456789abcdefghi#keys-3",
     "publicKeyBase58": "H3C2AVvLMv6gmMNam3uVAjZpfkcJCwDwnZn6z3wXmqPV",
     "type": "Secp256k1VerificationKey2018",
@@ -1440,7 +1440,7 @@ func Test_canonicalizeDoc(t *testing.T) {
 }`},
 		{`{
   "@context": ["https://w3id.org/did/v1"],
-  "publicKey": [{
+  "verificationMethod": [{
     "id": "did:example:123456789abcdefghi#keys-3",
     "publicKeyBase58": "H3C2AVvLMv6gmMNam3uVAjZpfkcJCwDwnZn6z3wXmqPV",
     "type": "Secp256k1VerificationKey2018",
@@ -1495,7 +1495,7 @@ func Test_canonicalizeDoc(t *testing.T) {
     "did:example:123456789abcdefghi#keys-3"
   ],
   "@context": ["https://w3id.org/did/v1"],
-  "publicKey": [{
+  "verificationMethod": [{
     "id": "did:example:123456789abcdefghi#keys-3",
     "publicKeyBase58": "H3C2AVvLMv6gmMNam3uVAjZpfkcJCwDwnZn6z3wXmqPV",
     "type": "Secp256k1VerificationKey2018",
