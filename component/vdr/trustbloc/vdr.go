@@ -23,7 +23,6 @@ import (
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
-	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
 	log "github.com/sirupsen/logrus"
 
@@ -90,7 +89,7 @@ type didConfigService interface {
 }
 
 type vdri interface {
-	Create(keyManager kms.KeyManager, did *docdid.Doc, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error)
+	Create(did *docdid.Doc, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error)
 	Read(id string, opts ...vdrapi.ResolveOption) (*docdid.DocResolution, error)
 }
 
@@ -185,7 +184,7 @@ func (v *VDRI) Close() error {
 
 // Create did doc.
 // nolint: funlen,gocyclo
-func (v *VDRI) Create(keyManager kms.KeyManager, did *docdid.Doc,
+func (v *VDRI) Create(did *docdid.Doc,
 	opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
 

@@ -28,7 +28,7 @@ const (
 }`
 	testDoc = `{
   "@context": ["https://w3id.org/did/v1"],
-  "publicKey": [{
+  "verificationMethod": [{
     "id": "did:example:123456789abcdefghi#key-2",
     "controller": "did:example:123456789abcdefghi",
     "publicKeyJwk":{
