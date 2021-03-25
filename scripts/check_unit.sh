@@ -35,7 +35,7 @@ function clean ()
 trap exit INT
 trap clean EXIT
 
-for i in $(find $unit_tests_path $exclude -name "go.mod" -print)
+for i in $(find $unit_tests_path -path ./test -prune -o $exclude -name "go.mod" -print)
 do
   pushd "$(dirname $i)" > /dev/null
   if [ -z $(go list) ]; then

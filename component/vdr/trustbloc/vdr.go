@@ -88,19 +88,19 @@ type didConfigService interface {
 	VerifyStakeholder(domain string, doc *docdid.Doc) error
 }
 
-type vdri interface {
+type vdr interface {
 	Create(did *docdid.Doc, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error)
 	Read(id string, opts ...vdrapi.ResolveOption) (*docdid.DocResolution, error)
 }
 
-// VDRI bloc.
-type VDRI struct {
+// VDR bloc.
+type VDR struct {
 	resolverURL                 string
 	domain                      string
 	configService               configService
 	endpointService             endpointService
 	didConfigService            didConfigService
-	getHTTPVDRI                 func(url string) (vdri, error) // needed for unit test
+	getHTTPVDR                  func(url string) (vdr, error) // needed for unit test
 	tlsConfig                   *tls.Config
 	authToken                   string
 	validatedConsortium         map[string]bool
@@ -125,9 +125,9 @@ type KeyRetriever interface {
 	GetSigningKey(didID string, ot OperationType) (crypto.PrivateKey, error)
 }
 
-// New creates new bloc vdri.
-func New(keyRetriever KeyRetriever, opts ...Option) (*VDRI, error) {
-	v := &VDRI{}
+// New creates new bloc vdru.
+func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
+	v := &VDR{}
 
 	for _, opt := range opts {
 		opt(v)
@@ -135,7 +135,7 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDRI, error) {
 
 	v.sidetreeClient = sidetree.New(sidetree.WithAuthToken(v.authToken), sidetree.WithTLSConfig(v.tlsConfig))
 
-	v.getHTTPVDRI = func(url string) (vdri, error) {
+	v.getHTTPVDR = func(url string) (vdr, error) {
 		return httpbinding.New(url,
 			httpbinding.WithTLSConfig(v.tlsConfig), httpbinding.WithResolveAuthToken(v.authToken))
 	}
@@ -173,18 +173,18 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDRI, error) {
 }
 
 // Accept did method.
-func (v *VDRI) Accept(method string) bool {
+func (v *VDR) Accept(method string) bool {
 	return method == DIDMethod
 }
 
-// Close vdri.
-func (v *VDRI) Close() error {
+// Close vdr.
+func (v *VDR) Close() error {
 	return nil
 }
 
 // Create did doc.
 // nolint: funlen,gocyclo
-func (v *VDRI) Create(did *docdid.Doc,
+func (v *VDR) Create(did *docdid.Doc,
 	opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
 
@@ -250,7 +250,7 @@ func (v *VDRI) Create(did *docdid.Doc,
 }
 
 // Update did doc.
-func (v *VDRI) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error { //nolint:funlen,gocyclo
+func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error { //nolint:funlen,gocyclo
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
 
 	// Apply options
@@ -323,7 +323,7 @@ func (v *VDRI) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error 
 	return v.sidetreeClient.UpdateDID(didDoc.ID, updateOpt...)
 }
 
-func (v *VDRI) recover(didDoc *docdid.Doc, sidetreeConfig *models.SidetreeConfig,
+func (v *VDR) recover(didDoc *docdid.Doc, sidetreeConfig *models.SidetreeConfig,
 	getEndpoints func() ([]string, error), recoveryCommitment string) error {
 	recoveryOpt := make([]recovery.Option, 0)
 
@@ -369,7 +369,7 @@ func (v *VDRI) recover(didDoc *docdid.Doc, sidetreeConfig *models.SidetreeConfig
 }
 
 // Deactivate did doc.
-func (v *VDRI) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
+func (v *VDR) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
 
 	// Apply options
@@ -459,7 +459,7 @@ func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error
 	return pksMap, nil
 }
 
-func (v *VDRI) getSidetreeEndpoints(didMethodOpts *vdrapi.DIDMethodOpts) func() ([]string, error) {
+func (v *VDR) getSidetreeEndpoints(didMethodOpts *vdrapi.DIDMethodOpts) func() ([]string, error) {
 	if didMethodOpts.Values[EndpointsOpt] == nil {
 		return func() ([]string, error) {
 			var result []string
@@ -545,7 +545,7 @@ func getRemovedPKKeysID(currentVM, updatedVM []docdid.VerificationMethod) []upda
 	return updateOpt
 }
 
-func (v *VDRI) loadGenesisFiles() error {
+func (v *VDR) loadGenesisFiles() error {
 	for _, genesisFile := range v.genesisFiles {
 		err := v.updateValidationService.AddGenesisFile(genesisFile.url, genesisFile.domain, genesisFile.fileData)
 		if err != nil {
@@ -558,10 +558,10 @@ func (v *VDRI) loadGenesisFiles() error {
 	return nil
 }
 
-func (v *VDRI) sidetreeResolve(url, did string, opts ...vdrapi.ResolveOption) (*docdid.DocResolution, error) {
-	resolver, err := v.getHTTPVDRI(url)
+func (v *VDR) sidetreeResolve(url, did string, opts ...vdrapi.ResolveOption) (*docdid.DocResolution, error) {
+	resolver, err := v.getHTTPVDR(url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new sidetree vdri: %w", err)
+		return nil, fmt.Errorf("failed to create new sidetree vdr: %w", err)
 	}
 
 	docResolution, err := resolver.Read(did, opts...)
@@ -577,7 +577,7 @@ const (
 	domainDIDPart             = 2
 )
 
-func (v *VDRI) Read(did string, opts ...vdrapi.ResolveOption) (*docdid.DocResolution, error) { //nolint: gocyclo
+func (v *VDR) Read(did string, opts ...vdrapi.ResolveOption) (*docdid.DocResolution, error) { //nolint: gocyclo
 	if v.resolverURL != "" {
 		return v.sidetreeResolve(v.resolverURL, did, opts...)
 	}
@@ -642,7 +642,7 @@ func (v *VDRI) Read(did string, opts ...vdrapi.ResolveOption) (*docdid.DocResolu
 
 // ValidateConsortium validate the config and endorsement of a consortium and its stakeholders
 // returns the duration after which the consortium config expires and needs re-validation.
-func (v *VDRI) ValidateConsortium(consortiumDomain string) (*time.Duration, error) {
+func (v *VDR) ValidateConsortium(consortiumDomain string) (*time.Duration, error) {
 	consortiumConfig, err := v.configService.GetConsortium(consortiumDomain, consortiumDomain)
 	if err != nil {
 		return nil, fmt.Errorf("consortium invalid: %w", err)
@@ -685,7 +685,7 @@ func (v *VDRI) ValidateConsortium(consortiumDomain string) (*time.Duration, erro
 	return &lifetime, nil
 }
 
-func (v *VDRI) verifyStakeholder(cfd *models.ConsortiumFileData, sfd *models.StakeholderFileData) error {
+func (v *VDR) verifyStakeholder(cfd *models.ConsortiumFileData, sfd *models.StakeholderFileData) error {
 	s := sfd.Config
 	if s == nil {
 		return fmt.Errorf("stakeholder has nil config")
@@ -723,7 +723,7 @@ func (v *VDRI) verifyStakeholder(cfd *models.ConsortiumFileData, sfd *models.Sta
 }
 
 // select n random stakeholders from the consortium (where n is the consortium's numQueries policy parameter.
-func (v *VDRI) selectStakeholders(consortium *models.Consortium) ([]*models.StakeholderFileData, error) {
+func (v *VDR) selectStakeholders(consortium *models.Consortium) ([]*models.StakeholderFileData, error) {
 	n := consortium.Policy.NumQueries
 	if n == 0 || n > len(consortium.Members) {
 		n = len(consortium.Members)
@@ -774,47 +774,47 @@ func canonicalizeDoc(didDoc *docdid.Doc) ([]byte, error) {
 	return proc.GetCanonicalDocument(docMap)
 }
 
-// Option configures the bloc vdri.
-type Option func(opts *VDRI)
+// Option configures the bloc vdr.
+type Option func(opts *VDR)
 
 // WithResolverURL option is setting resolver url.
 func WithResolverURL(resolverURL string) Option {
-	return func(opts *VDRI) {
+	return func(opts *VDR) {
 		opts.resolverURL = resolverURL
 	}
 }
 
 // WithDomain option is setting domain.
 func WithDomain(domain string) Option {
-	return func(opts *VDRI) {
+	return func(opts *VDR) {
 		opts.domain = domain
 	}
 }
 
 // WithTLSConfig option is for definition of secured HTTP transport using a tls.Config instance.
 func WithTLSConfig(tlsConfig *tls.Config) Option {
-	return func(opts *VDRI) {
+	return func(opts *VDR) {
 		opts.tlsConfig = tlsConfig
 	}
 }
 
 // WithAuthToken add auth token.
 func WithAuthToken(authToken string) Option {
-	return func(opts *VDRI) {
+	return func(opts *VDR) {
 		opts.authToken = authToken
 	}
 }
 
 // EnableSignatureVerification enables signature verification.
 func EnableSignatureVerification(enable bool) Option {
-	return func(opts *VDRI) {
+	return func(opts *VDR) {
 		opts.enableSignatureVerification = enable
 	}
 }
 
-// UseGenesisFile adds a consortium genesis file to the VDRI and enables consortium config update validation.
+// UseGenesisFile adds a consortium genesis file to the VDR and enables consortium config update validation.
 func UseGenesisFile(url, domain string, genesisFile []byte) Option {
-	return func(opts *VDRI) {
+	return func(opts *VDR) {
 		opts.genesisFiles = append(opts.genesisFiles, genesisFileData{
 			url:      url,
 			domain:   domain,

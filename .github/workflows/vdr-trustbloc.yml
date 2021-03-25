@@ -49,3 +49,13 @@ jobs:
         uses: codecov/codecov-action@v1.0.14
         with:
           file: ./coverage.out
+  bddtest:
+    name: BDD test
+    timeout-minutes: 20
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: BDD test
+        timeout-minutes: 10
+        run: make vdr-trustbloc-bdd-test

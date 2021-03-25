@@ -581,8 +581,8 @@ func TestVDRI_Recover(t *testing.T) {
 	})
 }
 
-func httpVdriFunc(doc *did.DocResolution, err error) func(url string) (v vdri, err error) {
-	return func(url string) (v vdri, e error) {
+func httpVdrFunc(doc *did.DocResolution, err error) func(url string) (v vdr, err error) {
+	return func(url string) (v vdr, e error) {
 		return &mockvdr.MockVDR{
 			ReadFunc: func(didID string, opts ...vdrapi.ResolveOption) (*did.DocResolution, error) {
 				return doc, err
@@ -691,11 +691,11 @@ func TestVDRI_Read(t *testing.T) {
 		v, err := New(&mockKeyRetriever{}, WithResolverURL("url"))
 		require.NoError(t, err)
 
-		_, err = v.getHTTPVDRI("")
+		_, err = v.getHTTPVDR("")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "empty url")
 
-		v.getHTTPVDRI = func(url string) (v vdri, err error) {
+		v.getHTTPVDR = func(url string) (v vdr, err error) {
 			return nil, fmt.Errorf("get http vdri error")
 		}
 
@@ -709,7 +709,7 @@ func TestVDRI_Read(t *testing.T) {
 		v, err := New(&mockKeyRetriever{}, WithResolverURL("url"))
 		require.NoError(t, err)
 
-		v.getHTTPVDRI = httpVdriFunc(nil, fmt.Errorf("read error"))
+		v.getHTTPVDR = httpVdrFunc(nil, fmt.Errorf("read error"))
 
 		doc, err := v.Read("did")
 		require.Error(t, err)
@@ -721,7 +721,7 @@ func TestVDRI_Read(t *testing.T) {
 		v, err := New(&mockKeyRetriever{}, WithResolverURL("url"))
 		require.NoError(t, err)
 
-		v.getHTTPVDRI = httpVdriFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)
+		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)
 
 		doc, err := v.Read("did")
 		require.NoError(t, err)
@@ -732,7 +732,7 @@ func TestVDRI_Read(t *testing.T) {
 		v, err := New(&mockKeyRetriever{})
 		require.NoError(t, err)
 
-		v.getHTTPVDRI = func(url string) (v vdri, err error) {
+		v.getHTTPVDR = func(url string) (v vdr, err error) {
 			return nil, nil
 		}
 
@@ -792,7 +792,7 @@ func TestVDRI_Read(t *testing.T) {
 			},
 		}
 
-		v.getHTTPVDRI = func(url string) (v vdri, err error) {
+		v.getHTTPVDR = func(url string) (v vdr, err error) {
 			return nil, fmt.Errorf("get http vdri error")
 		}
 
@@ -814,7 +814,7 @@ func TestVDRI_Read(t *testing.T) {
 			},
 		}
 
-		v.getHTTPVDRI = httpVdriFunc(nil, fmt.Errorf("read error"))
+		v.getHTTPVDR = httpVdrFunc(nil, fmt.Errorf("read error"))
 
 		v.validatedConsortium["testnet"] = true
 
@@ -844,7 +844,7 @@ func TestVDRI_Read(t *testing.T) {
 
 		counter := 0
 
-		v.getHTTPVDRI = func(url string) (v vdri, err error) {
+		v.getHTTPVDR = func(url string) (v vdr, err error) {
 			return &mockvdr.MockVDR{
 				ReadFunc: func(didID string, opts ...vdrapi.ResolveOption) (*did.DocResolution, error) {
 					counter++
@@ -889,7 +889,7 @@ func TestVDRI_Read(t *testing.T) {
 			},
 		}
 
-		v.getHTTPVDRI = httpVdriFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did:trustbloc:testnet:123"}}, nil)
+		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did:trustbloc:testnet:123"}}, nil)
 
 		v.configService = &mockconfig.MockConfigService{
 			GetConsortiumFunc: func(u string, d string) (*models.ConsortiumFileData, error) {
@@ -1063,7 +1063,7 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 			},
 		}
 
-		v.getHTTPVDRI = httpVdriFunc(nil, nil)
+		v.getHTTPVDR = httpVdrFunc(nil, nil)
 
 		_, err = v.ValidateConsortium(consortiumServer.URL)
 		require.Error(t, err)
@@ -1113,7 +1113,7 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 		mockDoc, err := did.ParseDocument([]byte(testDoc))
 		require.NoError(t, err)
 
-		v.getHTTPVDRI = httpVdriFunc(&did.DocResolution{DIDDocument: mockDoc}, nil)
+		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: mockDoc}, nil)
 
 		_, err = v.ValidateConsortium(consortiumServer.URL)
 		require.NoError(t, err)
@@ -1171,7 +1171,7 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 			},
 		}
 
-		v.getHTTPVDRI = func(url string) (v vdri, err error) {
+		v.getHTTPVDR = func(url string) (v vdr, err error) {
 			return nil, fmt.Errorf("foo")
 		}
 
@@ -1237,7 +1237,7 @@ func TestVDRI_ValidateConsortium(t *testing.T) {
 		mockDoc, err := did.ParseDocument([]byte(testDoc))
 		require.NoError(t, err)
 
-		v.getHTTPVDRI = httpVdriFunc(&did.DocResolution{DIDDocument: mockDoc}, nil)
+		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: mockDoc}, nil)
 
 		v.didConfigService = &mockdidconf.MockDIDConfigService{
 			VerifyStakeholderFunc: func(domain string, doc *did.Doc) error {
@@ -1310,7 +1310,7 @@ func Test_verifyStakeholder(t *testing.T) {
 			v, err := New(&mockKeyRetriever{})
 			require.NoError(t, err)
 
-			v.getHTTPVDRI = httpVdriFunc(&did.DocResolution{DIDDocument: mockDoc}, nil)
+			v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: mockDoc}, nil)
 
 			v.didConfigService = &mockdidconf.MockDIDConfigService{
 				VerifyStakeholderFunc: func(domain string, doc *did.Doc) error {
@@ -1539,7 +1539,7 @@ func TestOpts(t *testing.T) {
 		opts = append(opts, WithTLSConfig(&tls.Config{ServerName: "test", MinVersion: tls.VersionTLS12}),
 			WithAuthToken("tk1"))
 
-		v := &VDRI{}
+		v := &VDR{}
 
 		// Apply options
 		for _, opt := range opts {
@@ -1554,7 +1554,7 @@ func TestOpts(t *testing.T) {
 		var opts []Option
 		opts = append(opts, EnableSignatureVerification(true))
 
-		v := &VDRI{}
+		v := &VDR{}
 
 		// Apply options
 		for _, opt := range opts {
