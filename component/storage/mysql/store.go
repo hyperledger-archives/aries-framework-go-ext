@@ -22,13 +22,16 @@ import ( //nolint:gci // False positive, seemingly caused by the MySQL driver co
 )
 
 const (
-	createDBQuery                   = "CREATE DATABASE IF NOT EXISTS `%s`"
-	tagMapKey                       = "TagMap"
-	storeConfigKey                  = "StoreConfig"
+	createDBQuery  = "CREATE DATABASE IF NOT EXISTS `%s`"
+	tagMapKey      = "TagMap"
+	storeConfigKey = "StoreConfig"
+
 	expressionTagNameOnlyLength     = 1
 	expressionTagNameAndValueLength = 2
 	invalidQueryExpressionFormat    = `"%s" is not in a valid expression format. ` +
 		"it must be in the following format: TagName:TagValue"
+	invalidTagName  = `"%s" is an invalid tag name since it contains one or more ':' characters`
+	invalidTagValue = `"%s" is an invalid tag value since it contains one or more ':' characters`
 )
 
 // TODO (#67): Fully implement all methods.
@@ -158,6 +161,12 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 // of the Query method.
 // TODO (#67): Use proper MySQL indexing instead of the "Tag Map".
 func (p *Provider) SetStoreConfig(name string, config storage.StoreConfiguration) error {
+	for _, tagName := range config.TagNames {
+		if strings.Contains(tagName, ":") {
+			return fmt.Errorf(invalidTagName, tagName)
+		}
+	}
+
 	name = strings.ToLower(name)
 
 	if p.dbPrefix != "" {
@@ -269,8 +278,9 @@ type store struct {
 }
 
 func (s *store) Put(key string, value []byte, tags ...storage.Tag) error {
-	if key == "" || value == nil {
-		return errors.New("key and value are mandatory")
+	errInputValidation := validatePutInput(key, value, tags)
+	if errInputValidation != nil {
+		return errInputValidation
 	}
 
 	var newDBEntry dbEntry
@@ -573,6 +583,28 @@ func (i *iterator) Tags() ([]storage.Tag, error) {
 }
 
 func (i *iterator) Close() error {
+	return nil
+}
+
+func validatePutInput(key string, value []byte, tags []storage.Tag) error {
+	if key == "" {
+		return errors.New("key cannot be empty")
+	}
+
+	if value == nil {
+		return errors.New("value cannot be nil")
+	}
+
+	for _, tag := range tags {
+		if strings.Contains(tag.Name, ":") {
+			return fmt.Errorf(invalidTagName, tag.Name)
+		}
+
+		if strings.Contains(tag.Value, ":") {
+			return fmt.Errorf(invalidTagValue, tag.Value)
+		}
+	}
+
 	return nil
 }
 

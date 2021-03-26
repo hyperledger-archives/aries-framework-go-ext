@@ -36,6 +36,8 @@ const (
 	databaseNotFoundErrMsgFromKivik       = "Not Found: Database does not exist."
 	documentUpdateConflictErrMsgFromKivik = "Conflict: Document update conflict."
 
+	invalidTagName                = `"%s" is an invalid tag name since it contains one or more ':' characters`
+	invalidTagValue               = `"%s" is an invalid tag value since it contains one or more ':' characters`
 	failGetDatabaseHandle         = "failed to get database handle: %w"
 	failGetExistingIndexes        = "failed to get existing indexes: %w"
 	failureWhileScanningRow       = "failure while scanning row: %w"
@@ -219,6 +221,12 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 // The store must be created prior to calling this method.
 // If duplicate tags are provided, then CouchDB will ignore them.
 func (p *Provider) SetStoreConfig(name string, config storage.StoreConfiguration) error {
+	for _, tagName := range config.TagNames {
+		if strings.Contains(tagName, ":") {
+			return fmt.Errorf(invalidTagName, tagName)
+		}
+	}
+
 	name = strings.ToLower(p.dbPrefix + name)
 
 	db := p.couchDBClient.DB(context.Background(), name)
@@ -387,12 +395,9 @@ type store struct {
 //  Should all store implementations require tags to be defined in store config before allowing them to be used?
 // TODO (#81) If data is binary and large, store as CouchDB attachment instead.
 func (s *store) Put(k string, v []byte, tags ...storage.Tag) error {
-	if k == "" {
-		return errors.New("key cannot be empty")
-	}
-
-	if v == nil {
-		return errors.New("value cannot be nil")
+	errInputValidation := validatePutInput(k, v, tags)
+	if errInputValidation != nil {
+		return errInputValidation
 	}
 
 	var newDocument document
@@ -830,6 +835,28 @@ func (i *couchDBResultsIterator) fetchAnotherPage() (bool, error) {
 	}
 
 	return followupNextCallResult, nil
+}
+
+func validatePutInput(key string, value []byte, tags []storage.Tag) error {
+	if key == "" {
+		return errors.New("key cannot be empty")
+	}
+
+	if value == nil {
+		return errors.New("value cannot be nil")
+	}
+
+	for _, tag := range tags {
+		if strings.Contains(tag.Name, ":") {
+			return fmt.Errorf(invalidTagName, tag.Name)
+		}
+
+		if strings.Contains(tag.Value, ":") {
+			return fmt.Errorf(invalidTagValue, tag.Value)
+		}
+	}
+
+	return nil
 }
 
 func updateIndexes(db *kivik.DB, config storage.StoreConfiguration, existingIndexes []kivik.Index) error {
