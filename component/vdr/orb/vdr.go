@@ -38,6 +38,8 @@ const (
 	RecoveryPublicKeyOpt = "recoveryPublicKey"
 	// RecoverOpt recover opt.
 	RecoverOpt = "recover"
+	// AnchorOriginOpt anchor origin opt.
+	AnchorOriginOpt = "anchorOrigin"
 )
 
 // OperationType operation type.
@@ -153,6 +155,15 @@ func (v *VDR) Create(did *docdid.Doc,
 		return nil, fmt.Errorf("recoveryPublicKey is not  crypto.PublicKey")
 	}
 
+	if didMethodOpts.Values[AnchorOriginOpt] == nil {
+		return nil, fmt.Errorf("anchorOrigin opt is empty")
+	}
+
+	anchorOrigin, ok := didMethodOpts.Values[AnchorOriginOpt].(string)
+	if !ok {
+		return nil, fmt.Errorf("anchorOrigin is not string")
+	}
+
 	// get services
 	for i := range did.Service {
 		createOpt = append(createOpt, create.WithService(&did.Service[i]))
@@ -168,7 +179,7 @@ func (v *VDR) Create(did *docdid.Doc,
 		createOpt = append(createOpt, create.WithPublicKey(pks[k]))
 	}
 
-	createOpt = append(createOpt, create.WithSidetreeEndpoint(getEndpoints),
+	createOpt = append(createOpt, create.WithSidetreeEndpoint(getEndpoints), create.WithAnchorOrigin(anchorOrigin),
 		create.WithMultiHashAlgorithm(sidetreeConfig.MultiHashAlgorithm), create.WithUpdatePublicKey(updatePublicKey),
 		create.WithRecoveryPublicKey(recoveryPublicKey))
 
@@ -227,7 +238,17 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 	// check recover option
 	if didMethodOpts.Values[RecoverOpt] != nil {
-		return v.recover(didDoc, sidetreeConfig, getEndpoints, docResolution.DocumentMetadata.Method.RecoveryCommitment)
+		if didMethodOpts.Values[AnchorOriginOpt] == nil {
+			return fmt.Errorf("anchorOrigin opt is empty")
+		}
+
+		anchorOrigin, ok := didMethodOpts.Values[AnchorOriginOpt].(string)
+		if !ok {
+			return fmt.Errorf("anchorOrigin is not string")
+		}
+
+		return v.recover(didDoc, sidetreeConfig, getEndpoints, docResolution.DocumentMetadata.Method.RecoveryCommitment,
+			anchorOrigin)
 	}
 
 	// get services
@@ -271,7 +292,7 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 }
 
 func (v *VDR) recover(didDoc *docdid.Doc, sidetreeConfig *models.SidetreeConfig,
-	getEndpoints func() ([]string, error), recoveryCommitment string) error {
+	getEndpoints func() ([]string, error), recoveryCommitment, anchorOrigin string) error {
 	recoveryOpt := make([]recovery.Option, 0)
 
 	// get services
@@ -310,7 +331,8 @@ func (v *VDR) recover(didDoc *docdid.Doc, sidetreeConfig *models.SidetreeConfig,
 		recovery.WithNextRecoveryPublicKey(nextRecoveryPublicKey),
 		recovery.WithMultiHashAlgorithm(sidetreeConfig.MultiHashAlgorithm),
 		recovery.WithSigningKey(updateSigningKey),
-		recovery.WithOperationCommitment(recoveryCommitment))
+		recovery.WithOperationCommitment(recoveryCommitment),
+		recovery.WithAnchorOrigin(anchorOrigin))
 
 	return v.sidetreeClient.RecoverDID(didDoc.ID, recoveryOpt...)
 }

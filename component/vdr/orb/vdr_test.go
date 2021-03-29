@@ -10,6 +10,7 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,7 @@ import (
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/models"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/create"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/deactivate"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/recovery"
@@ -141,7 +143,8 @@ func TestVDRI_Create(t *testing.T) {
 				*verCapabilityInvocation,
 			},
 		}, vdrapi.WithOption(UpdatePublicKeyOpt, []byte{}),
-			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}))
+			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}),
+			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.NoError(t, err)
 		require.Equal(t, "did", docResolution.DIDDocument.ID)
 	})
@@ -174,6 +177,18 @@ func TestVDRI_Create(t *testing.T) {
 		require.Contains(t, err.Error(), "updatePublicKey opt is empty")
 	})
 
+	t.Run("test error from get sidetree config", func(t *testing.T) {
+		v, err := New(nil, WithAuthToken("tk1"), WithTLSConfig(
+			&tls.Config{MinVersion: tls.VersionTLS12}))
+		require.NoError(t, err)
+		v.configService = &mockConfigService{getSidetreeConfigFunc: func() (*models.SidetreeConfig, error) {
+			return nil, fmt.Errorf("failed to get config")
+		}}
+		_, err = v.Create(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{"url"}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get config")
+	})
+
 	t.Run("test recovery public key opt is empty", func(t *testing.T) {
 		v, err := New(&mockKeyRetriever{})
 		require.NoError(t, err)
@@ -200,6 +215,65 @@ func TestVDRI_Create(t *testing.T) {
 			vdrapi.WithOption(UpdatePublicKeyOpt, []byte{}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "recoveryPublicKey opt is empty")
+	})
+
+	t.Run("test anchor origin opt is empty", func(t *testing.T) {
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
+
+		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
+
+		_, pk, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		require.NoError(t, err)
+
+		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
+		require.NoError(t, err)
+
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+
+		_, err = v.Create(&did.Doc{
+			Service: []did.Service{
+				{ID: "svc"},
+			},
+			Authentication: []did.Verification{*ver},
+		}, vdrapi.WithOption(EndpointsOpt, []string{"url"}),
+			vdrapi.WithOption(UpdatePublicKeyOpt, []byte{}),
+			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "anchorOrigin opt is empty")
+	})
+
+	t.Run("test anchor origin opt is not string", func(t *testing.T) {
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
+
+		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
+
+		_, pk, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		require.NoError(t, err)
+
+		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
+		require.NoError(t, err)
+
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+
+		_, err = v.Create(&did.Doc{
+			Service: []did.Service{
+				{ID: "svc"},
+			},
+			Authentication: []did.Verification{*ver},
+		}, vdrapi.WithOption(EndpointsOpt, []string{"url"}),
+			vdrapi.WithOption(UpdatePublicKeyOpt, []byte{}),
+			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}),
+			vdrapi.WithOption(AnchorOriginOpt, true))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "anchorOrigin is not string")
 	})
 }
 
@@ -236,6 +310,13 @@ func TestVDRI_Deactivate(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to resolve did")
 	})
+}
+
+func TestVDRI_Close(t *testing.T) {
+	v, err := New(nil)
+	require.NoError(t, err)
+
+	require.Nil(t, v.Close())
 }
 
 func TestVDRI_Update(t *testing.T) {
@@ -287,6 +368,62 @@ func TestVDRI_Update(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to resolve did")
 	})
+
+	t.Run("test error from get endpoints", func(t *testing.T) {
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
+
+		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
+
+		err = v.Update(&did.Doc{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "orb discovery not supported")
+	})
+
+	t.Run("test error from get sidetree config", func(t *testing.T) {
+		v, err := New(nil)
+		require.NoError(t, err)
+		v.configService = &mockConfigService{getSidetreeConfigFunc: func() (*models.SidetreeConfig, error) {
+			return nil, fmt.Errorf("failed to get config")
+		}}
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{"url"}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get config")
+	})
+
+	t.Run("test failed to get next update public key", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(&mockKeyRetriever{getNextUpdatePublicKey: func(didID string) (crypto.PublicKey, error) {
+			return nil, fmt.Errorf("failed to get next update public key")
+		}})
+		require.NoError(t, err)
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get next update public key")
+	})
+
+	t.Run("test failed to get signing key", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(&mockKeyRetriever{getSigningKey: func(didID string, ot OperationType) (crypto.PrivateKey, error) {
+			return nil, fmt.Errorf("failed to get signing key")
+		}})
+		require.NoError(t, err)
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get signing key")
+	})
 }
 
 func TestVDRI_Recover(t *testing.T) {
@@ -320,7 +457,8 @@ func TestVDRI_Recover(t *testing.T) {
 			},
 			Authentication: []did.Verification{*ver},
 		}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
-			vdrapi.WithOption(RecoverOpt, true))
+			vdrapi.WithOption(RecoverOpt, true),
+			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.NoError(t, err)
 	})
 
@@ -346,7 +484,8 @@ func TestVDRI_Recover(t *testing.T) {
 			Authentication: []did.Verification{*verAuthentication},
 		},
 			vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
-			vdrapi.WithOption(RecoverOpt, true))
+			vdrapi.WithOption(RecoverOpt, true),
+			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "verificationMethod JSONWebKey is nil")
 
@@ -357,7 +496,8 @@ func TestVDRI_Recover(t *testing.T) {
 			Authentication: []did.Verification{*verAuthentication},
 		},
 			vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
-			vdrapi.WithOption(RecoverOpt, true))
+			vdrapi.WithOption(RecoverOpt, true),
+			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "vm relationship 0 not supported")
 
@@ -370,9 +510,102 @@ func TestVDRI_Recover(t *testing.T) {
 			},
 		},
 			vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
-			vdrapi.WithOption(RecoverOpt, true))
+			vdrapi.WithOption(RecoverOpt, true),
+			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "verificationMethod not supported")
+	})
+
+	t.Run("test anchor origin is empty", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(nil)
+		require.NoError(t, err)
+
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+			vdrapi.WithOption(RecoverOpt, true))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "anchorOrigin opt is empty")
+	})
+
+	t.Run("test anchor origin is not string", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(nil)
+		require.NoError(t, err)
+
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+			vdrapi.WithOption(RecoverOpt, true),
+			vdrapi.WithOption(AnchorOriginOpt, true))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "anchorOrigin is not string")
+	})
+
+	t.Run("test failed to get next update public key", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(&mockKeyRetriever{getNextUpdatePublicKey: func(didID string) (crypto.PublicKey, error) {
+			return nil, fmt.Errorf("failed to get next update public key")
+		}})
+		require.NoError(t, err)
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+			vdrapi.WithOption(RecoverOpt, true),
+			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get next update public key")
+	})
+
+	t.Run("test failed to get next recovery public key", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(&mockKeyRetriever{getNextRecoveryPublicKeyFunc: func(didID string) (crypto.PublicKey, error) {
+			return nil, fmt.Errorf("failed to get next recovery public key")
+		}})
+		require.NoError(t, err)
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+			vdrapi.WithOption(RecoverOpt, true),
+			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get next recovery public key")
+	})
+
+	t.Run("test failed to get signing key", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(&mockKeyRetriever{getSigningKey: func(didID string, ot OperationType) (crypto.PrivateKey, error) {
+			return nil, fmt.Errorf("failed to get signing key")
+		}})
+		require.NoError(t, err)
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+			vdrapi.WithOption(RecoverOpt, true),
+			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get signing key")
 	})
 }
 
@@ -414,6 +647,24 @@ func TestVDRI_Read(t *testing.T) {
 		doc, err := v.Read("did", vdrapi.WithOption(EndpointsOpt, []string{"url"}))
 		require.NoError(t, err)
 		require.Equal(t, "did", doc.DIDDocument.ID)
+	})
+
+	t.Run("test fetch endpoints from did not not supported", func(t *testing.T) {
+		v, err := New(nil)
+		require.NoError(t, err)
+
+		_, err = v.Read("did")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "fetch endpoints from did not not supported")
+	})
+
+	t.Run("test wrong type endpointsOpt", func(t *testing.T) {
+		v, err := New(nil)
+		require.NoError(t, err)
+
+		_, err = v.Read("did", vdrapi.WithOption(EndpointsOpt, "url"))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "endpointsOpt not array of string")
 	})
 }
 
@@ -462,6 +713,18 @@ func (m *mockKeyRetriever) GetNextUpdatePublicKey(didID string) (crypto.PublicKe
 func (m *mockKeyRetriever) GetSigningKey(didID string, ot OperationType) (crypto.PrivateKey, error) {
 	if m.getSigningKey != nil {
 		return m.getSigningKey(didID, ot)
+	}
+
+	return nil, nil
+}
+
+type mockConfigService struct {
+	getSidetreeConfigFunc func() (*models.SidetreeConfig, error)
+}
+
+func (m *mockConfigService) GetSidetreeConfig() (*models.SidetreeConfig, error) {
+	if m.getSidetreeConfigFunc != nil {
+		return m.getSidetreeConfigFunc()
 	}
 
 	return nil, nil
