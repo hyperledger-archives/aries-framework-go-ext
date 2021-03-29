@@ -336,6 +336,7 @@ func buildCreateRequest(multiHashAlgorithm uint, createDIDOpts *create.Opts) ([]
 		RecoveryCommitment: recoveryCommitment,
 		UpdateCommitment:   updateCommitment,
 		MultihashCode:      multiHashAlgorithm,
+		AnchorOrigin:       createDIDOpts.AnchorOrigin,
 	}
 
 	req, err := client.NewCreateRequest(createRequestInfo)
@@ -436,6 +437,7 @@ func buildRecoverRequest(did string, multiHashAlgorithm uint, recoverDIDOpts *re
 		DidSuffix: didSuffix, RevealValue: rv, OpaqueDocument: string(docBytes),
 		RecoveryCommitment: nextRecoveryCommitment, UpdateCommitment: nextUpdateCommitment,
 		MultihashCode: multiHashAlgorithm, Signer: signer, RecoveryKey: recoveryKey,
+		AnchorOrigin: recoverDIDOpts.AnchorOrigin,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sidetree request: %w", err)

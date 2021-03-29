@@ -25,6 +25,7 @@ type Opts struct {
 	SigningKey         crypto.PrivateKey
 	SigningKeyID       string
 	MultiHashAlgorithm uint
+	AnchorOrigin       string
 }
 
 // Option is a create DID option.
@@ -69,5 +70,12 @@ func WithUpdatePublicKey(updatePublicKey crypto.PublicKey) Option {
 func WithMultiHashAlgorithm(multiHashAlgorithm uint) Option {
 	return func(opts *Opts) {
 		opts.MultiHashAlgorithm = multiHashAlgorithm
+	}
+}
+
+// WithAnchorOrigin set anchor origin for sidetree request.
+func WithAnchorOrigin(anchorOrigin string) Option {
+	return func(opts *Opts) {
+		opts.AnchorOrigin = anchorOrigin
 	}
 }
