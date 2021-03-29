@@ -26,6 +26,7 @@ type Opts struct {
 	SigningKeyID          string
 	OperationCommitment   string
 	MultiHashAlgorithm    uint
+	AnchorOrigin          string
 }
 
 // Option is a recover DID option.
@@ -91,5 +92,12 @@ func WithMultiHashAlgorithm(multiHashAlgorithm uint) Option {
 func WithOperationCommitment(operationCommitment string) Option {
 	return func(opts *Opts) {
 		opts.OperationCommitment = operationCommitment
+	}
+}
+
+// WithAnchorOrigin set anchor origin for sidetree request.
+func WithAnchorOrigin(anchorOrigin string) Option {
+	return func(opts *Opts) {
+		opts.AnchorOrigin = anchorOrigin
 	}
 }
