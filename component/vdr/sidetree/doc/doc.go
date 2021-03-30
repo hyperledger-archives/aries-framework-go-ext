@@ -8,15 +8,11 @@ SPDX-License-Identifier: Apache-2.0
 package doc
 
 import (
-	"crypto/ecdsa"
-	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
 
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	gojose "github.com/square/go-jose/v3"
-	"github.com/trustbloc/sidetree-core-go/pkg/jws"
-	"github.com/trustbloc/sidetree-core-go/pkg/util/pubkey"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
 )
 
 const (
@@ -64,7 +60,7 @@ type PublicKey struct {
 	ID       string
 	Type     string
 	Purposes []string
-	JWK      gojose.JSONWebKey
+	JWK      jose.JWK
 }
 
 // JSONBytes converts document to json bytes.
@@ -109,26 +105,17 @@ func populateRawPublicKey(pk *PublicKey) (map[string]interface{}, error) {
 	rawPK[jsonldType] = pk.Type
 	rawPK[jsonldPurposes] = pk.Purposes
 
-	var jwk *jws.JWK
-
-	var err error
-
-	switch key := pk.JWK.Key.(type) {
-	case ed25519.PublicKey:
-		jwk, err = pubkey.GetPublicKeyJWK(key)
-		if err != nil {
-			return nil, err
-		}
-	case *ecdsa.PublicKey:
-		jwk, err = pubkey.GetPublicKeyJWK(&ecdsa.PublicKey{X: key.X, Y: key.Y, Curve: key.Curve})
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, fmt.Errorf("key not supported")
+	jwkBytes, err := pk.JWK.MarshalJSON()
+	if err != nil {
+		return nil, err
 	}
 
-	rawPK[jsonldPublicKeyjwk] = jwk
+	rawJWK := make(map[string]interface{})
+	if err := json.Unmarshal(jwkBytes, &rawJWK); err != nil {
+		return nil, err
+	}
+
+	rawPK[jsonldPublicKeyjwk] = rawJWK
 
 	return rawPK, nil
 }
