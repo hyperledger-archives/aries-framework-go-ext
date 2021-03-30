@@ -8,9 +8,11 @@ on:
   push:
     paths:
       - 'component/vdr/orb/**'
+      - 'test/bdd/vdr/orb/**'
   pull_request:
     paths:
       - 'component/vdr/orb/**'
+      - 'test/bdd/vdr/orb/**'
 jobs:
   linter:
     name: Go linter
