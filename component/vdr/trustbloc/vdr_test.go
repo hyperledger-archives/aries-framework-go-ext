@@ -584,7 +584,7 @@ func TestVDRI_Recover(t *testing.T) {
 func httpVdrFunc(doc *did.DocResolution, err error) func(url string) (v vdr, err error) {
 	return func(url string) (v vdr, e error) {
 		return &mockvdr.MockVDR{
-			ReadFunc: func(didID string, opts ...vdrapi.ResolveOption) (*did.DocResolution, error) {
+			ReadFunc: func(didID string, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
 				return doc, err
 			},
 		}, nil
@@ -846,7 +846,7 @@ func TestVDRI_Read(t *testing.T) {
 
 		v.getHTTPVDR = func(url string) (v vdr, err error) {
 			return &mockvdr.MockVDR{
-				ReadFunc: func(didID string, opts ...vdrapi.ResolveOption) (*did.DocResolution, error) {
+				ReadFunc: func(didID string, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
 					counter++
 
 					return generateDIDDoc("test:" + fmt.Sprint(counter)), nil

@@ -89,8 +89,7 @@ type didConfigService interface {
 }
 
 type vdr interface {
-	Create(did *docdid.Doc, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error)
-	Read(id string, opts ...vdrapi.ResolveOption) (*docdid.DocResolution, error)
+	Read(id string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error)
 }
 
 // VDR bloc.
@@ -452,7 +451,7 @@ func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error
 			ID:       v.VerificationMethod.ID,
 			Type:     v.VerificationMethod.Type,
 			Purposes: []string{purpose},
-			JWK:      v.VerificationMethod.JSONWebKey().JSONWebKey,
+			JWK:      *v.VerificationMethod.JSONWebKey(),
 		}
 	}
 
@@ -558,7 +557,7 @@ func (v *VDR) loadGenesisFiles() error {
 	return nil
 }
 
-func (v *VDR) sidetreeResolve(url, did string, opts ...vdrapi.ResolveOption) (*docdid.DocResolution, error) {
+func (v *VDR) sidetreeResolve(url, did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
 	resolver, err := v.getHTTPVDR(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new sidetree vdr: %w", err)
@@ -577,7 +576,7 @@ const (
 	domainDIDPart             = 2
 )
 
-func (v *VDR) Read(did string, opts ...vdrapi.ResolveOption) (*docdid.DocResolution, error) { //nolint: gocyclo
+func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) { //nolint: gocyclo
 	if v.resolverURL != "" {
 		return v.sidetreeResolve(v.resolverURL, did, opts...)
 	}
