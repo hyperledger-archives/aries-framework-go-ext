@@ -8,9 +8,11 @@ on:
   push:
     paths:
       - 'component/vdr/trustbloc/**'
+      - 'test/bdd/vdr/trustbloc/**'
   pull_request:
     paths:
       - 'component/vdr/trustbloc/**'
+      - 'test/bdd/vdr/trustbloc/**'
 jobs:
   linter:
     name: Go linter
