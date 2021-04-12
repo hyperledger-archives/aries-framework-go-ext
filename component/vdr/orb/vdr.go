@@ -11,6 +11,7 @@ import (
 	"crypto"
 	"crypto/tls"
 	"fmt"
+	"net/http"
 	"strings"
 
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
@@ -65,6 +66,7 @@ type vdr interface {
 
 type configService interface {
 	GetSidetreeConfig() (*models.SidetreeConfig, error)
+	GetEndpoint(domain string) (*models.Endpoint, error)
 }
 
 // VDR bloc.
@@ -72,6 +74,7 @@ type VDR struct {
 	getHTTPVDR     func(url string) (vdr, error) // needed for unit test
 	tlsConfig      *tls.Config
 	authToken      string
+	domain         string
 	sidetreeClient sidetreeClient
 	keyRetriever   KeyRetriever
 	configService  configService
@@ -101,7 +104,9 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 
 	v.keyRetriever = keyRetriever
 
-	v.configService = config.NewService()
+	v.configService = config.NewService(config.WithHTTPClient(&http.Client{
+		Transport: &http.Transport{TLSClientConfig: v.tlsConfig},
+	}))
 
 	return v, nil
 }
@@ -203,8 +208,12 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 		return v.sidetreeResolve(endpoints[0], did, opts...)
 	}
 
-	// TODO support fetch endpoints from did
-	return nil, fmt.Errorf("fetch endpoints from did not not supported")
+	endpoint, err := v.configService.GetEndpoint(v.domain)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get endpoints: %w", err)
+	}
+	// TODO Lookup n from the https://trustbloc.dev/ns/min-resolvers property.
+	return v.sidetreeResolve(endpoint.ResolutionEndpoints[0], did, opts...)
 }
 
 // Update did doc.
@@ -431,8 +440,12 @@ func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error
 func (v *VDR) getSidetreeEndpoints(didMethodOpts *vdrapi.DIDMethodOpts) func() ([]string, error) {
 	if didMethodOpts.Values[EndpointsOpt] == nil {
 		return func() ([]string, error) {
-			// TODO add orb discovery logic
-			return nil, fmt.Errorf("orb discovery not supported")
+			endpoint, err := v.configService.GetEndpoint(v.domain)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get endpoints: %w", err)
+			}
+
+			return endpoint.OperationEndpoints, nil
 		}
 	}
 
@@ -532,5 +545,12 @@ func WithTLSConfig(tlsConfig *tls.Config) Option {
 func WithAuthToken(authToken string) Option {
 	return func(opts *VDR) {
 		opts.authToken = authToken
+	}
+}
+
+// WithDomain option is setting domain.
+func WithDomain(domain string) Option {
+	return func(opts *VDR) {
+		opts.domain = domain
 	}
 }

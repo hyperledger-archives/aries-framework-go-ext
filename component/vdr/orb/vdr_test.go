@@ -373,11 +373,14 @@ func TestVDRI_Update(t *testing.T) {
 		v, err := New(&mockKeyRetriever{})
 		require.NoError(t, err)
 
+		v.configService = &mockConfigService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+			return nil, fmt.Errorf("failed to get endpoint")
+		}}
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
 
 		err = v.Update(&did.Doc{})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "orb discovery not supported")
+		require.Contains(t, err.Error(), "failed to get endpoint")
 	})
 
 	t.Run("test error from get sidetree config", func(t *testing.T) {
@@ -655,7 +658,7 @@ func TestVDRI_Read(t *testing.T) {
 
 		_, err = v.Read("did")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "fetch endpoints from did not not supported")
+		require.Contains(t, err.Error(), "failed to get endpoints: getting endpoint from cache")
 	})
 
 	t.Run("test wrong type endpointsOpt", func(t *testing.T) {
@@ -720,11 +723,20 @@ func (m *mockKeyRetriever) GetSigningKey(didID string, ot OperationType) (crypto
 
 type mockConfigService struct {
 	getSidetreeConfigFunc func() (*models.SidetreeConfig, error)
+	getEndpointFunc       func(domain string) (*models.Endpoint, error)
 }
 
 func (m *mockConfigService) GetSidetreeConfig() (*models.SidetreeConfig, error) {
 	if m.getSidetreeConfigFunc != nil {
 		return m.getSidetreeConfigFunc()
+	}
+
+	return nil, nil
+}
+
+func (m *mockConfigService) GetEndpoint(domain string) (*models.Endpoint, error) {
+	if m.getEndpointFunc != nil {
+		return m.getEndpointFunc(domain)
 	}
 
 	return nil, nil

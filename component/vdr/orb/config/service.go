@@ -8,40 +8,77 @@ SPDX-License-Identifier: Apache-2.0
 package config
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/bluele/gcache"
+	"github.com/hyperledger/aries-framework-go/pkg/common/log"
+	"github.com/trustbloc/orb/pkg/discovery/endpoint/restapi"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/models"
 )
 
+var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
+
 const (
 	// default hashes for sidetree.
-	sha2_256 = 18 // multihash
-	maxAge   = 3600
+	sha2_256     = 18 // multihash
+	maxAge       = 3600
+	minResolvers = "https://trustbloc.dev/ns/min-resolvers"
 )
+
+type httpClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
 
 // Service fetches configs, caching results in-memory.
 type Service struct {
 	sidetreeConfigCache gcache.Cache
+	endpointsCache      gcache.Cache
+	httpClient          httpClient
+	authToken           string
+}
+
+type req struct {
+	domain string
 }
 
 // NewService create new ConfigService.
-func NewService() *Service {
-	configService := &Service{}
+func NewService(opts ...Option) *Service {
+	configService := &Service{httpClient: &http.Client{}}
+
+	for _, opt := range opts {
+		opt(configService)
+	}
 
 	configService.sidetreeConfigCache = makeCache(
-		configService.getNewCacheable(func() (cacheable, error) {
+		configService.getNewCacheable(func(domain string) (cacheable, error) {
 			return configService.getSidetreeConfig()
+		}))
+
+	configService.endpointsCache = makeCache(
+		configService.getNewCacheable(func(domain string) (cacheable, error) {
+			return configService.getEndpoint(domain)
 		}))
 
 	return configService
 }
 
-func makeCache(fetcher func() (interface{}, *time.Duration, error)) gcache.Cache {
+func makeCache(fetcher func(domain string) (interface{}, *time.Duration, error)) gcache.Cache {
 	return gcache.New(0).LoaderExpireFunc(func(key interface{}) (interface{}, *time.Duration, error) {
-		return fetcher()
+		r, ok := key.(req)
+		if !ok {
+			return nil, nil, fmt.Errorf("key must be request")
+		}
+
+		return fetcher(r.domain)
 	}).Build()
 }
 
@@ -50,10 +87,10 @@ type cacheable interface {
 }
 
 func (cs *Service) getNewCacheable(
-	fetcher func() (cacheable, error),
-) func() (interface{}, *time.Duration, error) {
-	return func() (interface{}, *time.Duration, error) {
-		data, err := fetcher()
+	fetcher func(domain string) (cacheable, error),
+) func(domain string) (interface{}, *time.Duration, error) {
+	return func(domain string) (interface{}, *time.Duration, error) {
+		data, err := fetcher(domain)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fetching cacheable object: %w", err)
 		}
@@ -78,7 +115,9 @@ func getEntryHelper(cache gcache.Cache, key interface{}, objectName string) (int
 
 // GetSidetreeConfig returns the sidetree config.
 func (cs *Service) GetSidetreeConfig() (*models.SidetreeConfig, error) {
-	sidetreeConfigDataInterface, err := getEntryHelper(cs.sidetreeConfigCache, nil, "sidetreeconfig")
+	sidetreeConfigDataInterface, err := getEntryHelper(cs.sidetreeConfigCache, req{
+		domain: "",
+	}, "sidetreeconfig")
 	if err != nil {
 		return nil, err
 	}
@@ -86,8 +125,119 @@ func (cs *Service) GetSidetreeConfig() (*models.SidetreeConfig, error) {
 	return sidetreeConfigDataInterface.(*models.SidetreeConfig), nil
 }
 
+// GetEndpoint fetches endpoints from domain, caching the value.
+func (cs *Service) GetEndpoint(domain string) (*models.Endpoint, error) {
+	endpoint, err := getEntryHelper(cs.endpointsCache, req{
+		domain: domain,
+	}, "endpoint")
+	if err != nil {
+		return nil, err
+	}
+
+	return endpoint.(*models.Endpoint), nil
+}
+
 func (cs *Service) getSidetreeConfig() (*models.SidetreeConfig, error) { //nolint:unparam
 	// TODO fetch sidetree config
 	// for now return default values
 	return &models.SidetreeConfig{MultiHashAlgorithm: sha2_256, MaxAge: maxAge}, nil
+}
+
+func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) {
+	var wellKnownResponse restapi.WellKnownResponse
+
+	err := cs.sendRequest(nil, http.MethodGet, fmt.Sprintf("%s/.well-known/did-orb", domain), &wellKnownResponse)
+	if err != nil {
+		return nil, err
+	}
+
+	var webFingerResponse restapi.WebFingerResponse
+
+	err = cs.sendRequest(nil, http.MethodGet, fmt.Sprintf("%s/.well-known/webfinger?resource=%s",
+		domain, url.PathEscape(wellKnownResponse.ResolutionEndpoint)), &webFingerResponse)
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint := &models.Endpoint{}
+
+	minResolvers, ok := webFingerResponse.Properties[minResolvers].(float64)
+	if !ok {
+		return nil, fmt.Errorf("https://trustbloc.dev/ns/min-resolvers property is not float64")
+	}
+
+	endpoint.MinResolvers = int(minResolvers)
+
+	for _, v := range webFingerResponse.Links {
+		endpoint.ResolutionEndpoints = append(endpoint.ResolutionEndpoints, v.Href)
+	}
+
+	err = cs.sendRequest(nil, http.MethodGet, fmt.Sprintf("%s/.well-known/webfinger?resource=%s",
+		domain, url.PathEscape(wellKnownResponse.OperationEndpoint)), &webFingerResponse)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, v := range webFingerResponse.Links {
+		endpoint.OperationEndpoints = append(endpoint.OperationEndpoints, v.Href)
+	}
+
+	return endpoint, nil
+}
+
+func (cs *Service) sendRequest(req []byte, method, endpointURL string, respObj interface{}) error {
+	httpReq, err := http.NewRequestWithContext(context.Background(),
+		method, endpointURL, bytes.NewReader(req))
+	if err != nil {
+		return fmt.Errorf("failed to create http request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := cs.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+
+	defer closeResponseBody(resp.Body)
+
+	responseBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response : %s", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("got unexpected response from %s status '%d' body %s",
+			endpointURL, resp.StatusCode, responseBytes)
+	}
+
+	if err := json.Unmarshal(responseBytes, &respObj); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func closeResponseBody(respBody io.Closer) {
+	e := respBody.Close()
+	if e != nil {
+		logger.Errorf("Failed to close response body: %v", e)
+	}
+}
+
+// Option is a config service instance option.
+type Option func(opts *Service)
+
+// WithHTTPClient option is for custom http client.
+func WithHTTPClient(httpClient httpClient) Option {
+	return func(opts *Service) {
+		opts.httpClient = httpClient
+	}
+}
+
+// WithAuthToken add auth token.
+func WithAuthToken(authToken string) Option {
+	return func(opts *Service) {
+		opts.authToken = "Bearer " + authToken
+	}
 }
