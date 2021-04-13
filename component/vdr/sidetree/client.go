@@ -478,7 +478,7 @@ func buildDeactivateRequest(did string, deactivateDIDOpts *deactivate.Opts) ([]b
 
 func (c *Client) sendRequest(req []byte, endpointURL string) ([]byte, error) {
 	httpReq, err := http.NewRequestWithContext(context.Background(),
-		http.MethodPost, endpointURL+"/operations", bytes.NewReader(req))
+		http.MethodPost, endpointURL, bytes.NewReader(req))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create http request: %w", err)
 	}
