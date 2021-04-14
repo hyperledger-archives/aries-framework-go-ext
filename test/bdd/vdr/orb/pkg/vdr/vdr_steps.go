@@ -57,7 +57,7 @@ type Steps struct {
 func NewSteps(ctx *context.BDDContext) *Steps {
 	keyRetriever := &keyRetriever{}
 
-	vdr, err := orb.New(keyRetriever, orb.WithTLSConfig(ctx.TLSConfig))
+	vdr, err := orb.New(keyRetriever, orb.WithTLSConfig(ctx.TLSConfig), orb.WithDomain("https://testnet.orb.local"))
 	if err != nil {
 		panic(err.Error())
 	}
@@ -67,26 +67,26 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 
 // RegisterSteps registers agent steps.
 func (e *Steps) RegisterSteps(s *godog.Suite) {
-	s.Step(`^Orb DID is created through "([^"]*)" with key type "([^"]*)" with signature suite "([^"]*)"$`,
+	s.Step(`^Orb DID is created with key type "([^"]*)" with signature suite "([^"]*)"$`,
 		e.createDID)
-	s.Step(`^Resolve created DID through "([^"]*)" and validate key type "([^"]*)", signature suite "([^"]*)"$`,
+	s.Step(`^Resolve created DID and validate key type "([^"]*)", signature suite "([^"]*)"$`,
 		e.resolveCreatedDID)
-	s.Step(`^Resolve updated DID through "([^"]*)"$`,
+	s.Step(`^Resolve updated DID$`,
 		e.resolveUpdatedDID)
-	s.Step(`^Resolve recovered DID through "([^"]*)"$`,
+	s.Step(`^Resolve recovered DID$`,
 		e.resolveRecoveredDID)
-	s.Step(`^Resolve deactivated DID through "([^"]*)"$`,
+	s.Step(`^Resolve deactivated DID$`,
 		e.resolveDeactivatedDID)
-	s.Step(`^Orb DID is updated through "([^"]*)" with key type "([^"]*)" with signature suite "([^"]*)"$`,
+	s.Step(`^Orb DID is updated with key type "([^"]*)" with signature suite "([^"]*)"$`,
 		e.updateDID)
-	s.Step(`^Orb DID is recovered through "([^"]*)" with key type "([^"]*)" with signature suite "([^"]*)"$`,
+	s.Step(`^Orb DID is recovered with key type "([^"]*)" with signature suite "([^"]*)"$`,
 		e.recoverDID)
-	s.Step(`^Orb DID is deactivated through "([^"]*)"$`,
+	s.Step(`^Orb DID is deactivated$`,
 		e.deactivateDID)
 }
 
-func (e *Steps) deactivateDID(url string) error {
-	return e.vdr.Deactivate(e.createdDID, vdrapi.WithOption(orb.EndpointsOpt, []string{url}))
+func (e *Steps) deactivateDID() error {
+	return e.vdr.Deactivate(e.createdDID)
 }
 
 func (e *Steps) createVerificationMethod(keyType string, pubKey []byte, kid,
@@ -125,7 +125,7 @@ func (e *Steps) createVerificationMethod(keyType string, pubKey []byte, kid,
 	return ariesdid.NewVerificationMethodFromJWK(kid, signatureSuite, "", jwk)
 }
 
-func (e *Steps) recoverDID(url, keyType, signatureSuite string) error {
+func (e *Steps) recoverDID(keyType, signatureSuite string) error {
 	kid, pubKey, err := e.getPublicKey(keyType)
 	if err != nil {
 		return err
@@ -156,7 +156,7 @@ func (e *Steps) recoverDID(url, keyType, signatureSuite string) error {
 
 	didDoc.Service = []ariesdid.Service{{ID: serviceID, Type: "type", ServiceEndpoint: "http://www.example.com/"}}
 
-	if err := e.vdr.Update(didDoc, vdrapi.WithOption(orb.EndpointsOpt, []string{url}),
+	if err := e.vdr.Update(didDoc,
 		vdrapi.WithOption(orb.RecoverOpt, true), vdrapi.WithOption(orb.AnchorOriginOpt, origin)); err != nil {
 		return err
 	}
@@ -167,7 +167,7 @@ func (e *Steps) recoverDID(url, keyType, signatureSuite string) error {
 	return nil
 }
 
-func (e *Steps) updateDID(url, keyType, signatureSuite string) error {
+func (e *Steps) updateDID(keyType, signatureSuite string) error {
 	kid, pubKey, err := e.getPublicKey(keyType)
 	if err != nil {
 		return err
@@ -204,7 +204,7 @@ func (e *Steps) updateDID(url, keyType, signatureSuite string) error {
 		},
 	}
 
-	if err := e.vdr.Update(didDoc, vdrapi.WithOption(orb.EndpointsOpt, []string{url})); err != nil {
+	if err := e.vdr.Update(didDoc); err != nil {
 		return err
 	}
 
@@ -213,7 +213,7 @@ func (e *Steps) updateDID(url, keyType, signatureSuite string) error {
 	return nil
 }
 
-func (e *Steps) createDID(url, keyType, signatureSuite string) error {
+func (e *Steps) createDID(keyType, signatureSuite string) error {
 	kid, pubKey, err := e.getPublicKey(keyType)
 	if err != nil {
 		return err
@@ -241,7 +241,7 @@ func (e *Steps) createDID(url, keyType, signatureSuite string) error {
 
 	didDoc.Service = []ariesdid.Service{{ID: serviceID, Type: "type", ServiceEndpoint: "http://www.example.com/"}}
 
-	createdDocResolution, err := e.vdr.Create(didDoc, vdrapi.WithOption(orb.EndpointsOpt, []string{url}),
+	createdDocResolution, err := e.vdr.Create(didDoc,
 		vdrapi.WithOption(orb.RecoveryPublicKeyOpt, recoveryKey),
 		vdrapi.WithOption(orb.UpdatePublicKeyOpt, updateKey),
 		vdrapi.WithOption(orb.AnchorOriginOpt, origin))
@@ -252,18 +252,19 @@ func (e *Steps) createDID(url, keyType, signatureSuite string) error {
 	e.keyRetriever.recoverKey = recoveryKeyPrivateKey
 	e.keyRetriever.updateKey = updateKeyPrivateKey
 
-	e.createdDID = createdDocResolution.DIDDocument.ID
+	e.createdDID = strings.ReplaceAll(createdDocResolution.DIDDocument.ID, "did:orb", "did:orb:testnet.orb.local")
+
 	e.kid = kid
 
 	return nil
 }
 
-func (e *Steps) resolveDID(url, did string) (*ariesdid.DocResolution, error) {
+func (e *Steps) resolveDID(did string) (*ariesdid.DocResolution, error) {
 	var docResolution *ariesdid.DocResolution
 
 	for i := 1; i <= maxRetry; i++ {
 		var err error
-		docResolution, err = e.vdr.Read(did, vdrapi.WithOption(orb.EndpointsOpt, []string{url}))
+		docResolution, err = e.vdr.Read(did)
 
 		if err != nil && (!strings.Contains(err.Error(), "DID does not exist") || i == maxRetry) {
 			return nil, err
@@ -275,8 +276,8 @@ func (e *Steps) resolveDID(url, did string) (*ariesdid.DocResolution, error) {
 	return docResolution, nil
 }
 
-func (e *Steps) resolveDeactivatedDID(url string) error {
-	docResolution, err := e.resolveDID(url, e.createdDID)
+func (e *Steps) resolveDeactivatedDID() error {
+	docResolution, err := e.resolveDID(e.createdDID)
 	if err != nil {
 		return err
 	}
@@ -288,8 +289,8 @@ func (e *Steps) resolveDeactivatedDID(url string) error {
 	return nil
 }
 
-func (e *Steps) resolveRecoveredDID(url string) error {
-	docResolution, err := e.resolveDID(url, e.createdDID)
+func (e *Steps) resolveRecoveredDID() error {
+	docResolution, err := e.resolveDID(e.createdDID)
 	if err != nil {
 		return err
 	}
@@ -318,8 +319,8 @@ func (e *Steps) resolveRecoveredDID(url string) error {
 	return nil
 }
 
-func (e *Steps) resolveUpdatedDID(url string) error {
-	docResolution, err := e.resolveDID(url, e.createdDID)
+func (e *Steps) resolveUpdatedDID() error {
+	docResolution, err := e.resolveDID(e.createdDID)
 	if err != nil {
 		return err
 	}
@@ -344,8 +345,8 @@ func (e *Steps) resolveUpdatedDID(url string) error {
 	return nil
 }
 
-func (e *Steps) resolveCreatedDID(url, keyType, signatureSuite string) error {
-	docResolution, err := e.resolveDID(url, e.createdDID)
+func (e *Steps) resolveCreatedDID(keyType, signatureSuite string) error {
+	docResolution, err := e.resolveDID(e.createdDID)
 	if err != nil {
 		return err
 	}

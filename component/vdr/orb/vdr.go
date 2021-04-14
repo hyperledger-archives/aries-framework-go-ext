@@ -31,8 +31,10 @@ import (
 const (
 	// DIDMethod did method.
 	DIDMethod = "orb"
-	// EndpointsOpt endpoints opt.
-	EndpointsOpt = "endpoints"
+	// OperationEndpointsOpt operation endpoints opt.
+	OperationEndpointsOpt = "operationEndpoints"
+	// ResolutionEndpointsOpt resolution endpoints opt.
+	ResolutionEndpointsOpt = "resolutionEndpointsOpt"
 	// UpdatePublicKeyOpt update public key opt.
 	UpdatePublicKeyOpt = "updatePublicKey"
 	// RecoveryPublicKeyOpt recovery public key opt.
@@ -40,7 +42,9 @@ const (
 	// RecoverOpt recover opt.
 	RecoverOpt = "recover"
 	// AnchorOriginOpt anchor origin opt.
-	AnchorOriginOpt = "anchorOrigin"
+	AnchorOriginOpt  = "anchorOrigin"
+	expectedDIDParts = 4
+	domainDIDPart    = 2
 )
 
 // OperationType operation type.
@@ -134,7 +138,7 @@ func (v *VDR) Create(did *docdid.Doc,
 
 	createOpt := make([]create.Option, 0)
 
-	getEndpoints := v.getSidetreeEndpoints(didMethodOpts)
+	getEndpoints := v.getSidetreeOperationEndpoints(didMethodOpts)
 
 	sidetreeConfig, err := v.configService.GetSidetreeConfig()
 	if err != nil {
@@ -199,16 +203,24 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 		opt(didMethodOpts)
 	}
 
-	if didMethodOpts.Values[EndpointsOpt] != nil {
-		endpoints, ok := didMethodOpts.Values[EndpointsOpt].([]string)
+	if didMethodOpts.Values[ResolutionEndpointsOpt] != nil {
+		endpoints, ok := didMethodOpts.Values[ResolutionEndpointsOpt].([]string)
 		if !ok {
-			return nil, fmt.Errorf("endpointsOpt not array of string")
+			return nil, fmt.Errorf("resolutionEndpointsOpt not array of string")
 		}
 
 		return v.sidetreeResolve(endpoints[0], did, opts...)
 	}
 
-	endpoint, err := v.configService.GetEndpoint(v.domain)
+	// parse did
+	didParts := strings.Split(did, ":")
+	if len(didParts) != expectedDIDParts {
+		return nil, fmt.Errorf("wrong did %s", did)
+	}
+
+	domain := didParts[domainDIDPart]
+
+	endpoint, err := v.configService.GetEndpoint(domain)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get endpoints: %w", err)
 	}
@@ -227,10 +239,10 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 	updateOpt := make([]update.Option, 0)
 
-	getEndpoints := v.getSidetreeEndpoints(didMethodOpts)
+	getResolutionEndpoints := v.getSidetreeResolutionEndpoints(didMethodOpts)
 
 	// get sidetree config
-	endpoints, err := getEndpoints()
+	resolutionEndpoints, err := getResolutionEndpoints()
 	if err != nil {
 		return err
 	}
@@ -240,7 +252,7 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 		return err
 	}
 
-	docResolution, err := v.sidetreeResolve(endpoints[0]+"/identifiers", didDoc.ID)
+	docResolution, err := v.sidetreeResolve(resolutionEndpoints[0], didDoc.ID)
 	if err != nil {
 		return err
 	}
@@ -256,8 +268,8 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 			return fmt.Errorf("anchorOrigin is not string")
 		}
 
-		return v.recover(didDoc, sidetreeConfig, getEndpoints, docResolution.DocumentMetadata.Method.RecoveryCommitment,
-			anchorOrigin)
+		return v.recover(didDoc, sidetreeConfig, v.getSidetreeOperationEndpoints(didMethodOpts),
+			docResolution.DocumentMetadata.Method.RecoveryCommitment, anchorOrigin)
 	}
 
 	// get services
@@ -291,7 +303,7 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 	updateOpt = append(updateOpt, getRemovedPKKeysID(docResolution.DIDDocument.VerificationMethod,
 		didDoc.VerificationMethod)...)
 
-	updateOpt = append(updateOpt, update.WithSidetreeEndpoint(getEndpoints),
+	updateOpt = append(updateOpt, update.WithSidetreeEndpoint(v.getSidetreeOperationEndpoints(didMethodOpts)),
 		update.WithNextUpdatePublicKey(nextUpdatePublicKey),
 		update.WithMultiHashAlgorithm(sidetreeConfig.MultiHashAlgorithm),
 		update.WithSigningKey(updateSigningKey),
@@ -357,14 +369,14 @@ func (v *VDR) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 
 	var deactivateOpt []deactivate.Option
 
-	getEndpoints := v.getSidetreeEndpoints(didMethodOpts)
+	getResolutionEndpoints := v.getSidetreeResolutionEndpoints(didMethodOpts)
 
-	endpoints, err := getEndpoints()
+	resolutionEndpoints, err := getResolutionEndpoints()
 	if err != nil {
 		return err
 	}
 
-	docResolution, err := v.sidetreeResolve(endpoints[0]+"/identifiers", didID)
+	docResolution, err := v.sidetreeResolve(resolutionEndpoints[0], didID)
 	if err != nil {
 		return err
 	}
@@ -374,7 +386,7 @@ func (v *VDR) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 		return err
 	}
 
-	deactivateOpt = append(deactivateOpt, deactivate.WithSidetreeEndpoint(getEndpoints),
+	deactivateOpt = append(deactivateOpt, deactivate.WithSidetreeEndpoint(v.getSidetreeOperationEndpoints(didMethodOpts)),
 		deactivate.WithSigningKey(signingKey),
 		deactivate.WithOperationCommitment(docResolution.DocumentMetadata.Method.RecoveryCommitment))
 
@@ -437,8 +449,8 @@ func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error
 	return pksMap, nil
 }
 
-func (v *VDR) getSidetreeEndpoints(didMethodOpts *vdrapi.DIDMethodOpts) func() ([]string, error) {
-	if didMethodOpts.Values[EndpointsOpt] == nil {
+func (v *VDR) getSidetreeOperationEndpoints(didMethodOpts *vdrapi.DIDMethodOpts) func() ([]string, error) {
+	if didMethodOpts.Values[OperationEndpointsOpt] == nil {
 		return func() ([]string, error) {
 			endpoint, err := v.configService.GetEndpoint(v.domain)
 			if err != nil {
@@ -450,9 +462,31 @@ func (v *VDR) getSidetreeEndpoints(didMethodOpts *vdrapi.DIDMethodOpts) func() (
 	}
 
 	return func() ([]string, error) {
-		v, ok := didMethodOpts.Values[EndpointsOpt].([]string)
+		v, ok := didMethodOpts.Values[OperationEndpointsOpt].([]string)
 		if !ok {
-			return nil, fmt.Errorf("endpointsOpt not array of string")
+			return nil, fmt.Errorf("operationEndpointsOpt not array of string")
+		}
+
+		return v, nil
+	}
+}
+
+func (v *VDR) getSidetreeResolutionEndpoints(didMethodOpts *vdrapi.DIDMethodOpts) func() ([]string, error) {
+	if didMethodOpts.Values[ResolutionEndpointsOpt] == nil {
+		return func() ([]string, error) {
+			endpoint, err := v.configService.GetEndpoint(v.domain)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get endpoints: %w", err)
+			}
+
+			return endpoint.ResolutionEndpoints, nil
+		}
+	}
+
+	return func() ([]string, error) {
+		v, ok := didMethodOpts.Values[ResolutionEndpointsOpt].([]string)
+		if !ok {
+			return nil, fmt.Errorf("resolutionEndpointsOpt not array of string")
 		}
 
 		return v, nil

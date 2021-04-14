@@ -11,12 +11,12 @@ services:
     container_name: orb
     image: ${ORB_IMAGE}:${ORB_IMAGE_TAG}
     environment:
-      - ORB_HOST_URL=0.0.0.0:48327
-      - ORB_EXTERNAL_ENDPOINT=https://localhost:48327
+      - ORB_HOST_URL=0.0.0.0:443
+      - ORB_EXTERNAL_ENDPOINT=https://testnet.orb.local
       - ORB_TLS_CERTIFICATE=/etc/orb/tls/ec-pubCert.pem
       - ORB_TLS_KEY=/etc/orb/tls/ec-key.pem
       - DID_NAMESPACE=did:orb
-      - DID_ALIASES=did:alias.com
+      - DID_ALIASES=did:orb:testnet.orb.local
       - ALLOWED_ORIGINS=origin.com,source.com
       # BATCH_WRITER_TIMEOUT is max wait time in-between cutting batches (defined in milliseconds)
       - BATCH_WRITER_TIMEOUT=200
@@ -32,7 +32,7 @@ services:
       - KMSSECRETS_DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
       - KMSSECRETS_DATABASE_PREFIX=orbkms
     ports:
-      - 48327:48327
+      - 443:443
     command:  /bin/sh -c "sleep 10;orb start"
     volumes:
       - ../keys/tls:/etc/orb/tls
