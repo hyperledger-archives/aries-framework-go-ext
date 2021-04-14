@@ -171,7 +171,7 @@ func TestVDRI_Create(t *testing.T) {
 				{ID: "svc"},
 			},
 			Authentication: []did.Verification{*ver},
-		}, vdrapi.WithOption(EndpointsOpt, []string{"url"}),
+		}, vdrapi.WithOption(OperationEndpointsOpt, []string{"url"}),
 			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "updatePublicKey opt is empty")
@@ -184,7 +184,7 @@ func TestVDRI_Create(t *testing.T) {
 		v.configService = &mockConfigService{getSidetreeConfigFunc: func() (*models.SidetreeConfig, error) {
 			return nil, fmt.Errorf("failed to get config")
 		}}
-		_, err = v.Create(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{"url"}))
+		_, err = v.Create(&did.Doc{}, vdrapi.WithOption(OperationEndpointsOpt, []string{"url"}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get config")
 	})
@@ -211,7 +211,7 @@ func TestVDRI_Create(t *testing.T) {
 				{ID: "svc"},
 			},
 			Authentication: []did.Verification{*ver},
-		}, vdrapi.WithOption(EndpointsOpt, []string{"url"}),
+		}, vdrapi.WithOption(OperationEndpointsOpt, []string{"url"}),
 			vdrapi.WithOption(UpdatePublicKeyOpt, []byte{}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "recoveryPublicKey opt is empty")
@@ -239,7 +239,7 @@ func TestVDRI_Create(t *testing.T) {
 				{ID: "svc"},
 			},
 			Authentication: []did.Verification{*ver},
-		}, vdrapi.WithOption(EndpointsOpt, []string{"url"}),
+		}, vdrapi.WithOption(OperationEndpointsOpt, []string{"url"}),
 			vdrapi.WithOption(UpdatePublicKeyOpt, []byte{}),
 			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}))
 		require.Error(t, err)
@@ -268,7 +268,7 @@ func TestVDRI_Create(t *testing.T) {
 				{ID: "svc"},
 			},
 			Authentication: []did.Verification{*ver},
-		}, vdrapi.WithOption(EndpointsOpt, []string{"url"}),
+		}, vdrapi.WithOption(OperationEndpointsOpt, []string{"url"}),
 			vdrapi.WithOption(UpdatePublicKeyOpt, []byte{}),
 			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}),
 			vdrapi.WithOption(AnchorOriginOpt, true))
@@ -291,7 +291,7 @@ func TestVDRI_Deactivate(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{}
 
-		err = v.Deactivate("did:ex:123", vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}))
+		err = v.Deactivate("did:ex:123", vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
 		require.NoError(t, err)
 	})
 
@@ -306,7 +306,7 @@ func TestVDRI_Deactivate(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{}
 
-		err = v.Deactivate("", vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}))
+		err = v.Deactivate("", vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to resolve did")
 	})
@@ -349,7 +349,7 @@ func TestVDRI_Update(t *testing.T) {
 				{ID: "svc"},
 			},
 			Authentication: []did.Verification{*ver},
-		}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}))
+		}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
 		require.NoError(t, err)
 	})
 
@@ -364,7 +364,7 @@ func TestVDRI_Update(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
 
-		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}))
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to resolve did")
 	})
@@ -389,7 +389,7 @@ func TestVDRI_Update(t *testing.T) {
 		v.configService = &mockConfigService{getSidetreeConfigFunc: func() (*models.SidetreeConfig, error) {
 			return nil, fmt.Errorf("failed to get config")
 		}}
-		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{"url"}))
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{"url"}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get config")
 	})
@@ -406,7 +406,7 @@ func TestVDRI_Update(t *testing.T) {
 			return nil, fmt.Errorf("failed to get next update public key")
 		}})
 		require.NoError(t, err)
-		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}))
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get next update public key")
 	})
@@ -423,7 +423,7 @@ func TestVDRI_Update(t *testing.T) {
 			return nil, fmt.Errorf("failed to get signing key")
 		}})
 		require.NoError(t, err)
-		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}))
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get signing key")
 	})
@@ -459,7 +459,7 @@ func TestVDRI_Recover(t *testing.T) {
 				{ID: "svc"},
 			},
 			Authentication: []did.Verification{*ver},
-		}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+		}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true),
 			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.NoError(t, err)
@@ -486,7 +486,7 @@ func TestVDRI_Recover(t *testing.T) {
 			Service:        []did.Service{{ID: "svc"}},
 			Authentication: []did.Verification{*verAuthentication},
 		},
-			vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+			vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true),
 			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.Error(t, err)
@@ -498,7 +498,7 @@ func TestVDRI_Recover(t *testing.T) {
 			Service:        []did.Service{{ID: "svc"}},
 			Authentication: []did.Verification{*verAuthentication},
 		},
-			vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+			vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true),
 			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.Error(t, err)
@@ -512,7 +512,7 @@ func TestVDRI_Recover(t *testing.T) {
 				{ID: "id"},
 			},
 		},
-			vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+			vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true),
 			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.Error(t, err)
@@ -530,7 +530,7 @@ func TestVDRI_Recover(t *testing.T) {
 		v, err := New(nil)
 		require.NoError(t, err)
 
-		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "anchorOrigin opt is empty")
@@ -547,7 +547,7 @@ func TestVDRI_Recover(t *testing.T) {
 		v, err := New(nil)
 		require.NoError(t, err)
 
-		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true),
 			vdrapi.WithOption(AnchorOriginOpt, true))
 		require.Error(t, err)
@@ -566,7 +566,7 @@ func TestVDRI_Recover(t *testing.T) {
 			return nil, fmt.Errorf("failed to get next update public key")
 		}})
 		require.NoError(t, err)
-		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true),
 			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.Error(t, err)
@@ -585,7 +585,7 @@ func TestVDRI_Recover(t *testing.T) {
 			return nil, fmt.Errorf("failed to get next recovery public key")
 		}})
 		require.NoError(t, err)
-		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true),
 			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.Error(t, err)
@@ -604,7 +604,7 @@ func TestVDRI_Recover(t *testing.T) {
 			return nil, fmt.Errorf("failed to get signing key")
 		}})
 		require.NoError(t, err)
-		err = v.Update(&did.Doc{}, vdrapi.WithOption(EndpointsOpt, []string{cServ.URL}),
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true),
 			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.Error(t, err)
@@ -635,7 +635,7 @@ func TestVDRI_Read(t *testing.T) {
 			return nil, fmt.Errorf("get http vdri error")
 		}
 
-		doc, err := v.Read("did", vdrapi.WithOption(EndpointsOpt, []string{"url"}))
+		doc, err := v.Read("did", vdrapi.WithOption(ResolutionEndpointsOpt, []string{"url"}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "get http vdri error")
 		require.Nil(t, doc)
@@ -647,7 +647,7 @@ func TestVDRI_Read(t *testing.T) {
 
 		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)
 
-		doc, err := v.Read("did", vdrapi.WithOption(EndpointsOpt, []string{"url"}))
+		doc, err := v.Read("did", vdrapi.WithOption(ResolutionEndpointsOpt, []string{"url"}))
 		require.NoError(t, err)
 		require.Equal(t, "did", doc.DIDDocument.ID)
 	})
@@ -656,18 +656,18 @@ func TestVDRI_Read(t *testing.T) {
 		v, err := New(nil)
 		require.NoError(t, err)
 
-		_, err = v.Read("did")
+		_, err = v.Read("did:orb:domain:123")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get endpoints: getting endpoint from cache")
 	})
 
-	t.Run("test wrong type endpointsOpt", func(t *testing.T) {
+	t.Run("test wrong type OperationEndpointsOpt", func(t *testing.T) {
 		v, err := New(nil)
 		require.NoError(t, err)
 
-		_, err = v.Read("did", vdrapi.WithOption(EndpointsOpt, "url"))
+		_, err = v.Read("did", vdrapi.WithOption(ResolutionEndpointsOpt, "url"))
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "endpointsOpt not array of string")
+		require.Contains(t, err.Error(), "resolutionEndpointsOpt not array of string")
 	})
 }
 

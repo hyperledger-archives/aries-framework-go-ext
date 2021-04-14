@@ -16,6 +16,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/bluele/gcache"
@@ -145,6 +146,10 @@ func (cs *Service) getSidetreeConfig() (*models.SidetreeConfig, error) { //nolin
 
 func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) {
 	var wellKnownResponse restapi.WellKnownResponse
+
+	if !strings.HasPrefix(domain, "http://") && !strings.HasPrefix(domain, "https://") {
+		domain = "https://" + domain
+	}
 
 	err := cs.sendRequest(nil, http.MethodGet, fmt.Sprintf("%s/.well-known/did-orb", domain), &wellKnownResponse)
 	if err != nil {

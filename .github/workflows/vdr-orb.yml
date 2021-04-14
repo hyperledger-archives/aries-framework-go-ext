@@ -60,4 +60,6 @@ jobs:
 
       - name: BDD test
         timeout-minutes: 20
-        run: make vdr-orb-bdd-test
+        run: |
+          echo '127.0.0.1 testnet.orb.local' | sudo tee -a /etc/hosts
+          make vdr-orb-bdd-test

@@ -101,7 +101,7 @@ func TestConfigService_GetEndpoint(t *testing.T) {
 
 		_, err := cs.GetEndpoint("d1")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "got unexpected response from d1/.well-known/did-orb status")
+		require.Contains(t, err.Error(), "got unexpected response from https://d1/.well-known/did-orb status")
 	})
 
 	t.Run("web finger resolution return 500 status", func(t *testing.T) {
@@ -127,7 +127,7 @@ func TestConfigService_GetEndpoint(t *testing.T) {
 		_, err := cs.GetEndpoint("d1")
 		require.Error(t, err)
 		require.Contains(t, err.Error(),
-			"got unexpected response from d1/.well-known/webfinger?resource=%2Fresolve status")
+			"got unexpected response from https://d1/.well-known/webfinger?resource=%2Fresolve status")
 	})
 
 	t.Run("web finger operation return 500 status", func(t *testing.T) {
@@ -165,7 +165,7 @@ func TestConfigService_GetEndpoint(t *testing.T) {
 		_, err := cs.GetEndpoint("d1")
 		require.Error(t, err)
 		require.Contains(t, err.Error(),
-			"got unexpected response from d1/.well-known/webfinger?resource=%2Fop status")
+			"got unexpected response from https://d1/.well-known/webfinger?resource=%2Fop status")
 	})
 }
 
