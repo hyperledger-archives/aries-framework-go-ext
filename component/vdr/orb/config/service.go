@@ -144,7 +144,7 @@ func (cs *Service) getSidetreeConfig() (*models.SidetreeConfig, error) { //nolin
 	return &models.SidetreeConfig{MultiHashAlgorithm: sha2_256, MaxAge: maxAge}, nil
 }
 
-func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) {
+func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) { //nolint: funlen,gocyclo
 	var wellKnownResponse restapi.WellKnownResponse
 
 	if !strings.HasPrefix(domain, "http://") && !strings.HasPrefix(domain, "https://") {
@@ -166,14 +166,59 @@ func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) {
 
 	endpoint := &models.Endpoint{}
 
-	minResolvers, ok := webFingerResponse.Properties[minResolvers].(float64)
+	min, ok := webFingerResponse.Properties[minResolvers].(float64)
 	if !ok {
-		return nil, fmt.Errorf("https://trustbloc.dev/ns/min-resolvers property is not float64")
+		return nil, fmt.Errorf("%s property is not float64", minResolvers)
 	}
 
-	endpoint.MinResolvers = int(minResolvers)
+	endpoint.MinResolvers = int(min)
+
+	m := make(map[string]struct{})
 
 	for _, v := range webFingerResponse.Links {
+		m[v.Href] = struct{}{}
+	}
+
+	// Fetches the configurations at each chosen link using WebFinger.
+	// Validates that each well-known configuration has the same policy for n and that all of the
+	// chosen links are listed in the n fetched configurations.
+
+	for _, v := range webFingerResponse.Links {
+		if v.Rel != "self" { //nolint: nestif
+			var webFingerResp restapi.WebFingerResponse
+
+			err = cs.sendRequest(nil, http.MethodGet, fmt.Sprintf("%s/.well-known/webfinger?resource=%s",
+				domain, url.PathEscape(v.Href)), &webFingerResp)
+			if err != nil {
+				return nil, err
+			}
+
+			min, ok = webFingerResp.Properties[minResolvers].(float64)
+			if !ok {
+				return nil, fmt.Errorf("%s property is not float64", minResolvers)
+			}
+
+			if int(min) != endpoint.MinResolvers {
+				logger.Warnf("%s has different policy for n %s", v.Href, minResolvers)
+
+				continue
+			}
+
+			if len(webFingerResp.Links) != len(webFingerResponse.Links) {
+				logger.Warnf("%s has different link", v.Href, minResolvers)
+
+				continue
+			}
+
+			for _, link := range webFingerResp.Links {
+				if _, ok = m[link.Href]; !ok {
+					logger.Warnf("%s has different link", v.Href, minResolvers)
+
+					continue
+				}
+			}
+		}
+
 		endpoint.ResolutionEndpoints = append(endpoint.ResolutionEndpoints, v.Href)
 	}
 
@@ -190,7 +235,7 @@ func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) {
 	return endpoint, nil
 }
 
-func (cs *Service) sendRequest(req []byte, method, endpointURL string, respObj interface{}) error {
+func (cs *Service) sendRequest(req []byte, method, endpointURL string, respObj interface{}) error { //nolint: unparam
 	httpReq, err := http.NewRequestWithContext(context.Background(),
 		method, endpointURL, bytes.NewReader(req))
 	if err != nil {

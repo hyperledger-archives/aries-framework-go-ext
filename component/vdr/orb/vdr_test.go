@@ -291,7 +291,7 @@ func TestVDRI_Deactivate(t *testing.T) {
 
 		v.sidetreeClient = &mockSidetreeClient{}
 
-		err = v.Deactivate("did:ex:123", vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
+		err = v.Deactivate("did:ex:domain:123", vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
 		require.NoError(t, err)
 	})
 
@@ -369,7 +369,7 @@ func TestVDRI_Update(t *testing.T) {
 		require.Contains(t, err.Error(), "failed to resolve did")
 	})
 
-	t.Run("test error from get endpoints", func(t *testing.T) {
+	t.Run("test error from read did", func(t *testing.T) {
 		v, err := New(&mockKeyRetriever{})
 		require.NoError(t, err)
 
@@ -380,7 +380,7 @@ func TestVDRI_Update(t *testing.T) {
 
 		err = v.Update(&did.Doc{})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to get endpoint")
+		require.Contains(t, err.Error(), "wrong did")
 	})
 
 	t.Run("test error from get sidetree config", func(t *testing.T) {
@@ -650,6 +650,62 @@ func TestVDRI_Read(t *testing.T) {
 		doc, err := v.Read("did", vdrapi.WithOption(ResolutionEndpointsOpt, []string{"url"}))
 		require.NoError(t, err)
 		require.Equal(t, "did", doc.DIDDocument.ID)
+	})
+
+	t.Run("test success for fetch endpoint from domain", func(t *testing.T) {
+		v, err := New(nil)
+		require.NoError(t, err)
+
+		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)
+		v.configService = &mockConfigService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
+		}}
+
+		doc, err := v.Read("did:ex:domain:1234")
+		require.NoError(t, err)
+		require.Equal(t, "did", doc.DIDDocument.ID)
+	})
+
+	t.Run("test error from fetch endpoint from domain", func(t *testing.T) {
+		v, err := New(nil)
+		require.NoError(t, err)
+
+		v.getHTTPVDR = httpVdrFunc(nil, fmt.Errorf("failed to resolve"))
+		v.configService = &mockConfigService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
+		}}
+
+		_, err = v.Read("did:ex:domain:1234")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to resolve")
+	})
+
+	t.Run("test error different doc returned", func(t *testing.T) {
+		v, err := New(nil)
+		require.NoError(t, err)
+
+		c := 1
+
+		v.getHTTPVDR = func(url string) (v vdr, e error) {
+			return &mockvdr.MockVDR{
+				ReadFunc: func(didID string, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
+					c++
+					if c == 2 {
+						return &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil
+					}
+
+					return did.ParseDocumentResolution([]byte(validDocResolution))
+				},
+			}, nil
+		}
+
+		v.configService = &mockConfigService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
+		}}
+
+		_, err = v.Read("did:ex:domain:1234")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to fetch correct did from min resolvers")
 	})
 
 	t.Run("test fetch endpoints from did not not supported", func(t *testing.T) {

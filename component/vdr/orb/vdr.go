@@ -8,13 +8,17 @@ SPDX-License-Identifier: Apache-2.0
 package orb
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
 
@@ -46,6 +50,8 @@ const (
 	expectedDIDParts = 4
 	domainDIDPart    = 2
 )
+
+var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
 
 // OperationType operation type.
 type OperationType int
@@ -195,7 +201,7 @@ func (v *VDR) Create(did *docdid.Doc,
 	return v.sidetreeClient.CreateDID(createOpt...)
 }
 
-func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
+func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) { //nolint: funlen,gocyclo
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
 
 	// Apply options
@@ -224,8 +230,51 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 	if err != nil {
 		return nil, fmt.Errorf("failed to get endpoints: %w", err)
 	}
-	// TODO Lookup n from the https://trustbloc.dev/ns/min-resolvers property.
-	return v.sidetreeResolve(endpoint.ResolutionEndpoints[0], did, opts...)
+
+	var docResolution *docdid.DocResolution
+
+	var docBytes []byte
+
+	minResolver := 0
+
+	// Resolve the DID at each of the n chosen links.
+	// Ensure that the DID resolution result matches (other than resolver-specific metadata such as timestamps).
+	// In case of a mismatch, additional links may need to be chosen until the client has n matches.
+
+	for _, e := range endpoint.ResolutionEndpoints {
+		resp, err := v.sidetreeResolve(e, did, opts...)
+		if err != nil {
+			return nil, err
+		}
+
+		respBytes, err := canonicalizeDoc(resp.DIDDocument)
+		if err != nil {
+			return nil, fmt.Errorf("cannot canonicalize resolved doc: %w", err)
+		}
+
+		if docResolution != nil && !bytes.Equal(docBytes, respBytes) {
+			logger.Warnf("mismatch in document contents for did %s. Doc 1: %s, Doc 2: %s",
+				did, string(docBytes), string(respBytes))
+
+			continue
+		}
+
+		minResolver++
+
+		docResolution = resp
+
+		docBytes = respBytes
+
+		if minResolver == endpoint.MinResolvers {
+			break
+		}
+	}
+
+	if minResolver != endpoint.MinResolvers {
+		return nil, fmt.Errorf("failed to fetch correct did from min resolvers")
+	}
+
+	return docResolution, nil
 }
 
 // Update did doc.
@@ -239,20 +288,12 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 	updateOpt := make([]update.Option, 0)
 
-	getResolutionEndpoints := v.getSidetreeResolutionEndpoints(didMethodOpts)
-
-	// get sidetree config
-	resolutionEndpoints, err := getResolutionEndpoints()
-	if err != nil {
-		return err
-	}
-
 	sidetreeConfig, err := v.configService.GetSidetreeConfig()
 	if err != nil {
 		return err
 	}
 
-	docResolution, err := v.sidetreeResolve(resolutionEndpoints[0], didDoc.ID)
+	docResolution, err := v.Read(didDoc.ID, opts...)
 	if err != nil {
 		return err
 	}
@@ -369,14 +410,7 @@ func (v *VDR) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 
 	var deactivateOpt []deactivate.Option
 
-	getResolutionEndpoints := v.getSidetreeResolutionEndpoints(didMethodOpts)
-
-	resolutionEndpoints, err := getResolutionEndpoints()
-	if err != nil {
-		return err
-	}
-
-	docResolution, err := v.sidetreeResolve(resolutionEndpoints[0], didID)
+	docResolution, err := v.Read(didID, opts...)
 	if err != nil {
 		return err
 	}
@@ -471,28 +505,6 @@ func (v *VDR) getSidetreeOperationEndpoints(didMethodOpts *vdrapi.DIDMethodOpts)
 	}
 }
 
-func (v *VDR) getSidetreeResolutionEndpoints(didMethodOpts *vdrapi.DIDMethodOpts) func() ([]string, error) {
-	if didMethodOpts.Values[ResolutionEndpointsOpt] == nil {
-		return func() ([]string, error) {
-			endpoint, err := v.configService.GetEndpoint(v.domain)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get endpoints: %w", err)
-			}
-
-			return endpoint.ResolutionEndpoints, nil
-		}
-	}
-
-	return func() ([]string, error) {
-		v, ok := didMethodOpts.Values[ResolutionEndpointsOpt].([]string)
-		if !ok {
-			return nil, fmt.Errorf("resolutionEndpointsOpt not array of string")
-		}
-
-		return v, nil
-	}
-}
-
 func getRemovedSvcKeysID(currentService, updatedService []docdid.Service) []update.Option {
 	var updateOpt []update.Option
 
@@ -563,6 +575,25 @@ func (v *VDR) sidetreeResolve(url, did string, opts ...vdrapi.DIDMethodOption) (
 	}
 
 	return docResolution, nil
+}
+
+// canonicalizeDoc canonicalizes a DID doc using json-ld canonicalization.
+func canonicalizeDoc(didDoc *docdid.Doc) ([]byte, error) {
+	marshaled, err := didDoc.JSONBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	docMap := map[string]interface{}{}
+
+	err = json.Unmarshal(marshaled, &docMap)
+	if err != nil {
+		return nil, err
+	}
+
+	proc := jsonld.Default()
+
+	return proc.GetCanonicalDocument(docMap)
 }
 
 // Option configures the bloc vdr.
