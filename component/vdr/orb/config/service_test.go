@@ -30,14 +30,14 @@ func TestConfigService_GetSidetreeConfig(t *testing.T) {
 	})
 }
 
-func TestConfigService_GetEndpoint(t *testing.T) {
+func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 	t.Run("success", func(t *testing.T) {
 		cs := NewService(WithAuthToken("t1"), WithHTTPClient(
 			&mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
 				if strings.Contains(req.URL.Path, ".well-known/did-orb") {
 					b, err := json.Marshal(restapi.WellKnownResponse{
 						OperationEndpoint:  "/op",
-						ResolutionEndpoint: "/resolve",
+						ResolutionEndpoint: "/resolve1",
 					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
@@ -57,10 +57,28 @@ func TestConfigService_GetEndpoint(t *testing.T) {
 				}
 
 				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
-					strings.Contains(req.URL.RawQuery, "resolve") {
+					strings.Contains(req.URL.RawQuery, "resolve1") {
 					b, err := json.Marshal(restapi.WebFingerResponse{
 						Properties: map[string]interface{}{minResolvers: float64(2)},
-						Links:      []restapi.WebFingerLink{{Href: "/resolve1"}, {Href: "/resolve2"}},
+						Links: []restapi.WebFingerLink{
+							{Href: "/resolve1", Rel: "self"},
+							{Href: "/resolve2", Rel: "alternate"},
+						},
+					})
+					require.NoError(t, err)
+					r := ioutil.NopCloser(bytes.NewReader(b))
+
+					return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+				}
+
+				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
+					strings.Contains(req.URL.RawQuery, "resolve2") {
+					b, err := json.Marshal(restapi.WebFingerResponse{
+						Properties: map[string]interface{}{minResolvers: float64(2)},
+						Links: []restapi.WebFingerLink{
+							{Href: "/resolve2", Rel: "self"},
+							{Href: "/resolve1", Rel: "alternate"},
+						},
 					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
@@ -76,6 +94,183 @@ func TestConfigService_GetEndpoint(t *testing.T) {
 
 		require.Equal(t, endpoint.ResolutionEndpoints, []string{"/resolve1", "/resolve2"})
 		require.Equal(t, endpoint.OperationEndpoints, []string{"/op1", "/op2"})
+		require.Equal(t, endpoint.MinResolvers, 2)
+	})
+
+	t.Run("failed to fetch webfinger links", func(t *testing.T) {
+		cs := NewService(WithAuthToken("t1"), WithHTTPClient(
+			&mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
+				if strings.Contains(req.URL.Path, ".well-known/did-orb") {
+					b, err := json.Marshal(restapi.WellKnownResponse{
+						OperationEndpoint:  "/op",
+						ResolutionEndpoint: "/resolve1",
+					})
+					require.NoError(t, err)
+					r := ioutil.NopCloser(bytes.NewReader(b))
+
+					return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+				}
+
+				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
+					strings.Contains(req.URL.RawQuery, "resolve1") {
+					b, err := json.Marshal(restapi.WebFingerResponse{
+						Properties: map[string]interface{}{minResolvers: float64(2)},
+						Links: []restapi.WebFingerLink{
+							{Href: "/resolve1", Rel: "self"},
+							{Href: "/resolve2", Rel: "alternate"},
+						},
+					})
+					require.NoError(t, err)
+					r := ioutil.NopCloser(bytes.NewReader(b))
+
+					return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+				}
+
+				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
+					strings.Contains(req.URL.RawQuery, "resolve2") {
+					return &http.Response{
+						StatusCode: http.StatusInternalServerError,
+						Body:       ioutil.NopCloser(bytes.NewReader([]byte{})),
+					}, nil
+				}
+
+				return nil, nil
+			}}))
+
+		_, err := cs.GetEndpoint("d1")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "got unexpected response from "+
+			"https://d1/.well-known/webfinger?resource=%2Fresolve2 status")
+	})
+
+	t.Run("webfinger link return different min resolver", func(t *testing.T) {
+		cs := NewService(WithAuthToken("t1"), WithHTTPClient(
+			&mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
+				if strings.Contains(req.URL.Path, ".well-known/did-orb") {
+					b, err := json.Marshal(restapi.WellKnownResponse{
+						OperationEndpoint:  "/op",
+						ResolutionEndpoint: "/resolve1",
+					})
+					require.NoError(t, err)
+					r := ioutil.NopCloser(bytes.NewReader(b))
+
+					return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+				}
+
+				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
+					strings.Contains(req.URL.RawQuery, "op") {
+					b, err := json.Marshal(restapi.WebFingerResponse{
+						Links: []restapi.WebFingerLink{{Href: "/op1"}, {Href: "/op2"}},
+					})
+					require.NoError(t, err)
+					r := ioutil.NopCloser(bytes.NewReader(b))
+
+					return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+				}
+
+				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
+					strings.Contains(req.URL.RawQuery, "resolve1") {
+					b, err := json.Marshal(restapi.WebFingerResponse{
+						Properties: map[string]interface{}{minResolvers: float64(2)},
+						Links: []restapi.WebFingerLink{
+							{Href: "/resolve1", Rel: "self"},
+							{Href: "/resolve2", Rel: "alternate"},
+						},
+					})
+					require.NoError(t, err)
+					r := ioutil.NopCloser(bytes.NewReader(b))
+
+					return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+				}
+
+				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
+					strings.Contains(req.URL.RawQuery, "resolve2") {
+					b, err := json.Marshal(restapi.WebFingerResponse{
+						Properties: map[string]interface{}{minResolvers: float64(3)},
+						Links: []restapi.WebFingerLink{
+							{Href: "/resolve2", Rel: "self"},
+							{Href: "/resolve1", Rel: "alternate"},
+						},
+					})
+					require.NoError(t, err)
+					r := ioutil.NopCloser(bytes.NewReader(b))
+
+					return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+				}
+
+				return nil, nil
+			}}))
+
+		endpoint, err := cs.GetEndpoint("d1")
+		require.NoError(t, err)
+
+		require.Equal(t, endpoint.ResolutionEndpoints, []string{"/resolve1"})
+		require.Equal(t, endpoint.OperationEndpoints, []string{"/op1", "/op2"})
+		require.Equal(t, endpoint.MinResolvers, 2)
+	})
+
+	t.Run("webfinger link return different list of endpoints", func(t *testing.T) {
+		cs := NewService(WithAuthToken("t1"), WithHTTPClient(
+			&mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
+				if strings.Contains(req.URL.Path, ".well-known/did-orb") {
+					b, err := json.Marshal(restapi.WellKnownResponse{
+						OperationEndpoint:  "/op",
+						ResolutionEndpoint: "/resolve1",
+					})
+					require.NoError(t, err)
+					r := ioutil.NopCloser(bytes.NewReader(b))
+
+					return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+				}
+
+				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
+					strings.Contains(req.URL.RawQuery, "op") {
+					b, err := json.Marshal(restapi.WebFingerResponse{
+						Links: []restapi.WebFingerLink{{Href: "/op1"}, {Href: "/op2"}},
+					})
+					require.NoError(t, err)
+					r := ioutil.NopCloser(bytes.NewReader(b))
+
+					return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+				}
+
+				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
+					strings.Contains(req.URL.RawQuery, "resolve1") {
+					b, err := json.Marshal(restapi.WebFingerResponse{
+						Properties: map[string]interface{}{minResolvers: float64(2)},
+						Links: []restapi.WebFingerLink{
+							{Href: "/resolve1", Rel: "self"},
+							{Href: "/resolve2", Rel: "alternate"},
+						},
+					})
+					require.NoError(t, err)
+					r := ioutil.NopCloser(bytes.NewReader(b))
+
+					return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+				}
+
+				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
+					strings.Contains(req.URL.RawQuery, "resolve2") {
+					b, err := json.Marshal(restapi.WebFingerResponse{
+						Properties: map[string]interface{}{minResolvers: float64(2)},
+						Links: []restapi.WebFingerLink{
+							{Href: "/resolve2", Rel: "self"},
+						},
+					})
+					require.NoError(t, err)
+					r := ioutil.NopCloser(bytes.NewReader(b))
+
+					return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+				}
+
+				return nil, nil
+			}}))
+
+		endpoint, err := cs.GetEndpoint("d1")
+		require.NoError(t, err)
+
+		require.Equal(t, []string{"/resolve1"}, endpoint.ResolutionEndpoints)
+		require.Equal(t, []string{"/op1", "/op2"}, endpoint.OperationEndpoints)
 		require.Equal(t, endpoint.MinResolvers, 2)
 	})
 
