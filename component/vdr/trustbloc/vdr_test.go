@@ -139,7 +139,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		jwk, err := ariesjose.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -191,7 +191,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		jwk, err := ariesjose.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -231,7 +231,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		jwk, err := ariesjose.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -390,7 +390,7 @@ func TestVDRI_Update(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		jwk, err := ariesjose.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -505,7 +505,7 @@ func TestVDRI_Recover(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		jwk, err := ariesjose.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -592,6 +592,8 @@ func httpVdrFunc(doc *did.DocResolution, err error) func(url string) (v vdr, err
 }
 
 func ed25519SigningKey(t *testing.T, jsonKey string) *jose.SigningKey {
+	t.Helper()
+
 	var key jose.JSONWebKey
 	err := key.UnmarshalJSON([]byte(jsonKey))
 	require.NoError(t, err)
@@ -652,6 +654,8 @@ func dummyStakeholder(stakeholderDomain string) *models.Stakeholder {
 
 func signedConsortiumFileData(t *testing.T, consortium *models.Consortium, key *jose.SigningKey,
 ) *models.ConsortiumFileData {
+	t.Helper()
+
 	if key == nil {
 		return &models.ConsortiumFileData{Config: consortium}
 	}
@@ -670,6 +674,8 @@ func signedConsortiumFileData(t *testing.T, consortium *models.Consortium, key *
 
 func signedStakeholderFileData(t *testing.T, stakeholder *models.Stakeholder, key *jose.SigningKey,
 ) *models.StakeholderFileData {
+	t.Helper()
+
 	if key == nil {
 		return &models.StakeholderFileData{Config: stakeholder}
 	}

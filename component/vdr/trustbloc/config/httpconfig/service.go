@@ -114,7 +114,7 @@ func (cs *ConfigService) GetSidetreeConfig(url string) (*models.SidetreeConfig, 
 
 	responseBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response : %s", err)
+		return nil, fmt.Errorf("failed to read response : %w", err)
 	}
 
 	config := models.SidetreeConfig{MultiHashAlgorithm: sha2_256, MaxAge: maxAge}

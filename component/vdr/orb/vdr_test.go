@@ -117,7 +117,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		jwk, err := ariesjose.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -158,7 +158,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		jwk, err := ariesjose.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -198,7 +198,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		jwk, err := ariesjose.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -226,7 +226,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		jwk, err := ariesjose.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -255,7 +255,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		jwk, err := ariesjose.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -336,7 +336,7 @@ func TestVDRI_Update(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		jwk, err := ariesjose.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -446,7 +446,7 @@ func TestVDRI_Recover(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromPublicKey(pk)
+		jwk, err := ariesjose.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)

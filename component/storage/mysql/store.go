@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 //
 package mysql
 
-import ( //nolint:gci // False positive, seemingly caused by the MySQL driver comment.
+import (
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -16,7 +16,7 @@ import ( //nolint:gci // False positive, seemingly caused by the MySQL driver co
 	"sync"
 
 	// Add as per the documentation - https://github.com/go-sql-driver/mysql
-	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/go-sql-driver/mysql" //nolint:gci // False positive, seemingly caused by the MySQL driver comment.
 
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 )

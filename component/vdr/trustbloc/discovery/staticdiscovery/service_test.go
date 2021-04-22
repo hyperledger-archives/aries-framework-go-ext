@@ -83,7 +83,7 @@ func TestDiscoveryService_GetEndpoints(t *testing.T) {
 		}))
 		defer consortiumServer.Close()
 
-		s := NewService(httpconfig.NewService(httpconfig.WithTLSConfig(&tls.Config{})))
+		s := NewService(httpconfig.NewService(httpconfig.WithTLSConfig(&tls.Config{MinVersion: tls.VersionTLS12})))
 		_, err = s.GetEndpoints(consortiumServer.URL)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "stakeholder config request failed")

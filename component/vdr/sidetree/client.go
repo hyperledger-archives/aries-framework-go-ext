@@ -308,17 +308,17 @@ func buildCreateRequest(multiHashAlgorithm uint, createDIDOpts *create.Opts) ([]
 
 	docBytes, err := didDoc.JSONBytes()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get document bytes : %s", err)
+		return nil, fmt.Errorf("failed to get document bytes : %w", err)
 	}
 
 	recoveryKey, err := pubkey.GetPublicKeyJWK(createDIDOpts.RecoveryPublicKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get recovery key : %s", err)
+		return nil, fmt.Errorf("failed to get recovery key : %w", err)
 	}
 
 	updateKey, err := pubkey.GetPublicKeyJWK(createDIDOpts.UpdatePublicKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get update key : %s", err)
+		return nil, fmt.Errorf("failed to get update key : %w", err)
 	}
 
 	recoveryCommitment, err := commitment.GetCommitment(recoveryKey, multiHashAlgorithm)
@@ -352,7 +352,7 @@ func (c *Client) buildUpdateRequest(did string, multiHashAlgorithm uint,
 	updateDIDOpts *update.Opts) ([]byte, error) {
 	nextUpdateKey, err := pubkey.GetPublicKeyJWK(updateDIDOpts.NextUpdatePublicKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get next update key : %s", err)
+		return nil, fmt.Errorf("failed to get next update key : %w", err)
 	}
 
 	nextUpdateCommitment, err := commitment.GetCommitment(nextUpdateKey, multiHashAlgorithm)
@@ -405,7 +405,7 @@ func buildRecoverRequest(did string, multiHashAlgorithm uint, recoverDIDOpts *re
 
 	docBytes, err := didDoc.JSONBytes()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get document bytes : %s", err)
+		return nil, fmt.Errorf("failed to get document bytes : %w", err)
 	}
 
 	nextRecoveryCommitment, nextUpdateCommitment, err := getCommitment(multiHashAlgorithm, recoverDIDOpts)
@@ -498,7 +498,7 @@ func (c *Client) sendRequest(req []byte, endpointURL string) ([]byte, error) {
 
 	responseBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response : %s", err)
+		return nil, fmt.Errorf("failed to read response : %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -626,12 +626,12 @@ func getCommitment(multiHashAlgorithm uint, recoverDIDOpts *recovery.Opts) (next
 	nextUpdateCommitment string, err error) {
 	nextRecoveryKey, err := pubkey.GetPublicKeyJWK(recoverDIDOpts.NextRecoveryPublicKey)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get next recovery key : %s", err)
+		return "", "", fmt.Errorf("failed to get next recovery key : %w", err)
 	}
 
 	nextUpdateKey, err := pubkey.GetPublicKeyJWK(recoverDIDOpts.NextUpdatePublicKey)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get next update key : %s", err)
+		return "", "", fmt.Errorf("failed to get next update key : %w", err)
 	}
 
 	nextRecoveryCommitment, err = commitment.GetCommitment(nextRecoveryKey, multiHashAlgorithm)

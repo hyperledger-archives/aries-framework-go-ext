@@ -402,7 +402,7 @@ func (v *VDR) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 	return v.sidetreeClient.DeactivateDID(didID, deactivateOpt...)
 }
 
-func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error) { //nolint:gocyclo
+func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error) {
 	pksMap := make(map[string]*doc.PublicKey)
 
 	if len(didDoc.VerificationMethod) > 0 {
@@ -419,7 +419,7 @@ func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error
 	ver = append(ver, didDoc.KeyAgreement...)
 
 	for _, v := range ver {
-		purpose := ""
+		var purpose string
 
 		switch v.Relationship { //nolint: exhaustive
 		case docdid.Authentication:

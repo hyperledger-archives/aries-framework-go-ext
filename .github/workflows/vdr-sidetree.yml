@@ -31,10 +31,10 @@ jobs:
     env:
       UNIT_TESTS_PATH: component/vdr/sidetree
     steps:
-      - name: Setup Go 1.15
+      - name: Setup Go 1.16
         uses: actions/setup-go@v2
         with:
-          go-version: 1.15
+          go-version: 1.16
         id: go
 
       - uses: actions/checkout@v2
