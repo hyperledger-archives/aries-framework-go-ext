@@ -236,10 +236,22 @@ func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) { //noli
 }
 
 func (cs *Service) sendRequest(req []byte, method, endpointURL string, respObj interface{}) error { //nolint: unparam
-	httpReq, err := http.NewRequestWithContext(context.Background(),
-		method, endpointURL, bytes.NewReader(req))
-	if err != nil {
-		return fmt.Errorf("failed to create http request: %w", err)
+	var httpReq *http.Request
+
+	var err error
+
+	if len(req) == 0 {
+		httpReq, err = http.NewRequestWithContext(context.Background(),
+			method, endpointURL, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create http request: %w", err)
+		}
+	} else {
+		httpReq, err = http.NewRequestWithContext(context.Background(),
+			method, endpointURL, bytes.NewBuffer(req))
+		if err != nil {
+			return fmt.Errorf("failed to create http request: %w", err)
+		}
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
