@@ -40,11 +40,11 @@ github.com/google/uuid v1.2.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+
 github.com/gopherjs/gopherjs v0.0.0-20180825215210-0210a2f0f73c/go.mod h1:wJfORRmW1u3UXTncJ5qlYoELFm8eSnnEO6hX4iZ3EWY=
 github.com/gopherjs/gopherjs v0.0.0-20200217142428-fce0ec30dd00 h1:l5lAOZEym3oK3SQ2HBHWsJUfbNBiTXJDeW2QDxw9AQ0=
 github.com/gopherjs/gopherjs v0.0.0-20200217142428-fce0ec30dd00/go.mod h1:wJfORRmW1u3UXTncJ5qlYoELFm8eSnnEO6hX4iZ3EWY=
-github.com/hyperledger/aries-framework-go/spi v0.0.0-20210320144851-40976de98ccf/go.mod h1:fDr9wW00GJJl1lR1SFHmJW8utIocdvjO5RNhAYS05EY=
-github.com/hyperledger/aries-framework-go/spi v0.0.0-20210325221830-6ab3160b7588 h1:Xn2HNNeUCe/PTTwoDVmoqdewNwTG3gBcnCxGbQrsmDk=
-github.com/hyperledger/aries-framework-go/spi v0.0.0-20210325221830-6ab3160b7588/go.mod h1:fDr9wW00GJJl1lR1SFHmJW8utIocdvjO5RNhAYS05EY=
-github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210325221830-6ab3160b7588 h1:jNk+7iloRMUBfJe2y2eu/Q8+4MCBlOV9tpyDS1uolGM=
-github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210325221830-6ab3160b7588/go.mod h1:eKGEEe+PJNDQo7kVif3sUKBWwnsQDkE3gD/QlpmukcQ=
+github.com/hyperledger/aries-framework-go/spi v0.0.0-20210421165342-de8f911415e3/go.mod h1:dBYKKD8U8U9o0g5BdNFFaRtjt9KTkiAYfQt+TTp+w1o=
+github.com/hyperledger/aries-framework-go/spi v0.0.0-20210422144621-1355c6f90b44 h1:X5PSWzGs5s8NQ6WyjXG4Ko3XDKOJsBdTcNlPlTBWm8s=
+github.com/hyperledger/aries-framework-go/spi v0.0.0-20210422144621-1355c6f90b44/go.mod h1:dBYKKD8U8U9o0g5BdNFFaRtjt9KTkiAYfQt+TTp+w1o=
+github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210422144621-1355c6f90b44 h1:dGbxpRZBWVIzoLo9tKaK4ZCmZsE6FRyioRrlLPBhZ5E=
+github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210422144621-1355c6f90b44/go.mod h1:asiCVCtH/nocWKhZRMz12aFgdUh8lRHqKis0M8Ei/4I=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.2 h1:DB17ag19krx9CFsz4o3enTrPXyIXCl+2iCXH/aMAp9s=
 github.com/konsorten/go-windows-terminal-sequences v1.0.2/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=

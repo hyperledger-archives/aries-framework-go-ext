@@ -11,8 +11,8 @@ require (
 	github.com/go-kivik/kivik/v3 v3.2.3
 	github.com/google/go-cmp v0.5.2 // indirect
 	github.com/google/uuid v1.2.0 // indirect
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210325221830-6ab3160b7588
-	github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210325221830-6ab3160b7588
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210422144621-1355c6f90b44
+	github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210422144621-1355c6f90b44
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/ory/dockertest/v3 v3.6.3
 	github.com/stretchr/testify v1.7.0

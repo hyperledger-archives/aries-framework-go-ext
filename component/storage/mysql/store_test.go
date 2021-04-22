@@ -285,6 +285,23 @@ func TestSqlDBStore_Query(t *testing.T) {
 			"invalid character 'N' looking for beginning of value")
 		require.Nil(t, itr)
 	})
+	t.Run("Not supported options", func(t *testing.T) {
+		provider, err := NewProvider(sqlStoreDBURL)
+		require.NoError(t, err)
+
+		store, err := provider.OpenStore("TestStore")
+		require.NoError(t, err)
+
+		iterator, err := store.Query("TagName:TagValue", storage.WithInitialPageNum(1))
+		require.EqualError(t, err, "mySQL provider does not currently support "+
+			"setting the initial page number of query results")
+		require.Nil(t, iterator)
+
+		iterator, err = store.Query("TagName:TagValue", storage.WithSortOrder(&storage.SortOptions{}))
+		require.EqualError(t, err, "mySQL provider does not currently support custom sort options for "+
+			"query results")
+		require.Nil(t, iterator)
+	})
 }
 
 func TestSqlDBIterator(t *testing.T) {
