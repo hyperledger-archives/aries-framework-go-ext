@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/go-kivik/kivik/v3"
+	spi "github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/stretchr/testify/require"
 )
 
@@ -219,9 +220,8 @@ func TestCouchDBResultsIterator_Next_Internal(t *testing.T) {
 	})
 	t.Run("Failure while fetching another page", func(t *testing.T) {
 		iterator := &couchDBResultsIterator{
-			store:                                    &store{db: &mockDB{}},
-			resultRows:                               &mockRows{},
-			queryWithPageSizeAndBookmarkPlaceholders: "%d,%s",
+			store:      &store{db: &mockDB{}},
+			resultRows: &mockRows{},
 		}
 
 		nextCallResult, err := iterator.Next()
@@ -276,4 +276,9 @@ func TestCouchDBResultsIterator_Tags_Internal(t *testing.T) {
 		require.EqualError(t, err, "failure while scanning result rows: mockRows ScanDoc always fails")
 		require.Empty(t, tags)
 	})
+}
+
+func TestGetQueryOptions_InvalidInitialPageIsChangedToDefault(t *testing.T) {
+	queryOptions := getQueryOptions([]spi.QueryOption{spi.WithInitialPageNum(-1)})
+	require.Equal(t, 0, queryOptions.InitialPageNum)
 }

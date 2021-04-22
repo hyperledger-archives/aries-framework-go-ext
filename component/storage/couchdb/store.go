@@ -13,6 +13,7 @@ import ( //nolint:gci // False positive, seemingly caused by the CouchDB driver 
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -50,9 +51,18 @@ const (
 	expressionTagNameOnlyLength     = 1
 	expressionTagNameAndValueLength = 2
 
-	tagNameOnlyQueryTemplate     = `{"selector":{"%s":{"$exists":true}},"limit":%d}`
-	tagNameAndValueQueryTemplate = `{"selector":{"%s":"%s"},"limit":%d}`
+	fieldNameExistsSelectorTemplate   = `{"%s":{"$exists":true}}`
+	fieldNameAndValueSelectorTemplate = `{"%s":"%s"}`
+	sortOptionsTemplate               = `[{"%s": "%s"}]`
 )
+
+type findQuery struct {
+	Selector json.RawMessage `json:"selector,omitempty"`
+	Limit    int             `json:"limit,omitempty"`
+	Bookmark string          `json:"bookmark,omitempty"`
+	Sort     json.RawMessage `json:"sort,omitempty"`
+	Skip     int             `json:"skip,omitempty"`
+}
 
 var errInvalidQueryExpressionFormat = errors.New("invalid expression format. " +
 	"it must be in the following format: TagName:TagValue")
@@ -74,11 +84,11 @@ func (d *defaultLogger) Warnf(msg string, args ...interface{}) {
 }
 
 type document struct {
-	ID         string            `json:"_id,omitempty"`      // CouchDB-internal field
-	RevisionID string            `json:"_rev,omitempty"`     // CouchDB-internal field
-	Deleted    bool              `json:"_deleted,omitempty"` // CouchDB-internal field
-	Value      []byte            `json:"value,omitempty"`    // Our custom field
-	Tags       map[string]string `json:"tags,omitempty"`     // Our custom field
+	ID         string                 `json:"_id,omitempty"`      // CouchDB-internal field
+	RevisionID string                 `json:"_rev,omitempty"`     // CouchDB-internal field
+	Deleted    bool                   `json:"_deleted,omitempty"` // CouchDB-internal field
+	Value      []byte                 `json:"value,omitempty"`    // Our custom field
+	Tags       map[string]interface{} `json:"tags,omitempty"`     // Our custom field
 }
 
 type db interface {
@@ -455,7 +465,12 @@ func (s *store) GetTags(k string) ([]storage.Tag, error) {
 		return nil, err
 	}
 
-	return getTagsFromDocument(&retrievedDocument), nil
+	tags, err := getTagsFromDocument(&retrievedDocument)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tags from document: %w", err)
+	}
+
+	return tags, nil
 }
 
 // GetBulk fetches the values associated with the given keys.
@@ -489,51 +504,51 @@ func (s *store) Query(expression string, options ...storage.QueryOption) (storag
 
 	expressionSplit := strings.Split(expression, ":")
 
+	query := findQuery{
+		Limit: queryOptions.PageSize,
+		Skip:  queryOptions.InitialPageNum * queryOptions.PageSize,
+	}
+
+	if queryOptions.SortOptions != nil {
+		var sortOrder string
+		if queryOptions.SortOptions.Order == storage.SortAscending {
+			sortOrder = "asc"
+		} else {
+			sortOrder = "desc"
+		}
+
+		query.Sort = json.RawMessage(fmt.Sprintf(
+			sortOptionsTemplate, "tags."+queryOptions.SortOptions.TagName, sortOrder))
+	}
+
+	var resultRows *kivik.Rows
+
 	switch len(expressionSplit) {
 	case expressionTagNameOnlyLength:
-		expressionTagName := expressionSplit[0]
-
-		findQuery := fmt.Sprintf(tagNameOnlyQueryTemplate, "tags."+expressionTagName, queryOptions.PageSize)
-
-		resultRows, err := s.db.Find(context.Background(), findQuery)
-		if err != nil {
-			return nil, fmt.Errorf(failSendRequestToFindEndpoint, err)
-		}
-
-		// TODO DEREKK ALSO MAKE SURE INDEX IS CREATED CORRECTLY
-		queryWithPageSizeAndBookmarkPlaceholders := `{"selector":{"` +
-			"tags." + expressionTagName + `":{"$exists":true}},"limit":%d,"bookmark":"%s"}`
-
-		return &couchDBResultsIterator{
-			store:                                    s,
-			resultRows:                               resultRows,
-			pageSize:                                 queryOptions.PageSize,
-			queryWithPageSizeAndBookmarkPlaceholders: queryWithPageSizeAndBookmarkPlaceholders,
-		}, nil
+		query.Selector = json.RawMessage(fmt.Sprintf(fieldNameExistsSelectorTemplate, "tags."+expressionSplit[0]))
 	case expressionTagNameAndValueLength:
-		expressionTagName := expressionSplit[0]
-		expressionTagValue := expressionSplit[1]
-
-		findQuery := fmt.Sprintf(tagNameAndValueQueryTemplate,
-			"tags."+expressionTagName, expressionTagValue, queryOptions.PageSize)
-
-		queryWithPageSizeAndBookmarkPlaceholders := `{"selector":{"` +
-			"tags." + expressionTagName + `":"` + expressionTagValue + `"},"limit":%d,"bookmark":"%s"}`
-
-		resultRows, err := s.db.Find(context.Background(), findQuery)
-		if err != nil {
-			return nil, fmt.Errorf(failSendRequestToFindEndpoint, err)
-		}
-
-		return &couchDBResultsIterator{
-			store:                                    s,
-			resultRows:                               resultRows,
-			pageSize:                                 queryOptions.PageSize,
-			queryWithPageSizeAndBookmarkPlaceholders: queryWithPageSizeAndBookmarkPlaceholders,
-		}, nil
+		query.Selector = json.RawMessage(fmt.Sprintf(fieldNameAndValueSelectorTemplate,
+			"tags."+expressionSplit[0], expressionSplit[1]))
 	default:
 		return &couchDBResultsIterator{}, errInvalidQueryExpressionFormat
 	}
+
+	findQueryBytes, err := json.Marshal(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal find query to JSON: %w", err)
+	}
+
+	resultRows, err = s.db.Find(context.Background(), findQueryBytes)
+	if err != nil {
+		return nil, fmt.Errorf(failSendRequestToFindEndpoint, err)
+	}
+
+	return &couchDBResultsIterator{
+		store:      s,
+		resultRows: resultRows,
+		pageSize:   queryOptions.PageSize,
+		findQuery:  query,
+	}, nil
 }
 
 // Delete deletes the key + value pair (and all tags) associated with k.
@@ -626,7 +641,7 @@ func (s *store) Close() error {
 	return nil
 }
 
-// This store type doesn't queue values, so there's never anything to flush.
+// Flush doesn't do anything since this store type doesn't queue values.
 func (s *store) Flush() error {
 	return nil
 }
@@ -719,11 +734,11 @@ func (s *store) getDocuments(keys []string) ([]*document, error) {
 }
 
 type couchDBResultsIterator struct {
-	store                                    *store
-	resultRows                               rows
-	pageSize                                 int
-	queryWithPageSizeAndBookmarkPlaceholders string
-	numDocumentsReturnedInThisPage           int
+	store                          *store
+	resultRows                     rows
+	pageSize                       int
+	findQuery                      findQuery
+	numDocumentsReturnedInThisPage int
 }
 
 // Next moves the pointer to the next value in the iterator. It returns false if the iterator is exhausted.
@@ -815,15 +830,28 @@ func (i *couchDBResultsIterator) Tags() ([]storage.Tag, error) {
 		return nil, fmt.Errorf(failWhileScanResultRows, err)
 	}
 
-	return getTagsFromDocument(&retrievedDocument), nil
+	tags, err := getTagsFromDocument(&retrievedDocument)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tags from document: %w", err)
+	}
+
+	return tags, nil
 }
 
 func (i *couchDBResultsIterator) fetchAnotherPage() (bool, error) {
 	var err error
 
-	query := fmt.Sprintf(i.queryWithPageSizeAndBookmarkPlaceholders, i.pageSize, i.resultRows.Bookmark())
+	i.findQuery.Bookmark = i.resultRows.Bookmark()
+	// If there was an initial page number specified (resulting in Skip being set), this will make sure we don't skip
+	// results on subsequent pages.
+	i.findQuery.Skip = 0
 
-	i.resultRows, err = i.store.db.Find(context.Background(), query)
+	findQueryBytes, err := json.Marshal(i.findQuery)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal find query to JSON: %w", err)
+	}
+
+	i.resultRows, err = i.store.db.Find(context.Background(), findQueryBytes)
 	if err != nil {
 		return false, fmt.Errorf("failure while sending request to CouchDB find endpoint: %w", err)
 	}
@@ -919,10 +947,17 @@ func createIndexes(db *kivik.DB, tagNamesNeedIndexCreation []string) error {
 
 func getQueryOptions(options []storage.QueryOption) storage.QueryOptions {
 	var queryOptions storage.QueryOptions
-	queryOptions.PageSize = 25
 
 	for _, option := range options {
 		option(&queryOptions)
+	}
+
+	if queryOptions.PageSize < 1 {
+		queryOptions.PageSize = 25
+	}
+
+	if queryOptions.InitialPageNum < 0 {
+		queryOptions.InitialPageNum = 0
 	}
 
 	return queryOptions
@@ -979,21 +1014,35 @@ func getDocumentsFromRows(rows rows) ([]*document, error) {
 	return documents, nil
 }
 
-func getTagsFromDocument(document *document) []storage.Tag {
+func getTagsFromDocument(document *document) ([]storage.Tag, error) {
 	tags := make([]storage.Tag, len(document.Tags))
 
 	var counter int
 
 	for tagName, tagValue := range document.Tags {
-		tags[counter] = storage.Tag{
-			Name:  tagName,
-			Value: tagValue,
+		tagValueAsFloat64, isFloat64 := tagValue.(float64)
+		if isFloat64 {
+			tags[counter] = storage.Tag{
+				Name:  tagName,
+				Value: fmt.Sprintf("%.0f", tagValueAsFloat64),
+			}
+		} else {
+			tagValueAsString, isString := tagValue.(string)
+			if !isString {
+				return nil, errors.New("tag value from document is of unknown type. " +
+					"it could not be asserted as a float64 or string")
+			}
+
+			tags[counter] = storage.Tag{
+				Name:  tagName,
+				Value: tagValueAsString,
+			}
 		}
 
 		counter++
 	}
 
-	return tags
+	return tags, nil
 }
 
 func logAnyWarning(i *couchDBResultsIterator) {
@@ -1032,10 +1081,15 @@ func removeDuplicatesKeepingOnlyLast(operations []storage.Operation) []storage.O
 	return operations
 }
 
-//
 func setDocumentTags(document *document, tags []storage.Tag) {
-	document.Tags = make(map[string]string)
+	document.Tags = make(map[string]interface{})
+
 	for _, tag := range tags {
-		document.Tags[tag.Name] = tag.Value
+		tagValueAsInt, err := strconv.Atoi(tag.Value)
+		if err != nil {
+			document.Tags[tag.Name] = tag.Value
+		} else {
+			document.Tags[tag.Name] = tagValueAsInt
+		}
 	}
 }
