@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 // Package couchdb implements a storage interface for Aries (aries-framework-go).
 package couchdb
 
-import ( //nolint:gci // False positive, seemingly caused by the CouchDB driver comment.
+import (
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,7 +18,7 @@ import ( //nolint:gci // False positive, seemingly caused by the CouchDB driver 
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff" //nolint:gci // False positive, seemingly caused by the CouchDB driver comment.
 	// The CouchDB driver. This import must be here for the Kivik client instantiation with a CouchDB driver to work.
 	_ "github.com/go-kivik/couchdb/v3"
 	"github.com/go-kivik/kivik/v3"

@@ -265,7 +265,7 @@ func (cs *Service) sendRequest(req []byte, method, endpointURL string, respObj i
 
 	responseBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response : %s", err)
+		return fmt.Errorf("failed to read response : %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -273,11 +273,7 @@ func (cs *Service) sendRequest(req []byte, method, endpointURL string, respObj i
 			endpointURL, resp.StatusCode, responseBytes)
 	}
 
-	if err := json.Unmarshal(responseBytes, &respObj); err != nil {
-		return err
-	}
-
-	return nil
+	return json.Unmarshal(responseBytes, &respObj)
 }
 
 func closeResponseBody(respBody io.Closer) {

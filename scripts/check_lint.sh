@@ -24,7 +24,7 @@ fi
 
 
 if [ -z "${GOLANGCI_LINT_IMAGE}" ]; then
-  lint_image="golangci/golangci-lint:v1.31.0"
+  lint_image="golangci/golangci-lint:v1.39.0"
 else
   lint_image="${GOLANGCI_LINT_IMAGE}"
 fi
@@ -48,18 +48,30 @@ trap clean EXIT
 for i in $(find $lint_path $exclude -name "go.mod")
 do
   pushd "$(dirname $i)" > /dev/null
-  if [ -z $(go list) ]; then
+  if [ -z $(go list 2> /dev/null) ]; then
+      echo "skipped $(dirname $i)"
       popd  > /dev/null
       continue
   fi
 
-  ${DOCKER_CMD} run --rm -e GOPROXY=${GOPROXY} \
-  -v "$ROOT:/opt/workspace" \
-  -v "$ROOT/.golangci.yml:/opt/workspace/$(dirname $i)/.golangci.yml" \
-  -w "/opt/workspace/$(dirname $i)" \
-  ${lint_image} golangci-lint run
+  if [ -f "$ROOT/$(dirname $i)/.custom_golangci.yml" ]; then
+      # use local lint config
+      ${DOCKER_CMD} run --rm -e GOPROXY=${GOPROXY} \
+      -v "$ROOT:/opt/workspace" \
+      -v "$ROOT/$lint_path/.custom_golangci.yml:/opt/workspace/$(dirname $i)/.custom_golangci.yml" \
+      -w "/opt/workspace/$(dirname $i)" \
+      ${lint_image} golangci-lint run -c "/opt/workspace/$(dirname $i)/.custom_golangci.yml" \
+      --path-prefix "$(dirname $i)/"
+  else # use main lint config
+      ${DOCKER_CMD} run --rm -e GOPROXY=${GOPROXY} \
+      -v "$ROOT:/opt/workspace" \
+      -v "$ROOT/.golangci.yml:/opt/workspace/$(dirname $i)/.golangci.yml" \
+      -w "/opt/workspace/$(dirname $i)" \
+      ${lint_image} golangci-lint run --path-prefix "$(dirname $i)/"
+  fi
 
   clean
 
+  echo "linted $(dirname $i)"
   popd  > /dev/null
 done

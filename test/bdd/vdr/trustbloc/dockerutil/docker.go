@@ -25,8 +25,7 @@ func NewDockerCmdlineHelper() DockerHelper {
 	return &dockerCmdlineHelper{}
 }
 
-type dockerCmdlineHelper struct {
-}
+type dockerCmdlineHelper struct{}
 
 func splitDockerCommandResults(cmdOutput string) (linesToReturn []string) {
 	lines := strings.Split(cmdOutput, "\n")
@@ -53,7 +52,7 @@ func (d *dockerCmdlineHelper) issueDockerCommand(cmdArgs []string) (string, erro
 func (d *dockerCmdlineHelper) getContainerIDsWithNamePrefix(namePrefix string) ([]string, error) {
 	cmdOutput, err := d.issueDockerCommand([]string{"ps", "--filter", fmt.Sprintf("name=%s", namePrefix), "-qa"})
 	if err != nil {
-		return nil, fmt.Errorf("error getting containers with name prefix '%s':  %s",
+		return nil, fmt.Errorf("error getting containers with name prefix '%s':  %w",
 			namePrefix, err)
 	}
 
@@ -69,7 +68,7 @@ func (d *dockerCmdlineHelper) GetIPAddress(containerID string) (ipAddress string
 	)
 
 	errRetFunc := func() error {
-		return fmt.Errorf("error getting IPAddress for container '%s':  %s", containerID, err)
+		return fmt.Errorf("error getting IPAddress for container '%s':  %w", containerID, err)
 	}
 
 	if cmdOutput, err = d.issueDockerCommand([]string{
@@ -95,7 +94,7 @@ func (d *dockerCmdlineHelper) GetIPAddress(containerID string) (ipAddress string
 func (d *dockerCmdlineHelper) RemoveContainersWithNamePrefix(namePrefix string) error {
 	containers, err := d.getContainerIDsWithNamePrefix(namePrefix)
 	if err != nil {
-		return fmt.Errorf("error removing containers with name prefix (%s):  %s", namePrefix, err)
+		return fmt.Errorf("error removing containers with name prefix (%s):  %w", namePrefix, err)
 	}
 
 	for _, id := range containers {

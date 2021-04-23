@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/cucumber/godog"
+	"github.com/hyperledger/aries-framework-go/pkg/crypto/primitive/bbs12381g2pub"
 	ariesdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
@@ -99,24 +100,29 @@ func (e *Steps) createVerificationMethod(keyType string, pubKey []byte, kid,
 	case P256KeyType:
 		x, y := elliptic.Unmarshal(elliptic.P256(), pubKey)
 
-		jwk, err = jose.JWKFromPublicKey(&ecdsa.PublicKey{X: x, Y: y, Curve: elliptic.P256()})
+		jwk, err = jose.JWKFromKey(&ecdsa.PublicKey{X: x, Y: y, Curve: elliptic.P256()})
 		if err != nil {
 			return nil, err
 		}
 	case p384KeyType:
 		x, y := elliptic.Unmarshal(elliptic.P384(), pubKey)
 
-		jwk, err = jose.JWKFromPublicKey(&ecdsa.PublicKey{X: x, Y: y, Curve: elliptic.P384()})
+		jwk, err = jose.JWKFromKey(&ecdsa.PublicKey{X: x, Y: y, Curve: elliptic.P384()})
 		if err != nil {
 			return nil, err
 		}
 	case bls12381G2KeyType:
-		jwk, err = jose.JWKFromPublicKey(pubKey)
+		pk, e := bbs12381g2pub.UnmarshalPublicKey(pubKey)
+		if e != nil {
+			return nil, e
+		}
+
+		jwk, err = jose.JWKFromKey(pk)
 		if err != nil {
 			return nil, err
 		}
 	default:
-		jwk, err = jose.JWKFromPublicKey(ed25519.PublicKey(pubKey))
+		jwk, err = jose.JWKFromKey(ed25519.PublicKey(pubKey))
 		if err != nil {
 			return nil, err
 		}
@@ -361,11 +367,7 @@ func (e *Steps) resolveCreatedDID(keyType, signatureSuite string) error {
 			docResolution.DIDDocument.Service[0].ID, docResolution.DIDDocument.ID+"#"+serviceID)
 	}
 
-	if err := e.validatePublicKey(docResolution.DIDDocument, keyType, signatureSuite); err != nil {
-		return err
-	}
-
-	return nil
+	return e.validatePublicKey(docResolution.DIDDocument, keyType, signatureSuite)
 }
 
 func (e *Steps) getPublicKey(keyType string) (string, []byte, error) { //nolint:gocritic

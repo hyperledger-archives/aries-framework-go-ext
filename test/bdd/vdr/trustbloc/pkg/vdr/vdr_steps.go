@@ -84,7 +84,7 @@ func (e *Steps) createDIDBloc(url, keyType, signatureSuite string) error {
 		k = ed25519.PublicKey(pubKey)
 	}
 
-	jwk, err := jose.JWKFromPublicKey(k)
+	jwk, err := jose.JWKFromKey(k)
 	if err != nil {
 		return err
 	}
@@ -150,11 +150,7 @@ func (e *Steps) resolveCreatedDID(keyType, signatureSuite string) error {
 			docResolution.DIDDocument.Service[0].ID, docResolution.DIDDocument.ID+"#"+serviceID)
 	}
 
-	if err := e.validatePublicKey(docResolution.DIDDocument, keyType, signatureSuite); err != nil {
-		return err
-	}
-
-	return nil
+	return e.validatePublicKey(docResolution.DIDDocument, keyType, signatureSuite)
 }
 
 func (e *Steps) getPublicKey(keyType string) (string, []byte, error) { //nolint:gocritic

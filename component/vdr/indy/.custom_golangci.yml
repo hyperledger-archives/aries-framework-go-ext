@@ -31,6 +31,8 @@ linters-settings:
     local-prefixes: github.com/hyperledger/aries-framework-go-ext
   gocyclo:
     min-complexity: 10
+  maligned:
+    suggest-new: true
   dupl:
     threshold: 500
   goconst:
@@ -68,22 +70,11 @@ linters-settings:
     allow-cuddle-declarations: false
   godot:
     check-all: false
-  gomoddirectives:
-    replace-local: true
 
 linters:
   enable-all: true
   disable:
     - goerr113
-    - paralleltest
-    - exhaustivestruct
-    - interfacer # deprecated by the author https://github.com/mvdan/interfacer#interfacer
-    - scopelint # deprecated by the author https://github.com/kyoh86/scopelint#obsoleted
-    - maligned # deprecated by the author https://github.com/mdempsky/maligned
-    - cyclop # TODO consider replacing gocyclo with cyclop
-    - ifshort # TODO enable
-    - wrapcheck # TODO enable
-    - forbidigo # TODO enable
 
 issues:
   exclude-use-default: false

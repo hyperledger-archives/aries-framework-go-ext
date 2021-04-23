@@ -40,10 +40,10 @@ jobs:
     env:
       EXCLUDE_TEST_PATH: ./component/vdr/indy
     steps:
-      - name: Setup Go 1.15
+      - name: Setup Go 1.16
         uses: actions/setup-go@v2
         with:
-          go-version: 1.15
+          go-version: 1.16
         id: go
 
       - uses: actions/checkout@v2

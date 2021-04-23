@@ -232,6 +232,8 @@ func TestInboundDataProcessing(t *testing.T) {
 }
 
 func amqpClient(t *testing.T, addr string) (ch *amqp.Channel, cleanup func()) {
+	t.Helper()
+
 	conn, err := amqp.Dial(addr)
 	require.NoError(t, err)
 

@@ -150,7 +150,7 @@ func (r *mongodbStore) Get(k string) ([]byte, error) {
 	data := &data{}
 
 	result := r.coll.FindOne(context.Background(), bson.M{"_id": k})
-	if result.Err() == mongo.ErrNoDocuments {
+	if errors.Is(result.Err(), mongo.ErrNoDocuments) {
 		return nil, storage.ErrDataNotFound
 	} else if result.Err() != nil {
 		return nil, errors.Wrap(result.Err(), "unable to query mongo")
