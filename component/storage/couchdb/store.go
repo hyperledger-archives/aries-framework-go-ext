@@ -31,16 +31,22 @@ const (
 	designDocumentName = "AriesStorageDesignDocument"
 
 	// Hardcoded strings returned from Kivik/CouchDB that we check for.
-	docNotFoundErrMsgFromKivik            = "Not Found: missing"
-	bulkGetDocNotFoundErrMsgFromKivik     = "not_found: missing"
-	docDeletedErrMsgFromKivik             = "Not Found: deleted"
-	databaseNotFoundErrMsgFromKivik       = "Not Found: Database does not exist."
-	documentUpdateConflictErrMsgFromKivik = "Conflict: Document update conflict."
+	docNotFoundErrMsgFromKivik                  = "Not Found: missing"
+	bulkGetDocNotFoundErrMsgFromKivik           = "not_found: missing"
+	docDeletedErrMsgFromKivik                   = "Not Found: deleted"
+	databaseNotFoundErrMsgFromKivik             = "Not Found: Database does not exist."
+	documentUpdateConflictErrMsgFromKivik       = "Conflict: Document update conflict."
+	designDocumentUpdateConflictErrMsgFromKivik = "Internal Server Error: " +
+		"Encountered a conflict while saving the design document."
 
-	invalidTagName                = `"%s" is an invalid tag name since it contains one or more ':' characters`
-	invalidTagValue               = `"%s" is an invalid tag value since it contains one or more ':' characters`
-	failGetDatabaseHandle         = "failed to get database handle: %w"
-	failGetExistingIndexes        = "failed to get existing indexes: %w"
+	invalidTagName               = `"%s" is an invalid tag name since it contains one or more ':' characters`
+	invalidTagValue              = `"%s" is an invalid tag value since it contains one or more ':' characters`
+	failGetDatabaseHandle        = "failed to get database handle: %w"
+	failGetExistingIndexes       = "failed to get existing indexes: %w"
+	failCreateIndex              = "failed to create index in CouchDB: %w"
+	failCreateIndexDueToConflict = "failed to create index in CouchDB due to " +
+		"design document conflict after %d attempts. This storage provider may need to be started with a higher " +
+		"max retry limit. Original error message from CouchDB: %w"
 	failureWhileScanningRow       = "failure while scanning row: %w"
 	failGetRevisionID             = "failed to get revision ID: %w"
 	failPutValueViaClient         = "failed to put value via client: %w"
@@ -72,11 +78,16 @@ type marshalFunc func(interface{}) ([]byte, error)
 type closer func(storeName string)
 
 type logger interface {
+	Infof(msg string, args ...interface{})
 	Warnf(msg string, args ...interface{})
 }
 
 type defaultLogger struct {
 	logger *log.Logger
+}
+
+func (d *defaultLogger) Infof(msg string, args ...interface{}) {
+	d.logger.Printf(msg, args...)
 }
 
 func (d *defaultLogger) Warnf(msg string, args ...interface{}) {
@@ -112,14 +123,13 @@ type rows interface {
 
 // Provider represents a CouchDB implementation of the storage.Provider interface.
 type Provider struct {
-	logger                        logger
-	hostURL                       string
-	couchDBClient                 *kivik.Client
-	dbPrefix                      string
-	openStores                    map[string]*store
-	maxDocumentConflictRetriesSet bool
-	maxDocumentConflictRetries    int
-	lock                          sync.RWMutex
+	logger                     logger
+	hostURL                    string
+	couchDBClient              *kivik.Client
+	dbPrefix                   string
+	openStores                 map[string]*store
+	maxDocumentConflictRetries int
+	lock                       sync.RWMutex
 }
 
 // Option represents an option for a CouchDB Provider.
@@ -132,12 +142,13 @@ func WithDBPrefix(dbPrefix string) Option {
 	}
 }
 
-// WithMaxDocumentConflictRetries is an option for specifying how many retries are allowed in the case when there's
-// a document update conflict (i.e. the document was updated by someone else during a Put operation here).
+// WithMaxDocumentConflictRetries is an option for specifying how many retries are allowed when there's a document
+// update conflict. This can happen if there are multiple CouchDB providers trying to insert data into a store
+// or set store configs are the same time.
+// maxRetries must be > 0. If not set (or set to an invalid value), it will default to 3 in the NewProvider function.
 func WithMaxDocumentConflictRetries(maxRetries int) Option {
 	return func(opts *Provider) {
 		opts.maxDocumentConflictRetries = maxRetries
-		opts.maxDocumentConflictRetriesSet = true
 	}
 }
 
@@ -196,6 +207,10 @@ func NewProvider(hostURL string, opts ...Option) (*Provider, error) {
 		opt(p)
 	}
 
+	if p.maxDocumentConflictRetries < 1 {
+		p.maxDocumentConflictRetries = 3
+	}
+
 	if p.logger == nil {
 		p.logger = &defaultLogger{
 			log.New(os.Stdout, "CouchDB-Provider ", log.Ldate|log.Ltime|log.LUTC),
@@ -226,7 +241,8 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 }
 
 // SetStoreConfig sets the configuration on a store.
-// Indexes are created based on the tag names in config. This allows the store.Query method to operate faster.
+// Indexes are created based on the tag names in config. This allows the store.Query method to operate faster, and is
+// required to
 // Existing tag names/indexes in the store that are not in the config passed in here will be removed.
 // The store must be created prior to calling this method.
 // If duplicate tags are provided, then CouchDB will ignore them.
@@ -246,7 +262,7 @@ func (p *Provider) SetStoreConfig(name string, config storage.StoreConfiguration
 		return fmt.Errorf(failGetDatabaseHandle, err)
 	}
 
-	err = p.setIndexes(db, config)
+	err = p.setIndexes(db, config, name)
 	if err != nil {
 		return fmt.Errorf("failure while setting indexes: %w", err)
 	}
@@ -346,14 +362,8 @@ func (p *Provider) createStore(name string) (storage.Store, error) {
 		return nil, fmt.Errorf(failGetDatabaseHandle, err)
 	}
 
-	maxDocumentConflictRetries := 3
-
-	if p.maxDocumentConflictRetriesSet {
-		maxDocumentConflictRetries = p.maxDocumentConflictRetries
-	}
-
 	newStore := &store{
-		name: name, logger: p.logger, db: db, maxDocumentConflictRetries: maxDocumentConflictRetries,
+		name: name, logger: p.logger, db: db, maxDocumentConflictRetries: p.maxDocumentConflictRetries,
 		marshal: json.Marshal, close: p.removeStore,
 	}
 
@@ -362,7 +372,7 @@ func (p *Provider) createStore(name string) (storage.Store, error) {
 	return newStore, nil
 }
 
-func (p *Provider) setIndexes(db *kivik.DB, config storage.StoreConfiguration) error {
+func (p *Provider) setIndexes(db *kivik.DB, config storage.StoreConfiguration, storeName string) error {
 	existingIndexes, err := db.GetIndexes(context.Background())
 	if err != nil {
 		if err.Error() == databaseNotFoundErrMsgFromKivik {
@@ -372,9 +382,98 @@ func (p *Provider) setIndexes(db *kivik.DB, config storage.StoreConfiguration) e
 		return fmt.Errorf(failGetExistingIndexes, err)
 	}
 
-	err = updateIndexes(db, config, existingIndexes)
+	err = p.updateIndexes(db, config, existingIndexes, storeName)
 	if err != nil {
-		return fmt.Errorf("failure while creating indexes in CouchDB: %w", err)
+		return fmt.Errorf("failure while updating indexes in CouchDB: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Provider) updateIndexes(db *kivik.DB, config storage.StoreConfiguration,
+	existingIndexes []kivik.Index, storeName string) error {
+	tagNameIndexesAlreadyConfigured := make(map[string]struct{})
+
+	for _, existingIndex := range existingIndexes {
+		// Ignore _all_docs, which is the CouchDB default index on the document ID field
+		if existingIndex.Name != "_all_docs" {
+			existingTagName := strings.TrimSuffix(existingIndex.Name, "_index")
+
+			var existingTagIsInNewConfig bool
+
+			for _, tagName := range config.TagNames {
+				if existingTagName == tagName {
+					existingTagIsInNewConfig = true
+					tagNameIndexesAlreadyConfigured[tagName] = struct{}{}
+
+					p.logger.Infof("[Store name: %s] Skipping index creation for %s since the "+
+						"index already exists.", storeName, tagName)
+
+					break
+				}
+			}
+
+			// If the new store configuration doesn't have the existing index (tag) defined, then we will delete it
+			if !existingTagIsInNewConfig {
+				err := db.DeleteIndex(context.Background(), designDocumentName, existingIndex.Name)
+				if err != nil {
+					return fmt.Errorf("failed to delete index: %w", err)
+				}
+			}
+		}
+	}
+
+	var tagNamesNeedIndexCreation []string
+
+	for _, tag := range config.TagNames {
+		_, indexAlreadyCreated := tagNameIndexesAlreadyConfigured[tag]
+		if !indexAlreadyCreated {
+			tagNamesNeedIndexCreation = append(tagNamesNeedIndexCreation, tag)
+		}
+	}
+
+	err := p.createIndexes(db, tagNamesNeedIndexCreation, storeName)
+	if err != nil {
+		return fmt.Errorf("failed to create indexes: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Provider) createIndexes(db *kivik.DB, tagNamesNeedIndexCreation []string, storeName string) error {
+	for _, tagName := range tagNamesNeedIndexCreation {
+		var attemptsMade int
+
+		err := backoff.Retry(func() error {
+			attemptsMade++
+
+			err := db.CreateIndex(context.Background(), designDocumentName, tagName+"_index",
+				`{"fields": ["tags.`+tagName+`"]}`)
+			if err != nil {
+				// If there are multiple CouchDB Providers trying to set store configurations, it's possible
+				// to get a document update conflict. In cases where those multiple CouchDB providers are trying
+				// to set the exact same store configuration, retrying here allows them to succeed without failing
+				// unnecessarily.
+				if err.Error() == designDocumentUpdateConflictErrMsgFromKivik {
+					p.logger.Infof("[Store name: %s] Attempt %d - design document update conflict while creating "+
+						"index for %s. This can happen if multiple CouchDB providers set the store configuration at the "+
+						"same time.", storeName, attemptsMade, tagName)
+
+					return fmt.Errorf(failCreateIndexDueToConflict, attemptsMade, err)
+				}
+
+				// This is an unexpected error.
+				return backoff.Permanent(fmt.Errorf(failCreateIndex, err))
+			}
+
+			p.logger.Infof("[Store name: %s] Attempt %d - successfully created index for %s.",
+				storeName, attemptsMade, tagName)
+
+			return nil
+		}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond), uint64(p.maxDocumentConflictRetries)))
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -548,6 +647,7 @@ func (s *store) Query(expression string, options ...storage.QueryOption) (storag
 		resultRows: resultRows,
 		pageSize:   queryOptions.PageSize,
 		findQuery:  query,
+		marshal:    json.Marshal,
 	}, nil
 }
 
@@ -739,6 +839,7 @@ type couchDBResultsIterator struct {
 	pageSize                       int
 	findQuery                      findQuery
 	numDocumentsReturnedInThisPage int
+	marshal                        marshalFunc
 }
 
 // Next moves the pointer to the next value in the iterator. It returns false if the iterator is exhausted.
@@ -750,9 +851,12 @@ func (i *couchDBResultsIterator) Next() (bool, error) {
 	// This most likely reasons for no index being found is that either the Provider's StoreConfiguration
 	// was never set, or it was set but was missing the queried tag name.
 	// This value is only set by Kivik on the final iteration (once all the rows have been iterated through).
-	logAnyWarning(i)
+	err := i.logAnyWarning()
+	if err != nil {
+		return false, fmt.Errorf("failed to log a warning: %w", err)
+	}
 
-	err := i.resultRows.Err()
+	err = i.resultRows.Err()
 	if err != nil {
 		return false, fmt.Errorf("failure during iteration of result rows: %w", err)
 	}
@@ -887,64 +991,6 @@ func validatePutInput(key string, value []byte, tags []storage.Tag) error {
 	return nil
 }
 
-func updateIndexes(db *kivik.DB, config storage.StoreConfiguration, existingIndexes []kivik.Index) error {
-	tagNameIndexesAlreadyConfigured := make(map[string]struct{})
-
-	for _, existingIndex := range existingIndexes {
-		// Ignore _all_docs, which is the CouchDB default index on the document ID field
-		if existingIndex.Name != "_all_docs" {
-			existingTagName := strings.TrimSuffix(existingIndex.Name, "_index")
-
-			var existingTagIsInNewConfig bool
-
-			for _, tagName := range config.TagNames {
-				if existingTagName == tagName {
-					existingTagIsInNewConfig = true
-					tagNameIndexesAlreadyConfigured[tagName] = struct{}{}
-
-					break
-				}
-			}
-
-			// If the new store configuration doesn't have the existing index (tag) defined, then we will delete it
-			if !existingTagIsInNewConfig {
-				err := db.DeleteIndex(context.Background(), designDocumentName, existingIndex.Name)
-				if err != nil {
-					return fmt.Errorf("failed to delete index: %w", err)
-				}
-			}
-		}
-	}
-
-	var tagNamesNeedIndexCreation []string
-
-	for _, tag := range config.TagNames {
-		_, indexAlreadyCreated := tagNameIndexesAlreadyConfigured[tag]
-		if !indexAlreadyCreated {
-			tagNamesNeedIndexCreation = append(tagNamesNeedIndexCreation, tag)
-		}
-	}
-
-	err := createIndexes(db, tagNamesNeedIndexCreation)
-	if err != nil {
-		return fmt.Errorf("failed to create indexes: %w", err)
-	}
-
-	return nil
-}
-
-func createIndexes(db *kivik.DB, tagNamesNeedIndexCreation []string) error {
-	for _, tagName := range tagNamesNeedIndexCreation {
-		err := db.CreateIndex(context.Background(), designDocumentName, tagName+"_index",
-			`{"fields": ["tags.`+tagName+`"]}`)
-		if err != nil {
-			return fmt.Errorf("failed to create index in CouchDB: %w", err)
-		}
-	}
-
-	return nil
-}
-
 func getQueryOptions(options []storage.QueryOption) storage.QueryOptions {
 	var queryOptions storage.QueryOptions
 
@@ -1045,12 +1091,27 @@ func getTagsFromDocument(document *document) ([]storage.Tag, error) {
 	return tags, nil
 }
 
-func logAnyWarning(i *couchDBResultsIterator) {
+func (i *couchDBResultsIterator) logAnyWarning() error {
 	warningMsg := i.resultRows.Warning()
 
 	if warningMsg != "" {
-		i.store.logger.Warnf(warningMsg)
+		findQueryBytes, err := i.marshal(i.findQuery)
+		if err != nil {
+			return fmt.Errorf("failed to marshal find query for log: %w", err)
+		}
+
+		logMessage := fmt.Sprintf(`[Store name: %s] Received warning from CouchDB. `+
+			`Message: %s Original query: %s.`, i.store.name, warningMsg, string(findQueryBytes))
+
+		if warningMsg == "No matching index found, create an index to optimize query time." {
+			logMessage += " To resolve this, make sure the store configuration has been set using the " +
+				"Store.SetStoreConfig method. The store configuration must contain the tag name used in the query."
+		}
+
+		i.store.logger.Warnf(logMessage)
 	}
+
+	return nil
 }
 
 func removeDuplicatesKeepingOnlyLast(operations []storage.Operation) []storage.Operation {
