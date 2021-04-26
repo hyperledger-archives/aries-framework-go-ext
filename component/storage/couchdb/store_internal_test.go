@@ -60,6 +60,7 @@ type mockRows struct {
 	err      error
 	errClose error
 	next     bool
+	warning  string
 }
 
 func (m *mockRows) Next() bool {
@@ -79,11 +80,15 @@ func (m *mockRows) ScanDoc(dest interface{}) error {
 }
 
 func (m *mockRows) Warning() string {
-	return ""
+	return m.warning
 }
 
 func (m *mockRows) Bookmark() string {
 	return ""
+}
+
+func failingMarshal(interface{}) ([]byte, error) {
+	return nil, errors.New("marshal failure")
 }
 
 func TestStore_Put_Internal(t *testing.T) {
@@ -227,6 +232,17 @@ func TestCouchDBResultsIterator_Next_Internal(t *testing.T) {
 		nextCallResult, err := iterator.Next()
 		require.EqualError(t, err, "failure while fetching new page: "+
 			"failure while sending request to CouchDB find endpoint: mockDB Find always fails")
+		require.False(t, nextCallResult)
+	})
+	t.Run("Failure while logging a warning", func(t *testing.T) {
+		iterator := &couchDBResultsIterator{
+			resultRows: &mockRows{warning: "Some warning"},
+			marshal:    failingMarshal,
+		}
+
+		nextCallResult, err := iterator.Next()
+		require.EqualError(t, err, "failed to log a warning: "+
+			"failed to marshal find query for log: marshal failure")
 		require.False(t, nextCallResult)
 	})
 }

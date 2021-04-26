@@ -11,10 +11,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/cenkalti/backoff"
+	spi "github.com/hyperledger/aries-framework-go/spi/storage"
 	commontest "github.com/hyperledger/aries-framework-go/test/component/storage"
 	dctest "github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
@@ -32,8 +34,24 @@ const (
 
 type mockLogger struct{}
 
+func (l *mockLogger) Infof(msg string, args ...interface{}) {
+	log.Printf("mock logger output")
+}
+
 func (*mockLogger) Warnf(string, ...interface{}) {
 	log.Printf("mock logger output")
+}
+
+type stringLogger struct {
+	log string
+}
+
+func (s *stringLogger) Infof(msg string, args ...interface{}) {
+	s.log += fmt.Sprintf(msg, args...)
+}
+
+func (s *stringLogger) Warnf(msg string, args ...interface{}) {
+	s.log += fmt.Sprintf(msg, args...)
 }
 
 func TestMain(m *testing.M) {
@@ -179,4 +197,64 @@ func TestProvider_OpenStore(t *testing.T) {
 			"and any of the characters _, $, (, ), +, -, and / are allowed. Must begin with a letter.")
 		require.Nil(t, store)
 	})
+}
+
+func TestNoIndexSetWarning(t *testing.T) {
+	stringLogger := &stringLogger{}
+	prov, err := NewProvider(couchDBURL, WithLogger(stringLogger))
+	require.NoError(t, err)
+
+	store, err := prov.OpenStore("noindexteststore")
+	require.NoError(t, err)
+
+	iterator, err := store.Query("TagNameThatWasNeverSetInStoreConfig")
+	require.NoError(t, err)
+
+	anotherEntry, err := iterator.Next()
+	require.False(t, anotherEntry)
+	require.NoError(t, err)
+
+	require.Equal(t, `[Store name: noindexteststore] Received warning from CouchDB. Message: `+
+		`No matching index found, create an index to optimize query time. Original query: `+
+		`{"selector":{"tags.TagNameThatWasNeverSetInStoreConfig":{"$exists":true}},"limit":25}. `+
+		`To resolve this, make sure the store configuration has been set using the Store.SetStoreConfig method. `+
+		`The store configuration must contain the tag name used in the query.`, stringLogger.log)
+}
+
+func TestMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t *testing.T) {
+	providers := make([]*Provider, 10)
+
+	for i := 0; i < 10; i++ {
+		provider, err := NewProvider(couchDBURL, WithMaxDocumentConflictRetries(1))
+		require.NoError(t, err)
+
+		providers[i] = provider
+	}
+
+	// Since all the providers share the same CouchDB instance and database prefix, we only need to open the store once
+	// (and it doesn't matter which provider we use)
+	_, err := providers[0].OpenStore("MultipleProviderTest")
+	require.NoError(t, err)
+
+	var waitGroup sync.WaitGroup
+
+	for i := 0; i < 10; i++ {
+		i := i
+
+		waitGroup.Add(1)
+
+		setStoreConfig := func() {
+			defer waitGroup.Done()
+
+			err := providers[i].SetStoreConfig("MultipleProviderTest",
+				spi.StoreConfiguration{TagNames: []string{
+					"TagName1", "TagName2", "TagName3", "TagName4",
+					"TagName5", "TagName6", "TagName7", "TagName8",
+				}})
+			require.NoError(t, err)
+		}
+		go setStoreConfig()
+	}
+
+	waitGroup.Wait()
 }
