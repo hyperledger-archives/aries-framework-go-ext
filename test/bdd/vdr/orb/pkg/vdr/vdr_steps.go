@@ -15,6 +15,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -40,7 +41,7 @@ const (
 	bls12381G2KeyType = "Bls12381G2"
 	// Ed25519KeyType ed25519 key type.
 	Ed25519KeyType = "Ed25519"
-	origin         = "origin.com"
+	origin         = "https://orb2/services/orb"
 	jsonWebKey2020 = "JsonWebKey2020"
 )
 
@@ -70,6 +71,8 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 func (e *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^Orb DID is created with key type "([^"]*)" with signature suite "([^"]*)"$`,
 		e.createDID)
+	s.Step(`^Execute shell script "([^"]*)"$`,
+		e.executeScript)
 	s.Step(`^Resolve created DID and validate key type "([^"]*)", signature suite "([^"]*)"$`,
 		e.resolveCreatedDID)
 	s.Step(`^Resolve updated DID$`,
@@ -428,6 +431,15 @@ func (e *Steps) verifyPublicKeyAndType(didDoc *ariesdid.Doc, signatureSuite stri
 	if didDoc.VerificationMethod[0].Type != signatureSuite {
 		return fmt.Errorf("resolved did public key type %s not equal to %s",
 			didDoc.VerificationMethod[0].Type, signatureSuite)
+	}
+
+	return nil
+}
+
+func (e *Steps) executeScript(scriptPath string) error {
+	_, err := exec.Command(scriptPath).CombinedOutput() //nolint: gosec
+	if err != nil {
+		return err
 	}
 
 	return nil
