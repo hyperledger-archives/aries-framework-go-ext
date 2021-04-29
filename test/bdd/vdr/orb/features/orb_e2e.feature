@@ -10,6 +10,7 @@ Feature: Test orb vdr
 
   @orb_did_ops
   Scenario Outline:
+    Then Execute shell script "./create_follow_activity.sh"
     Then Orb DID is created with key type "<keyType>" with signature suite "<signatureSuite>"
     Then Resolve created DID and validate key type "<keyType>", signature suite "<signatureSuite>"
     Then Orb DID is updated with key type "<keyType>" with signature suite "<signatureSuite>"

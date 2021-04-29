@@ -7,42 +7,166 @@ version: '2'
 
 services:
 
-  orb:
-    container_name: orb
+  orb1:
+    container_name: testnet.orb.local
     image: ${ORB_IMAGE}:${ORB_IMAGE_TAG}
+    restart: always
     environment:
+      - ORB_KMS_ENDPOINT=http://orb.kms:7878
+      - ORB_VCT_URL=http://orb.vct:8077
       - ORB_HOST_URL=0.0.0.0:443
       - ORB_EXTERNAL_ENDPOINT=https://testnet.orb.local
       - ORB_TLS_CERTIFICATE=/etc/orb/tls/ec-pubCert.pem
       - ORB_TLS_KEY=/etc/orb/tls/ec-key.pem
       - DID_NAMESPACE=did:orb
       - DID_ALIASES=did:orb:testnet.orb.local
-      - ALLOWED_ORIGINS=origin.com,source.com
-      # BATCH_WRITER_TIMEOUT is max wait time in-between cutting batches (defined in milliseconds)
+      - ALLOWED_ORIGINS=https://orb2/services/orb
       - BATCH_WRITER_TIMEOUT=200
       - CAS_URL=ipfs:5001
-      - ANCHOR_CREDENTIAL_ISSUER=http://peer1.com
-      - ANCHOR_CREDENTIAL_URL=http://peer1.com/vc
+      - ANCHOR_CREDENTIAL_ISSUER=https://orb1
+      - ANCHOR_CREDENTIAL_URL=https://orb1/vc
       - ANCHOR_CREDENTIAL_SIGNATURE_SUITE=Ed25519Signature2018
-      - ANCHOR_CREDENTIAL_DOMAIN=domain.com
+      - ANCHOR_CREDENTIAL_DOMAIN=orb1
       - DATABASE_TYPE=couchdb
       - DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
-      - DATABASE_PREFIX=orb
+      - DATABASE_PREFIX=orb1
       - KMSSECRETS_DATABASE_TYPE=couchdb
       - KMSSECRETS_DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
-      - KMSSECRETS_DATABASE_PREFIX=orbkms
+      - KMSSECRETS_DATABASE_PREFIX=orb1kms
     ports:
       - 443:443
-    command:  /bin/sh -c "sleep 10;orb start"
+    command: start
     volumes:
       - ../keys/tls:/etc/orb/tls
     depends_on:
       - ipfs
       - couchdb.example.com
 
+  orb2:
+    container_name: orb2
+    image: ${ORB_IMAGE}:${ORB_IMAGE_TAG}
+    restart: always
+    environment:
+      - ORB_KMS_ENDPOINT=http://orb.kms:7878
+      - ORB_VCT_URL=http://orb.vct:8077
+      - ORB_HOST_URL=0.0.0.0:443
+      - ORB_EXTERNAL_ENDPOINT=https://orb2
+      - ORB_TLS_CERTIFICATE=/etc/orb/tls/ec-pubCert.pem
+      - ORB_TLS_KEY=/etc/orb/tls/ec-key.pem
+      - DID_NAMESPACE=did:orb
+      - DID_ALIASES=did:orb:testnet.orb.local
+      - ALLOWED_ORIGINS=https://testnet.orb.local/services/orb
+      - BATCH_WRITER_TIMEOUT=200
+      - CAS_URL=ipfs:5001
+      - ANCHOR_CREDENTIAL_ISSUER=https://orb2
+      - ANCHOR_CREDENTIAL_URL=https://orb2/vc
+      - ANCHOR_CREDENTIAL_SIGNATURE_SUITE=Ed25519Signature2018
+      - ANCHOR_CREDENTIAL_DOMAIN=orb2
+      - DATABASE_TYPE=couchdb
+      - DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
+      - DATABASE_PREFIX=orb2
+      - KMSSECRETS_DATABASE_TYPE=couchdb
+      - KMSSECRETS_DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
+      - KMSSECRETS_DATABASE_PREFIX=orb2kms
+    ports:
+      - 8009:443
+    command: start
+    volumes:
+      - ../keys/tls:/etc/orb/tls
+    depends_on:
+      - ipfs
+      - couchdb.example.com
+
+  orb.mysql:
+    container_name: orb.mysql
+    image: mysql:8.0.24
+    restart: always
+    cap_add:
+      - SYS_NICE
+    environment:
+      - MYSQL_ALLOW_EMPTY_PASSWORD=true
+    volumes:
+      - ./mysql-config:/docker-entrypoint-initdb.d
+    logging:
+      driver: "none"
+    ports:
+      - 3306:3306
+
+  orb.trillian.log.server:
+    container_name: orb.trillian.log.server
+    image: gcr.io/trillian-opensource-ci/log_server:eacf01ddf6503e04cda3ee941d94820f139c7737
+    restart: always
+    command:
+      - --mysql_uri=root@tcp(orb.mysql:3306)/test
+      - --rpc_endpoint=0.0.0.0:8090
+      - --alsologtostderr
+    ports:
+      - 8090:8090
+
+  orb.trillian.log.signer:
+    container_name: orb.trillian.log.signer
+    image: gcr.io/trillian-opensource-ci/log_signer:eacf01ddf6503e04cda3ee941d94820f139c7737
+    restart: always
+    command:
+      - --mysql_uri=root@tcp(orb.mysql:3306)/test
+      - --http_endpoint=0.0.0.0:8091
+      - --force_master=true
+      - --alsologtostderr
+    depends_on:
+      - orb.mysql
+    ports:
+      - 8091:8091
+
+  orb.kms:
+    container_name: orb.kms
+    restart: always
+    image: ghcr.io/trustbloc-cicd/kms:0.1.7-snapshot-bff24d1
+    environment:
+      - KMS_BASE_URL=http://orb.kms:7878
+      - KMS_HOST_URL=0.0.0.0:7878
+      - KMS_DATABASE_TYPE=couchdb
+      - KMS_DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
+      - KMS_DATABASE_PREFIX=orbkmskeystore
+      - KMS_PRIMARY_KEY_DATABASE_TYPE=couchdb
+      - KMS_PRIMARY_KEY_DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
+      - KMS_PRIMARY_KEY_DATABASE_PREFIX=orbkmspk
+      - KMS_LOCAL_KMS_DATABASE_TYPE=couchdb
+      - KMS_LOCAL_KMS_DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
+      - KMS_LOCAL_KMS_DATABASE_PREFIX=orbkmslocal
+      - KMS_KEY_MANAGER_STORAGE_TYPE=couchdb
+      - KMS_KEY_MANAGER_STORAGE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
+      - KMS_KEY_MANAGER_STORAGE_PREFIX=orbkmskm
+    ports:
+      - 7878:7878
+    entrypoint: ""
+    depends_on:
+      - couchdb.example.com
+    command: /bin/sh -c "kms-rest start"
+
+  orb.vct:
+    container_name: orb.vct
+    image: ghcr.io/trustbloc-cicd/vct:v0.1.0-snapshot-0a09a7b
+    restart: always
+    environment:
+      - VCT_API_HOST=0.0.0.0:8077
+      - VCT_AUTO_INIT_TREE=true
+      - VCT_KMS_ENDPOINT=http://orb.kms:7878
+      - VCT_DSN=mysql://root@tcp(orb.mysql:3306)/test
+      - VCT_LOG_ENDPOINT=orb.trillian.log.server:8090
+      - VCT_TLS_CACERTS=/etc/orb/tls/ec-cacert.pem
+    volumes:
+      - ../keys/tls:/etc/orb/tls
+    ports:
+      - 8077:8077
+    command: start
+    depends_on:
+      - orb.mysql
+      - orb.kms
+      - orb.trillian.log.server
+
   ipfs:
     container_name: ipfs
-    image: ipfs/go-ipfs
+    image: ipfs/go-ipfs:master-2021-04-22-eea198f
     environment:
       - IPFS_PATH=/data/ipfs
     volumes:
@@ -58,5 +182,7 @@ services:
     environment:
       - COUCHDB_USER=${COUCHDB_USERNAME}
       - COUCHDB_PASSWORD=${COUCHDB_PASSWORD}
+    logging:
+      driver: "none"
     volumes:
       - ./couchdb-config/config.ini:/opt/couchdb/etc/local.d/config.ini
