@@ -68,10 +68,11 @@ func WithDBPrefix(dbPrefix string) Option {
 }
 
 // NewProvider instantiates Provider.
-// Example DB Path root:my-secret-pw@tcp(127.0.0.1:3306)/
+// Example DB Path root:my-secret-pw@tcp(127.0.0.1:3306)/?interpolateParams=true&multiStatements=true
 // This provider's CreateStore(name) implementation creates stores that are backed by a table under a schema
 // with the same name as the table. The fully qualified name of the table is thus `name.name`. The fully qualified
 // name of the table needs to be used with the store's `Query()` method.
+// Use of `Batch()` has additional considerations - please read the docs for Batch() accordingly..
 func NewProvider(dbPath string, opts ...Option) (*Provider, error) {
 	if dbPath == "" {
 		return nil, errBlankDBPath
@@ -202,7 +203,7 @@ func (p *Provider) SetStoreConfig(name string, config storage.StoreConfiguration
 	return nil
 }
 
-// GetStoreConfig is currently not implemented.
+// GetStoreConfig returns the store's configuration.
 func (p *Provider) GetStoreConfig(name string) (storage.StoreConfiguration, error) {
 	name = strings.ToLower(name)
 
@@ -396,8 +397,83 @@ func (s *store) Delete(k string) error {
 	return nil
 }
 
-func (s *store) Batch([]storage.Operation) error {
-	return errors.New("not implemented")
+// Batch performs batch upserts and deletions preserving the batch's ordering.
+// Batch is a no-op if the batch is empty.
+// Batch needs both `interpolateParams` and `multiStatements` enabled in the dataSourceName
+// - see the following guide: https://github.com/go-sql-driver/mysql#parameters.
+// All operations in the batch are executed in a single multi-statement query due to the ordering
+// requirements. This means we cannot optimize INSERT statements as per
+// https://dev.mysql.com/doc/refman/8.0/en/insert-optimization.html.
+// Executing a single multi-statement query requires O(N) space for the query string and an additional
+// slice with O(2*N) space holding the values for the query. Callers should take care of this additional
+// memory usage by limiting the size of the batch.
+func (s *store) Batch(batch []storage.Operation) error {
+	// Batch godocs are moot on what to do if batch is empty.
+	// None of the other implementations return an error in such a case.
+	if len(batch) == 0 {
+		return nil
+	}
+
+	var (
+		query  string
+		values []interface{}
+	)
+
+	for i := range batch {
+		b := batch[i]
+
+		if b.Key == "" {
+			return errors.New("key cannot be empty")
+		}
+
+		err := s.bulkAppendToQuery(b, &query, &values)
+		if err != nil {
+			return fmt.Errorf(failureWhileExecutingBatchStatementErrMsg, s.tableName, err)
+		}
+
+		if len(b.Value) > 0 {
+			err = s.updateTagMap(b.Key, b.Tags)
+			if err != nil {
+				return fmt.Errorf("failed to update tag map: %w", err)
+			}
+		} else {
+			err = s.removeFromTagMap(b.Key)
+			if err != nil {
+				return fmt.Errorf("failed to remove key from tag map: %w", err)
+			}
+		}
+	}
+
+	_, err := s.db.Exec(query, values...)
+	if err != nil {
+		return fmt.Errorf(failureWhileExecutingBatchStatementErrMsg, s.tableName, err)
+	}
+
+	return nil
+}
+
+func (s *store) bulkAppendToQuery(b storage.Operation, query *string, values *[]interface{}) error {
+	if len(b.Value) > 0 {
+		value, err := json.Marshal(dbEntry{
+			Value: b.Value,
+			Tags:  b.Tags,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to marshal dbEntry: %w", err)
+		}
+
+		*query += fmt.Sprintf(
+			"INSERT INTO %s (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE value=VALUES(value);\n",
+			s.tableName,
+		)
+
+		*values = append(*values, b.Key, value)
+	} else {
+		*query += fmt.Sprintf("DELETE FROM %s WHERE `KEY` = ?;\n", s.tableName)
+		*values = append(*values, b.Key)
+	}
+
+	return nil
 }
 
 // SQL store doesn't queue values, so there's never anything to flush.
@@ -416,6 +492,7 @@ func (s *store) Close() error {
 	return nil
 }
 
+// TODO optimize tagMap: https://github.com/hyperledger/aries-framework-go-ext/issues/109
 func (s *store) updateTagMap(key string, tags []storage.Tag) error {
 	tagMap, err := s.getTagMap()
 	if err != nil {
