@@ -395,6 +395,31 @@ func TestSqlDBStore_Batch(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to remove key from tag map")
 	})
+
+	t.Run("error removing key from tagMap", func(t *testing.T) {
+		storeName := randomStoreName()
+		s := newStore(t, storeName)
+
+		db, err := sql.Open("mysql", sqlStoreDBURL)
+		require.NoError(t, err)
+
+		_, err = db.Exec(
+			fmt.Sprintf("INSERT INTO `%s`.`%s` VALUES (?,?)", storeName, storeName),
+			"TagMap", []byte("{"),
+		)
+		require.NoError(t, err)
+
+		err = s.Batch([]storage.Operation{{
+			Key:   "test",
+			Value: []byte("value"),
+			Tags: []storage.Tag{{
+				Name:  "test",
+				Value: "value",
+			}},
+		}})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to update tag map")
+	})
 }
 
 func randomStoreName() string {
