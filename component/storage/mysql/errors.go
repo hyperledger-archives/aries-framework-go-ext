@@ -16,6 +16,7 @@ const (
 	failureWhileCreatingTableErrMsg            = "failure while creating table %s: %w"
 	failureWhileExecutingInsertStatementErrMsg = "failure while executing insert statement on table %s: %w"
 	failureWhileQueryingRowErrMsg              = "failure while querying row: %w"
+	failureWhileExecutingBatchStatementErrMsg  = "failure while executing batch upsert on table %s: %w"
 	// Error messages returned from MySQL that we directly check for.
 	valueNotFoundErrMsgFromMySQL = "no rows"
 )

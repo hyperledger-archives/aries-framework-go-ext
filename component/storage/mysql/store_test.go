@@ -33,7 +33,7 @@ func (*mysqlLogger) Print(...interface{}) {}
 const (
 	dockerMySQLImage = "mysql"
 	dockerMySQLTag   = "8.0.20"
-	sqlStoreDBURL    = "root:my-secret-pw@tcp(127.0.0.1:3301)/"
+	sqlStoreDBURL    = "root:my-secret-pw@tcp(127.0.0.1:3301)/?interpolateParams=true&multiStatements=true"
 )
 
 func TestMain(m *testing.M) {
@@ -188,9 +188,6 @@ func TestNotImplementedMethods(t *testing.T) {
 
 		_, err = store.GetBulk()
 		require.EqualError(t, err, "not implemented")
-
-		err = store.Batch(nil)
-		require.EqualError(t, err, "not implemented")
 	})
 }
 
@@ -343,6 +340,7 @@ func TestSqlDBStore_Common(t *testing.T) {
 		commontest.TestStoreDelete(t, provider)
 		commontest.TestStoreClose(t, provider)
 		commontest.TestProviderClose(t, provider)
+		commontest.TestStoreBatch(t, provider)
 	})
 	t.Run("With prefix", func(t *testing.T) {
 		provider, err := NewProvider(sqlStoreDBURL, WithDBPrefix("db-prefix-"))
@@ -355,9 +353,62 @@ func TestSqlDBStore_Common(t *testing.T) {
 		commontest.TestStoreDelete(t, provider)
 		commontest.TestStoreClose(t, provider)
 		commontest.TestProviderClose(t, provider)
+		commontest.TestStoreBatch(t, provider)
+	})
+}
+
+func TestSqlDBStore_Batch(t *testing.T) {
+	t.Run("no-op on empty batch", func(t *testing.T) {
+		s := newStore(t, randomStoreName())
+		err := s.Batch(nil)
+		require.NoError(t, err)
+	})
+
+	t.Run("error on empty key", func(t *testing.T) {
+		s := newStore(t, randomStoreName())
+		err := s.Batch([]storage.Operation{{}})
+		require.Error(t, err)
+		require.Equal(t, err.Error(), "key cannot be empty")
+	})
+
+	t.Run("error removing key from tagMap", func(t *testing.T) {
+		storeName := randomStoreName()
+		s := newStore(t, storeName)
+
+		db, err := sql.Open("mysql", sqlStoreDBURL)
+		require.NoError(t, err)
+
+		_, err = db.Exec(
+			fmt.Sprintf("INSERT INTO `%s`.`%s` VALUES (?,?)", storeName, storeName),
+			"TagMap", []byte("{"),
+		)
+		require.NoError(t, err)
+
+		err = s.Batch([]storage.Operation{{
+			Key:   "test",
+			Value: nil,
+			Tags: []storage.Tag{{
+				Name:  "test",
+				Value: "value",
+			}},
+		}})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to remove key from tag map")
 	})
 }
 
 func randomStoreName() string {
 	return "store-" + uuid.New().String()
+}
+
+func newStore(t *testing.T, name string) storage.Store {
+	t.Helper()
+
+	p, err := NewProvider(sqlStoreDBURL)
+	require.NoError(t, err)
+
+	s, err := p.OpenStore(name)
+	require.NoError(t, err)
+
+	return s
 }
