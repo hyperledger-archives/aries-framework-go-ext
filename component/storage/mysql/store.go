@@ -407,7 +407,7 @@ func (s *store) Delete(k string) error {
 // Executing a single multi-statement query requires O(N) space for the query string and an additional
 // slice with O(2*N) space holding the values for the query. Callers should take care of this additional
 // memory usage by limiting the size of the batch.
-func (s *store) Batch(batch []storage.Operation) error {
+func (s *store) Batch(batch []storage.Operation) error { // nolint:gocyclo
 	// Batch godocs are moot on what to do if batch is empty.
 	// None of the other implementations return an error in such a case.
 	if len(batch) == 0 {
@@ -433,12 +433,12 @@ func (s *store) Batch(batch []storage.Operation) error {
 
 		if len(b.Value) > 0 {
 			err = s.updateTagMap(b.Key, b.Tags)
-			if err != nil {
+			if err != nil && !errors.Is(err, storage.ErrDataNotFound) {
 				return fmt.Errorf("failed to update tag map: %w", err)
 			}
 		} else {
 			err = s.removeFromTagMap(b.Key)
-			if err != nil {
+			if err != nil && !errors.Is(err, storage.ErrDataNotFound) {
 				return fmt.Errorf("failed to remove key from tag map: %w", err)
 			}
 		}
