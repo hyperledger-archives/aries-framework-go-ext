@@ -19,7 +19,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	jsonld2 "github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
+	jld "github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
@@ -110,7 +110,7 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 	}
 
 	if v.docLoader == nil {
-		l, err := jsonld2.NewDocumentLoader(mem.NewProvider())
+		l, err := jld.NewDocumentLoader(mem.NewProvider())
 		if err != nil {
 			return nil, fmt.Errorf("failed to init default jsonld document loader: %w", err)
 		}

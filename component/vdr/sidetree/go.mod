@@ -6,7 +6,7 @@ module github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree
 go 1.16
 
 require (
-	github.com/hyperledger/aries-framework-go v0.1.7-0.20210421205521-3974f6708723
+	github.com/hyperledger/aries-framework-go v0.1.7-0.20210429205242-c5e97865879c
 	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693
 	github.com/stretchr/testify v1.7.0
 	github.com/trustbloc/sidetree-core-go v0.6.0
