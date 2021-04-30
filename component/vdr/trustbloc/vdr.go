@@ -202,7 +202,7 @@ func (v *VDR) Create(did *docdid.Doc,
 		return nil, err
 	}
 
-	sidetreeConfig, err := v.configService.GetSidetreeConfig(endpoints[0])
+	sidetreeConfig, err := v.configService.GetSidetreeConfig(endpoints[0] + "/operations")
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +241,7 @@ func (v *VDR) Create(did *docdid.Doc,
 		createOpt = append(createOpt, create.WithPublicKey(pks[k]))
 	}
 
-	createOpt = append(createOpt, create.WithSidetreeEndpoint(getEndpoints),
+	createOpt = append(createOpt, create.WithSidetreeEndpoint(operationsEndpointFunc(endpoints)),
 		create.WithMultiHashAlgorithm(sidetreeConfig.MultiHashAlgorithm), create.WithUpdatePublicKey(updatePublicKey),
 		create.WithRecoveryPublicKey(recoveryPublicKey))
 
@@ -267,7 +267,7 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 		return err
 	}
 
-	sidetreeConfig, err := v.configService.GetSidetreeConfig(endpoints[0])
+	sidetreeConfig, err := v.configService.GetSidetreeConfig(endpoints[0] + "/operations")
 	if err != nil {
 		return err
 	}
@@ -279,7 +279,7 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 	// check recover option
 	if didMethodOpts.Values[RecoverOpt] != nil {
-		return v.recover(didDoc, sidetreeConfig, getEndpoints, docResolution.DocumentMetadata.Method.RecoveryCommitment)
+		return v.recover(didDoc, sidetreeConfig, endpoints, docResolution.DocumentMetadata.Method.RecoveryCommitment)
 	}
 
 	// get services
@@ -313,7 +313,7 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 	updateOpt = append(updateOpt, getRemovedPKKeysID(docResolution.DIDDocument.VerificationMethod,
 		didDoc.VerificationMethod)...)
 
-	updateOpt = append(updateOpt, update.WithSidetreeEndpoint(getEndpoints),
+	updateOpt = append(updateOpt, update.WithSidetreeEndpoint(operationsEndpointFunc(endpoints)),
 		update.WithNextUpdatePublicKey(nextUpdatePublicKey),
 		update.WithMultiHashAlgorithm(sidetreeConfig.MultiHashAlgorithm),
 		update.WithSigningKey(updateSigningKey),
@@ -323,7 +323,7 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 }
 
 func (v *VDR) recover(didDoc *docdid.Doc, sidetreeConfig *models.SidetreeConfig,
-	getEndpoints func() ([]string, error), recoveryCommitment string) error {
+	endpoints []string, recoveryCommitment string) error {
 	recoveryOpt := make([]recovery.Option, 0)
 
 	// get services
@@ -357,7 +357,7 @@ func (v *VDR) recover(didDoc *docdid.Doc, sidetreeConfig *models.SidetreeConfig,
 		return err
 	}
 
-	recoveryOpt = append(recoveryOpt, recovery.WithSidetreeEndpoint(getEndpoints),
+	recoveryOpt = append(recoveryOpt, recovery.WithSidetreeEndpoint(operationsEndpointFunc(endpoints)),
 		recovery.WithNextUpdatePublicKey(nextUpdatePublicKey),
 		recovery.WithNextRecoveryPublicKey(nextRecoveryPublicKey),
 		recovery.WithMultiHashAlgorithm(sidetreeConfig.MultiHashAlgorithm),
@@ -395,7 +395,7 @@ func (v *VDR) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 		return err
 	}
 
-	deactivateOpt = append(deactivateOpt, deactivate.WithSidetreeEndpoint(getEndpoints),
+	deactivateOpt = append(deactivateOpt, deactivate.WithSidetreeEndpoint(operationsEndpointFunc(endpoints)),
 		deactivate.WithSigningKey(signingKey),
 		deactivate.WithOperationCommitment(docResolution.DocumentMetadata.Method.RecoveryCommitment))
 
@@ -820,5 +820,20 @@ func UseGenesisFile(url, domain string, genesisFile []byte) Option {
 			fileData: genesisFile,
 		})
 		opts.useUpdateValidation = true
+	}
+}
+
+func operationsEndpoints(endpoints []string) []string {
+	out := []string{}
+	for _, ep := range endpoints {
+		out = append(out, ep+"/operations")
+	}
+
+	return out
+}
+
+func operationsEndpointFunc(endpoints []string) func() ([]string, error) {
+	return func() ([]string, error) {
+		return operationsEndpoints(endpoints), nil
 	}
 }
