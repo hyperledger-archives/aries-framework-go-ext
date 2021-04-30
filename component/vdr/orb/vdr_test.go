@@ -11,6 +11,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,7 @@ import (
 	ariesjose "github.com/hyperledger/aries-framework-go/pkg/doc/jose"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
+	"github.com/piprate/json-gold/ld"
 	"github.com/stretchr/testify/require"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/models"
@@ -725,6 +727,27 @@ func TestVDRI_Read(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "resolutionEndpointsOpt not array of string")
 	})
+
+	t.Run("cannot load jsonld context", func(t *testing.T) {
+		v, err := New(nil, WithDocumentLoader(&mockDocLoader{}))
+		require.NoError(t, err)
+
+		v.getHTTPVDR = func(url string) (v vdr, e error) {
+			return &mockvdr.MockVDR{
+				ReadFunc: func(didID string, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
+					return did.ParseDocumentResolution([]byte(validDocResolution))
+				},
+			}, nil
+		}
+
+		v.configService = &mockConfigService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
+		}}
+
+		_, err = v.Read("did:ex:domain:1234")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "loading remote context failed")
+	})
 }
 
 type mockSidetreeClient struct {
@@ -796,4 +819,10 @@ func (m *mockConfigService) GetEndpoint(domain string) (*models.Endpoint, error)
 	}
 
 	return nil, nil
+}
+
+type mockDocLoader struct{}
+
+func (m *mockDocLoader) LoadDocument(string) (*ld.RemoteDocument, error) {
+	return nil, errors.New("not found")
 }

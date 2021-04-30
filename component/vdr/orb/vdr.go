@@ -16,11 +16,14 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	jsonld2 "github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
+	"github.com/piprate/json-gold/ld"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/config"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/models"
@@ -88,6 +91,7 @@ type VDR struct {
 	sidetreeClient sidetreeClient
 	keyRetriever   KeyRetriever
 	configService  configService
+	docLoader      ld.DocumentLoader
 }
 
 // KeyRetriever key retriever.
@@ -97,12 +101,21 @@ type KeyRetriever interface {
 	GetSigningKey(didID string, ot OperationType) (crypto.PrivateKey, error)
 }
 
-// New creates new bloc vdru.
+// New creates new orb VDR.
 func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 	v := &VDR{}
 
 	for _, opt := range opts {
 		opt(v)
+	}
+
+	if v.docLoader == nil {
+		l, err := jsonld2.NewDocumentLoader(mem.NewProvider())
+		if err != nil {
+			return nil, fmt.Errorf("failed to init default jsonld document loader: %w", err)
+		}
+
+		v.docLoader = l
 	}
 
 	v.sidetreeClient = sidetree.New(sidetree.WithAuthToken(v.authToken), sidetree.WithTLSConfig(v.tlsConfig))
@@ -247,7 +260,7 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 			return nil, err
 		}
 
-		respBytes, err := canonicalizeDoc(resp.DIDDocument)
+		respBytes, err := canonicalizeDoc(resp.DIDDocument, v.docLoader)
 		if err != nil {
 			return nil, fmt.Errorf("cannot canonicalize resolved doc: %w", err)
 		}
@@ -578,7 +591,7 @@ func (v *VDR) sidetreeResolve(url, did string, opts ...vdrapi.DIDMethodOption) (
 }
 
 // canonicalizeDoc canonicalizes a DID doc using json-ld canonicalization.
-func canonicalizeDoc(didDoc *docdid.Doc) ([]byte, error) {
+func canonicalizeDoc(didDoc *docdid.Doc, docLoader ld.DocumentLoader) ([]byte, error) {
 	marshaled, err := didDoc.JSONBytes()
 	if err != nil {
 		return nil, err
@@ -593,7 +606,7 @@ func canonicalizeDoc(didDoc *docdid.Doc) ([]byte, error) {
 
 	proc := jsonld.Default()
 
-	return proc.GetCanonicalDocument(docMap)
+	return proc.GetCanonicalDocument(docMap, jsonld.WithDocumentLoader(docLoader))
 }
 
 // Option configures the bloc vdr.
@@ -617,5 +630,12 @@ func WithAuthToken(authToken string) Option {
 func WithDomain(domain string) Option {
 	return func(opts *VDR) {
 		opts.domain = domain
+	}
+}
+
+// WithDocumentLoader overrides the default JSONLD document loader used when processing JSONLD DID Documents.
+func WithDocumentLoader(l ld.DocumentLoader) Option {
+	return func(opts *VDR) {
+		opts.docLoader = l
 	}
 }
