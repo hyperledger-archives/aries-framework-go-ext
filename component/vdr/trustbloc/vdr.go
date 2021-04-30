@@ -20,10 +20,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	jld "github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
+	"github.com/piprate/json-gold/ld"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
@@ -109,6 +112,7 @@ type VDR struct {
 	genesisFiles                []genesisFileData
 	sidetreeClient              sidetreeClient
 	keyRetriever                KeyRetriever
+	documentLoader              ld.DocumentLoader
 }
 
 type genesisFileData struct {
@@ -130,6 +134,15 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 
 	for _, opt := range opts {
 		opt(v)
+	}
+
+	if v.documentLoader == nil {
+		var err error
+
+		v.documentLoader, err = jld.NewDocumentLoader(mem.NewProvider())
+		if err != nil {
+			return nil, fmt.Errorf("new vdr: %w", err)
+		}
 	}
 
 	v.sidetreeClient = sidetree.New(sidetree.WithAuthToken(v.authToken), sidetree.WithTLSConfig(v.tlsConfig))
@@ -622,7 +635,7 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 			return nil, err
 		}
 
-		respBytes, err := canonicalizeDoc(resp.DIDDocument)
+		respBytes, err := canonicalizeDoc(resp.DIDDocument, v.documentLoader)
 		if err != nil {
 			return nil, fmt.Errorf("cannot canonicalize resolved doc: %w", err)
 		}
@@ -755,7 +768,7 @@ func (v *VDR) selectStakeholders(consortium *models.Consortium) ([]*models.Stake
 }
 
 // canonicalizeDoc canonicalizes a DID doc using json-ld canonicalization.
-func canonicalizeDoc(didDoc *docdid.Doc) ([]byte, error) {
+func canonicalizeDoc(didDoc *docdid.Doc, docLoader ld.DocumentLoader) ([]byte, error) {
 	marshaled, err := didDoc.JSONBytes()
 	if err != nil {
 		return nil, err
@@ -770,7 +783,7 @@ func canonicalizeDoc(didDoc *docdid.Doc) ([]byte, error) {
 
 	proc := jsonld.Default()
 
-	return proc.GetCanonicalDocument(docMap)
+	return proc.GetCanonicalDocument(docMap, jsonld.WithDocumentLoader(docLoader))
 }
 
 // Option configures the bloc vdr.
@@ -835,5 +848,12 @@ func operationsEndpoints(endpoints []string) []string {
 func operationsEndpointFunc(endpoints []string) func() ([]string, error) {
 	return func() ([]string, error) {
 		return operationsEndpoints(endpoints), nil
+	}
+}
+
+// WithDocumentLoader sets a JSON-LD document loader.
+func WithDocumentLoader(docLoader ld.DocumentLoader) Option {
+	return func(opts *VDR) {
+		opts.documentLoader = docLoader
 	}
 }

@@ -22,7 +22,9 @@ import (
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	ariesjose "github.com/hyperledger/aries-framework-go/pkg/doc/jose"
+	jld "github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	"github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	log "github.com/sirupsen/logrus"
 	"github.com/square/go-jose/v3"
@@ -112,6 +114,12 @@ func TestVDRI_Accept(t *testing.T) {
 
 	t.Run("test return false", func(t *testing.T) {
 		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
+		require.False(t, v.Accept("bloc1"))
+	})
+
+	t.Run("test return false with documentLoader", func(t *testing.T) {
+		v, err := New(&mockKeyRetriever{}, WithDocumentLoader(createTestDocLoader(t)))
 		require.NoError(t, err)
 		require.False(t, v.Accept("bloc1"))
 	})
@@ -1347,7 +1355,7 @@ func Test_canonicalizeDoc(t *testing.T) {
 	var docs = [][2]string{
 		{
 			`{
-  "@context": ["https://w3id.org/did/v1"],
+  "@context": ["https://www.w3.org/ns/did/v1"],
   "verificationMethod": [{
     "id": "did:example:123456789abcdefghi#keys-3",
     "publicKeyBase58": "H3C2AVvLMv6gmMNam3uVAjZpfkcJCwDwnZn6z3wXmqPV",
@@ -1396,7 +1404,7 @@ func Test_canonicalizeDoc(t *testing.T) {
   }]
 }`,
 			`{
-  "@context": ["https://w3id.org/did/v1"],
+  "@context": ["https://www.w3.org/ns/did/v1"],
   "verificationMethod": [{
     "id": "did:example:123456789abcdefghi#keys-3",
     "publicKeyBase58": "H3C2AVvLMv6gmMNam3uVAjZpfkcJCwDwnZn6z3wXmqPV",
@@ -1445,7 +1453,7 @@ func Test_canonicalizeDoc(t *testing.T) {
   }]
 }`},
 		{`{
-  "@context": ["https://w3id.org/did/v1"],
+  "@context": ["https://www.w3.org/ns/did/v1"],
   "verificationMethod": [{
     "id": "did:example:123456789abcdefghi#keys-3",
     "publicKeyBase58": "H3C2AVvLMv6gmMNam3uVAjZpfkcJCwDwnZn6z3wXmqPV",
@@ -1500,7 +1508,7 @@ func Test_canonicalizeDoc(t *testing.T) {
     },
     "did:example:123456789abcdefghi#keys-3"
   ],
-  "@context": ["https://w3id.org/did/v1"],
+  "@context": ["https://www.w3.org/ns/did/v1"],
   "verificationMethod": [{
     "id": "did:example:123456789abcdefghi#keys-3",
     "publicKeyBase58": "H3C2AVvLMv6gmMNam3uVAjZpfkcJCwDwnZn6z3wXmqPV",
@@ -1528,14 +1536,23 @@ func Test_canonicalizeDoc(t *testing.T) {
 			doc2, err := did.ParseDocument([]byte(pair[1]))
 			require.NoError(t, err)
 
-			doc1Canonicalized, err := canonicalizeDoc(doc1)
+			doc1Canonicalized, err := canonicalizeDoc(doc1, createTestDocLoader(t))
 			require.NoError(t, err)
-			doc2Canonicalized, err := canonicalizeDoc(doc2)
+			doc2Canonicalized, err := canonicalizeDoc(doc2, createTestDocLoader(t))
 			require.NoError(t, err)
 
 			require.Equal(t, doc1Canonicalized, doc2Canonicalized)
 		}
 	})
+}
+
+func createTestDocLoader(t *testing.T) *jld.DocumentLoader {
+	t.Helper()
+
+	loader, err := jld.NewDocumentLoader(storage.NewMockStoreProvider())
+	require.NoError(t, err)
+
+	return loader
 }
 
 func TestOpts(t *testing.T) {

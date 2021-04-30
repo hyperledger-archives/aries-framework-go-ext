@@ -377,7 +377,7 @@ func TestClient_RecoverDID(t *testing.T) {
 
 	t.Run("test success", func(t *testing.T) {
 		serv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			bytes, err := (&did.Doc{ID: "did1", Context: []string{did.Context}}).JSONBytes()
+			bytes, err := (&did.Doc{ID: "did1", Context: []string{did.ContextV1}}).JSONBytes()
 			require.NoError(t, err)
 			b, err := json.Marshal(didResolution{
 				Context:     "https://www.w3.org/ns/did-resolution/v1",
@@ -675,7 +675,7 @@ func TestClient_CreateDID(t *testing.T) {
 
 	t.Run("test success", func(t *testing.T) {
 		serv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			bytes, err := (&did.Doc{ID: "did1", Context: []string{did.Context}}).JSONBytes()
+			bytes, err := (&did.Doc{ID: "did1", Context: []string{did.ContextV1}}).JSONBytes()
 			require.NoError(t, err)
 			b, err := json.Marshal(didResolution{
 				Context:     "https://www.w3.org/ns/did-resolution/v1",
@@ -755,7 +755,7 @@ func TestClient_CreateDID(t *testing.T) {
 
 	t.Run("test unsupported recovery public key type", func(t *testing.T) {
 		serv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			bytes, err := (&did.Doc{ID: "did1", Context: []string{did.Context}}).JSONBytes()
+			bytes, err := (&did.Doc{ID: "did1", Context: []string{did.ContextV1}}).JSONBytes()
 			require.NoError(t, err)
 			_, err = fmt.Fprint(w, string(bytes))
 			require.NoError(t, err)
@@ -776,7 +776,7 @@ func TestClient_CreateDID(t *testing.T) {
 
 	t.Run("test recovery public key empty", func(t *testing.T) {
 		serv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			bytes, err := (&did.Doc{ID: "did1", Context: []string{did.Context}}).JSONBytes()
+			bytes, err := (&did.Doc{ID: "did1", Context: []string{did.ContextV1}}).JSONBytes()
 			require.NoError(t, err)
 			_, err = fmt.Fprint(w, string(bytes))
 			require.NoError(t, err)
@@ -793,7 +793,7 @@ func TestClient_CreateDID(t *testing.T) {
 
 	t.Run("test update public key empty", func(t *testing.T) {
 		serv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			bytes, err := (&did.Doc{ID: "did1", Context: []string{did.Context}}).JSONBytes()
+			bytes, err := (&did.Doc{ID: "did1", Context: []string{did.ContextV1}}).JSONBytes()
 			require.NoError(t, err)
 			_, err = fmt.Fprint(w, string(bytes))
 			require.NoError(t, err)
