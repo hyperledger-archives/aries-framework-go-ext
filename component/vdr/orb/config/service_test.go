@@ -36,8 +36,8 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 			&mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
 				if strings.Contains(req.URL.Path, ".well-known/did-orb") {
 					b, err := json.Marshal(restapi.WellKnownResponse{
-						OperationEndpoint:  "/op",
-						ResolutionEndpoint: "/resolve1",
+						OperationEndpoint:  "https://localhost/op",
+						ResolutionEndpoint: "https://localhost/resolve1",
 					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
@@ -102,8 +102,8 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 			&mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
 				if strings.Contains(req.URL.Path, ".well-known/did-orb") {
 					b, err := json.Marshal(restapi.WellKnownResponse{
-						OperationEndpoint:  "/op",
-						ResolutionEndpoint: "/resolve1",
+						OperationEndpoint:  "https://localhost/op",
+						ResolutionEndpoint: "https://localhost/resolve1",
 					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
@@ -148,8 +148,8 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 			&mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
 				if strings.Contains(req.URL.Path, ".well-known/did-orb") {
 					b, err := json.Marshal(restapi.WellKnownResponse{
-						OperationEndpoint:  "/op",
-						ResolutionEndpoint: "/resolve1",
+						OperationEndpoint:  "https://localhost/op",
+						ResolutionEndpoint: "https://localhost/resolve1",
 					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
@@ -214,8 +214,8 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 			&mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
 				if strings.Contains(req.URL.Path, ".well-known/did-orb") {
 					b, err := json.Marshal(restapi.WellKnownResponse{
-						OperationEndpoint:  "/op",
-						ResolutionEndpoint: "/resolve1",
+						OperationEndpoint:  "https://localhost/op",
+						ResolutionEndpoint: "https://localhost/resolve1",
 					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
@@ -304,8 +304,8 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 			&mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
 				if strings.Contains(req.URL.Path, ".well-known/did-orb") {
 					b, err := json.Marshal(restapi.WellKnownResponse{
-						OperationEndpoint:  "/op",
-						ResolutionEndpoint: "/resolve",
+						OperationEndpoint:  "https://localhost/op",
+						ResolutionEndpoint: "https://localhost/resolve",
 					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
@@ -322,7 +322,8 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 		_, err := cs.GetEndpoint("d1")
 		require.Error(t, err)
 		require.Contains(t, err.Error(),
-			"got unexpected response from https://d1/.well-known/webfinger?resource=%2Fresolve status")
+			"got unexpected response from https://localhost/.well-known"+
+				"/webfinger?resource=https:%2F%2Flocalhost%2Fresolve status")
 	})
 
 	t.Run("web finger operation return 500 status", func(t *testing.T) {
@@ -330,8 +331,8 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 			&mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
 				if strings.Contains(req.URL.Path, ".well-known/did-orb") {
 					b, err := json.Marshal(restapi.WellKnownResponse{
-						OperationEndpoint:  "/op",
-						ResolutionEndpoint: "/resolve",
+						OperationEndpoint:  "https://localhost/op",
+						ResolutionEndpoint: "https://localhost/resolve",
 					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
@@ -360,7 +361,8 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 		_, err := cs.GetEndpoint("d1")
 		require.Error(t, err)
 		require.Contains(t, err.Error(),
-			"got unexpected response from https://d1/.well-known/webfinger?resource=%2Fop status")
+			"got unexpected response from https://localhost/.well-known/"+
+				"webfinger?resource=https:%2F%2Flocalhost%2Fop status")
 	})
 }
 

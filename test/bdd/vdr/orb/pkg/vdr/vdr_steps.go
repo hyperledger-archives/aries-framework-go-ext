@@ -145,12 +145,6 @@ func (e *Steps) recoverDID(keyType, signatureSuite string) error {
 		return err
 	}
 
-	updateKey, updateKeyPrivateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return err
-	}
-
-	e.keyRetriever.nextUpdatePublicKey = updateKey
 	e.keyRetriever.nextRecoveryPublicKey = recoveryKey
 
 	didDoc := &ariesdid.Doc{ID: e.createdDID}
@@ -160,7 +154,7 @@ func (e *Steps) recoverDID(keyType, signatureSuite string) error {
 		return err
 	}
 
-	didDoc.Authentication = append(didDoc.Authentication, *ariesdid.NewReferencedVerification(vm,
+	didDoc.CapabilityInvocation = append(didDoc.CapabilityInvocation, *ariesdid.NewReferencedVerification(vm,
 		ariesdid.CapabilityDelegation))
 
 	didDoc.Service = []ariesdid.Service{{ID: serviceID, Type: "type", ServiceEndpoint: "http://www.example.com/"}}
@@ -170,7 +164,6 @@ func (e *Steps) recoverDID(keyType, signatureSuite string) error {
 		return err
 	}
 
-	e.keyRetriever.updateKey = updateKeyPrivateKey
 	e.keyRetriever.recoverKey = recoveryKeyPrivateKey
 
 	return nil
@@ -197,7 +190,9 @@ func (e *Steps) updateDID(keyType, signatureSuite string) error {
 	didDoc := &ariesdid.Doc{ID: e.createdDID}
 
 	didDoc.Authentication = append(didDoc.Authentication, *ariesdid.NewReferencedVerification(vm,
-		ariesdid.Authentication), *ariesdid.NewReferencedVerification(vm,
+		ariesdid.Authentication))
+
+	didDoc.CapabilityInvocation = append(didDoc.CapabilityInvocation, *ariesdid.NewReferencedVerification(vm,
 		ariesdid.CapabilityInvocation))
 
 	didDoc.Service = []ariesdid.Service{

@@ -145,7 +145,7 @@ services:
 
   orb.vct:
     container_name: orb.vct
-    image: ghcr.io/trustbloc-cicd/vct:v0.1.0-snapshot-0a09a7b
+    image: ghcr.io/trustbloc/vct:v0.1.0
     restart: always
     environment:
       - VCT_API_HOST=0.0.0.0:8077
@@ -154,6 +154,7 @@ services:
       - VCT_DSN=mysql://root@tcp(orb.mysql:3306)/test
       - VCT_LOG_ENDPOINT=orb.trillian.log.server:8090
       - VCT_TLS_CACERTS=/etc/orb/tls/ec-cacert.pem
+      - VCT_TLS_SYSTEMCERTPOOL=true
     volumes:
       - ../keys/tls:/etc/orb/tls
     ports:

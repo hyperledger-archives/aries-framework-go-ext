@@ -144,7 +144,7 @@ func (cs *Service) getSidetreeConfig() (*models.SidetreeConfig, error) { //nolin
 	return &models.SidetreeConfig{MultiHashAlgorithm: sha2_256, MaxAge: maxAge}, nil
 }
 
-func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) { //nolint: funlen,gocyclo
+func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) { //nolint: funlen,gocyclo,gocognit
 	var wellKnownResponse restapi.WellKnownResponse
 
 	if !strings.HasPrefix(domain, "http://") && !strings.HasPrefix(domain, "https://") {
@@ -158,8 +158,13 @@ func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) { //noli
 
 	var webFingerResponse restapi.WebFingerResponse
 
-	err = cs.sendRequest(nil, http.MethodGet, fmt.Sprintf("%s/.well-known/webfinger?resource=%s",
-		domain, url.PathEscape(wellKnownResponse.ResolutionEndpoint)), &webFingerResponse)
+	parsedURL, err := url.Parse(wellKnownResponse.ResolutionEndpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	err = cs.sendRequest(nil, http.MethodGet, fmt.Sprintf("%s://%s/.well-known/webfinger?resource=%s",
+		parsedURL.Scheme, parsedURL.Host, url.PathEscape(wellKnownResponse.ResolutionEndpoint)), &webFingerResponse)
 	if err != nil {
 		return nil, err
 	}
@@ -222,8 +227,8 @@ func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) { //noli
 		endpoint.ResolutionEndpoints = append(endpoint.ResolutionEndpoints, v.Href)
 	}
 
-	err = cs.sendRequest(nil, http.MethodGet, fmt.Sprintf("%s/.well-known/webfinger?resource=%s",
-		domain, url.PathEscape(wellKnownResponse.OperationEndpoint)), &webFingerResponse)
+	err = cs.sendRequest(nil, http.MethodGet, fmt.Sprintf("%s://%s/.well-known/webfinger?resource=%s",
+		parsedURL.Scheme, parsedURL.Host, url.PathEscape(wellKnownResponse.OperationEndpoint)), &webFingerResponse)
 	if err != nil {
 		return nil, err
 	}
