@@ -371,20 +371,6 @@ func TestVDRI_Update(t *testing.T) {
 		require.Contains(t, err.Error(), "failed to resolve did")
 	})
 
-	t.Run("test error from read did", func(t *testing.T) {
-		v, err := New(&mockKeyRetriever{})
-		require.NoError(t, err)
-
-		v.configService = &mockConfigService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
-			return nil, fmt.Errorf("failed to get endpoint")
-		}}
-		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
-
-		err = v.Update(&did.Doc{})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "wrong did")
-	})
-
 	t.Run("test error from get sidetree config", func(t *testing.T) {
 		v, err := New(nil)
 		require.NoError(t, err)
