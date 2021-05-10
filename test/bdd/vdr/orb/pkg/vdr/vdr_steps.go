@@ -256,7 +256,7 @@ func (e *Steps) createDID(keyType, signatureSuite string) error {
 	e.keyRetriever.recoverKey = recoveryKeyPrivateKey
 	e.keyRetriever.updateKey = updateKeyPrivateKey
 
-	e.createdDID = strings.ReplaceAll(createdDocResolution.DIDDocument.ID, "did:orb", "did:orb:testnet.orb.local")
+	e.createdDID = createdDocResolution.DIDDocument.ID
 
 	e.kid = kid
 

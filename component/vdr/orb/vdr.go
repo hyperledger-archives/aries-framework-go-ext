@@ -49,9 +49,7 @@ const (
 	// RecoverOpt recover opt.
 	RecoverOpt = "recover"
 	// AnchorOriginOpt anchor origin opt.
-	AnchorOriginOpt  = "anchorOrigin"
-	expectedDIDParts = 4
-	domainDIDPart    = 2
+	AnchorOriginOpt = "anchorOrigin"
 )
 
 var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
@@ -231,15 +229,7 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 		return v.sidetreeResolve(endpoints[0], did, opts...)
 	}
 
-	// parse did
-	didParts := strings.Split(did, ":")
-	if len(didParts) != expectedDIDParts {
-		return nil, fmt.Errorf("wrong did %s", did)
-	}
-
-	domain := didParts[domainDIDPart]
-
-	endpoint, err := v.configService.GetEndpoint(domain)
+	endpoint, err := v.configService.GetEndpoint(v.domain)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get endpoints: %w", err)
 	}
