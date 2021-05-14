@@ -507,8 +507,9 @@ github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpO
 github.com/huaweicloud/golangsdk v0.0.0-20200304081349-45ec0797f2a4/go.mod h1:WQBcHRNX9shz3928lWEvstQJtAtYI7ks6XlgtRT9Tcw=
 github.com/hyperledger/aries-framework-go v0.1.7-0.20210409151411-eeeb8508bd87/go.mod h1:9Mz/wkgyzXKxuOZObASCWRprt30P+xSsL08T8VBFRnk=
 github.com/hyperledger/aries-framework-go v0.1.7-0.20210421205521-3974f6708723/go.mod h1:tBgxVOKcNero3QI21iNf3oxxHkgRMDOby937cqHEvW4=
-github.com/hyperledger/aries-framework-go v0.1.7-0.20210429205242-c5e97865879c h1:vWIzy5EYBGM5kiFNSiBZn1ihzfF0YAdJnzcZXf7r2aU=
 github.com/hyperledger/aries-framework-go v0.1.7-0.20210429205242-c5e97865879c/go.mod h1:NH2lUe2C7kR7agKx3B+qBebALNJWrJVUBpqU2L9hvIM=
+github.com/hyperledger/aries-framework-go v0.1.7-0.20210512223230-d4aa62b079bc h1:B5KfjZotx30gIcagOi6t2/R1tGrOdsd6vqHfCap+8Mg=
+github.com/hyperledger/aries-framework-go v0.1.7-0.20210512223230-d4aa62b079bc/go.mod h1:NH2lUe2C7kR7agKx3B+qBebALNJWrJVUBpqU2L9hvIM=
 github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210423164427-96362080a25e h1:WZg28t+1FFliK3MMFYr2mSB7tSH1PNeOm9FvQU5JoDM=
 github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210423164427-96362080a25e/go.mod h1:6fq1zmwCRd92HuoCOI6l81lhSQupcZ1EuoA8TdBCrbI=
 github.com/hyperledger/aries-framework-go/component/storage/edv v0.0.0-20210422133815-2ef2d99cb692/go.mod h1:Vw8AblyCa1h6mVbNvbMXeZdlXVGu6Cq+TXZhD4oqvwE=
