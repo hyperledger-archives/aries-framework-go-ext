@@ -9,7 +9,7 @@ go 1.16
 require (
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.6.0
-	github.com/hyperledger/aries-framework-go v0.1.7-0.20210429205242-c5e97865879c
+	github.com/hyperledger/aries-framework-go v0.1.7-0.20210512223230-d4aa62b079bc
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.0.0
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210413155718-eeb5b3c708be
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210429205242-c5e97865879c
