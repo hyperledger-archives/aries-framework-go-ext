@@ -112,9 +112,7 @@ keyRetrieverImpl.recoverKey = recoveryKeyPrivateKey
 keyRetrieverImpl.updateKey = updateKeyPrivateKey
 
 
-// if you need did to be discoverable just add domain to did URI (did:orb:123 => did:orb:domain.com:123)
-discoverableDID := strings.ReplaceAll(createdDocResolution.DIDDocument.ID, "did:orb", "did:orb:testnet.devel.trustbloc.dev")
-fmt.Println(discoverableDID)
+discoverableDID := createdDocResolution.DIDDocument.ID
 ```
 
 ## Resolve DID
