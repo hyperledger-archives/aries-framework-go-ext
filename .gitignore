@@ -13,3 +13,5 @@ test/bdd/vdr/orb/fixtures/keys
 test/bdd/vdr/orb/fixtures/orb/data
 
 *.log
+
+.build
