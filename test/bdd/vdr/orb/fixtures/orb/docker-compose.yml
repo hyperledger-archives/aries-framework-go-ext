@@ -32,7 +32,9 @@ services:
       - DATABASE_PREFIX=orb1
       - KMSSECRETS_DATABASE_TYPE=couchdb
       - KMSSECRETS_DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
-      - KMSSECRETS_DATABASE_PREFIX=orb1kms
+      - KMSSECRETS_DATABASE_PREFIX=orb1kms\
+      - ORB_AUTH_TOKENS_DEF=/services/orb/keys,/services/orb/outbox|admin&read|admin,/services/orb/inbox|admin&read&admin|admin,/services/orb/.*|read&admin,/transactions|read&admin
+      - ORB_AUTH_TOKENS=admin=ADMIN_TOKEN,read=READ_TOKEN
     ports:
       - 443:443
     command: start
@@ -68,6 +70,8 @@ services:
       - KMSSECRETS_DATABASE_TYPE=couchdb
       - KMSSECRETS_DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
       - KMSSECRETS_DATABASE_PREFIX=orb2kms
+      - ORB_AUTH_TOKENS_DEF=/services/orb/keys,/services/orb/outbox|admin&read|admin,/services/orb/inbox|admin&read&admin|admin,/services/orb/.*|read&admin,/transactions|read&admin
+      - ORB_AUTH_TOKENS=admin=ADMIN_TOKEN,read=READ_TOKEN
     ports:
       - 8009:443
     command: start

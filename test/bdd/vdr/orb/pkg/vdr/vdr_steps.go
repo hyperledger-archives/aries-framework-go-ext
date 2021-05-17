@@ -264,13 +264,19 @@ func (e *Steps) createDID(keyType, signatureSuite string) error {
 }
 
 func (e *Steps) resolveDID(did string) (*ariesdid.DocResolution, error) {
+	time.Sleep(3 * time.Second) //nolint: gomnd
+
 	var docResolution *ariesdid.DocResolution
 
 	for i := 1; i <= maxRetry; i++ {
 		var err error
 		docResolution, err = e.vdr.Read(did)
 
-		if err != nil && (!strings.Contains(err.Error(), "DID does not exist") || i == maxRetry) {
+		if err == nil {
+			return docResolution, nil
+		}
+
+		if !strings.Contains(err.Error(), "DID does not exist") || i == maxRetry {
 			return nil, err
 		}
 

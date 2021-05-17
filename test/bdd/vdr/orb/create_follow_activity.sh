@@ -7,18 +7,22 @@
 
 set -e
 
+rm -rf .build
+mkdir -p .build
+wget https://nightly.link/trustbloc/orb/actions/artifacts/61088009.zip -O .build/orb-cli.zip
+cd .build
+unzip orb-cli.zip
+tar -zxf orb-cli-linux-amd64.tar.gz
+tar -zxf orb-cli-darwin-amd64.tar.gz
+
 domain1IRI=https://testnet.orb.local/services/orb
 domain2IRI=https://orb2/services/orb
-followID=1
-inviteWitnessID=2
-
-curl -o /dev/null -s -w "%{http_code}" --header "Content-Type: application/json" \
-   --request POST \
-   --data '{"@context":"https://www.w3.org/ns/activitystreams","id":"'$domain2IRI'/activities/'$followID'","type":"Follow","actor":"'$domain2IRI'","to":"'$domain1IRI'","object":"'$domain1IRI'"}' \
-   --insecure https://localhost:8009/services/orb/outbox
 
 
-curl -o /dev/null -s -w "%{http_code}" --header "Content-Type: application/json" \
-   --request POST \
-   --data '{"@context":["https://www.w3.org/ns/activitystreams","https://trustbloc.github.io/did-method-orb/contexts/anchor/v1"],"id":"'$domain1IRI'/activities/'$inviteWitnessID'","type":"InviteWitness","actor":"'$domain1IRI'","to":"'$domain2IRI'","object":"'$domain2IRI'"}' \
-   --insecure https://testnet.orb.local/services/orb/outbox
+if [ "$OSTYPE" == "darwin"* ]; then
+./orb-cli-darwin-amd64 follower --outbox-url=https://localhost:8009/services/orb/outbox --actor=$domain2IRI --to=$domain1IRI --action=Follow --tls-cacerts=../fixtures/keys/tls/ec-cacert.pem --auth-token=ADMIN_TOKEN
+./orb-cli-darwin-amd64 witness --outbox-url=https://testnet.orb.local/services/orb/outbox --actor=$domain1IRI --to=$domain2IRI --action=InviteWitness --tls-cacerts=../fixtures/keys/tls/ec-cacert.pem --auth-token=ADMIN_TOKEN
+else
+./orb-cli-linux-amd64 follower --outbox-url=https://localhost:8009/services/orb/outbox --actor=$domain2IRI --to=$domain1IRI --action=Follow --tls-cacerts=../fixtures/keys/tls/ec-cacert.pem --auth-token=ADMIN_TOKEN
+./orb-cli-linux-amd64 witness --outbox-url=https://testnet.orb.local/services/orb/outbox --actor=$domain1IRI --to=$domain2IRI --action=InviteWitness --tls-cacerts=../fixtures/keys/tls/ec-cacert.pem --auth-token=ADMIN_TOKEN
+fi
