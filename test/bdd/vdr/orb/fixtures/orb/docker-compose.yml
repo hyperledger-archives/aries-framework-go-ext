@@ -22,7 +22,8 @@ services:
       - DID_ALIASES=did:orb:testnet.orb.local
       - ALLOWED_ORIGINS=https://orb2/services/orb
       - BATCH_WRITER_TIMEOUT=200
-      - CAS_URL=ipfs:5001
+      - CAS_TYPE=local
+      - IPFS_URL=ipfs:5001
       - ANCHOR_CREDENTIAL_ISSUER=https://orb1
       - ANCHOR_CREDENTIAL_URL=https://orb1/vc
       - ANCHOR_CREDENTIAL_SIGNATURE_SUITE=Ed25519Signature2018
@@ -35,6 +36,7 @@ services:
       - KMSSECRETS_DATABASE_PREFIX=orb1kms\
       - ORB_AUTH_TOKENS_DEF=/services/orb/keys,/services/orb/outbox|admin&read|admin,/services/orb/inbox|admin&read&admin|admin,/services/orb/.*|read&admin,/transactions|read&admin
       - ORB_AUTH_TOKENS=admin=ADMIN_TOKEN,read=READ_TOKEN
+      - HTTP_SIGNATURES_ENABLED=true
     ports:
       - 443:443
     command: start
@@ -59,7 +61,8 @@ services:
       - DID_ALIASES=did:orb:testnet.orb.local
       - ALLOWED_ORIGINS=https://testnet.orb.local/services/orb
       - BATCH_WRITER_TIMEOUT=200
-      - CAS_URL=ipfs:5001
+      - CAS_TYPE=local
+      - IPFS_URL=ipfs:5001
       - ANCHOR_CREDENTIAL_ISSUER=https://orb2
       - ANCHOR_CREDENTIAL_URL=https://orb2/vc
       - ANCHOR_CREDENTIAL_SIGNATURE_SUITE=Ed25519Signature2018
@@ -72,6 +75,7 @@ services:
       - KMSSECRETS_DATABASE_PREFIX=orb2kms
       - ORB_AUTH_TOKENS_DEF=/services/orb/keys,/services/orb/outbox|admin&read|admin,/services/orb/inbox|admin&read&admin|admin,/services/orb/.*|read&admin,/transactions|read&admin
       - ORB_AUTH_TOKENS=admin=ADMIN_TOKEN,read=READ_TOKEN
+      - HTTP_SIGNATURES_ENABLED=true
     ports:
       - 8009:443
     command: start

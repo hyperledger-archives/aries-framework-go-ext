@@ -19,7 +19,9 @@ domain1IRI=https://testnet.orb.local/services/orb
 domain2IRI=https://orb2/services/orb
 
 
-if [ "$OSTYPE" == "darwin"* ]; then
+echo "$OSTYPE"
+
+if [ "$OSTYPE" == "darwin20" ]; then
 ./orb-cli-darwin-amd64 follower --outbox-url=https://localhost:8009/services/orb/outbox --actor=$domain2IRI --to=$domain1IRI --action=Follow --tls-cacerts=../fixtures/keys/tls/ec-cacert.pem --auth-token=ADMIN_TOKEN
 ./orb-cli-darwin-amd64 witness --outbox-url=https://testnet.orb.local/services/orb/outbox --actor=$domain1IRI --to=$domain2IRI --action=InviteWitness --tls-cacerts=../fixtures/keys/tls/ec-cacert.pem --auth-token=ADMIN_TOKEN
 else
