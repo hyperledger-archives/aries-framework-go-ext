@@ -13,6 +13,7 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	_ "embed" //nolint:gci // required for go:embed
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -20,9 +21,11 @@ import (
 	"time"
 
 	"github.com/cucumber/godog"
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/crypto/primitive/bbs12381g2pub"
 	ariesdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
+	jld "github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 
@@ -45,6 +48,20 @@ const (
 	jsonWebKey2020 = "JsonWebKey2020"
 )
 
+// nolint:gochecknoglobals // embedded test contexts
+var (
+	//go:embed testdata/lds-jws2020_v1.jsonld
+	jws2020Vocab []byte
+	//go:embed testdata/ed25519-signature-2018-v1.jsonld
+	ed255192018Vocab []byte
+	//go:embed testdata/ldp-bbs2020_v1.jsonld
+	ldpBBS2020Vocab []byte
+	//go:embed testdata/x25519-2019_v1.jsonld
+	x255192019Vocab []byte
+	//go:embed testdata/secp256k1-2019_v1.jsonld
+	secp256k12019Vocab []byte
+)
+
 // Steps is steps for VC BDD tests.
 type Steps struct {
 	bddContext   *context.BDDContext
@@ -59,7 +76,41 @@ type Steps struct {
 func NewSteps(ctx *context.BDDContext) *Steps {
 	keyRetriever := &keyRetriever{}
 
-	vdr, err := orb.New(keyRetriever, orb.WithTLSConfig(ctx.TLSConfig), orb.WithDomain("https://testnet.orb.local"))
+	loader, err := jld.NewDocumentLoader(mem.NewProvider(),
+		jld.WithExtraContexts(
+			jld.ContextDocument{
+				URL:         "https://w3id.org/security/suites/jws-2020/v1",
+				DocumentURL: "https://w3c-ccg.github.io/lds-jws2020/contexts/v1/",
+				Content:     jws2020Vocab,
+			},
+			jld.ContextDocument{
+				URL:         "https://w3id.org/security/suites/ed25519-2018/v1",
+				DocumentURL: "https://digitalbazaar.github.io/ed25519-signature-2018-context/contexts/ed25519-signature-2018-v1.jsonld", //nolint:lll
+				Content:     ed255192018Vocab,
+			},
+			jld.ContextDocument{
+				URL:         "https://w3id.org/security/suites/bls12381-2020/v1",
+				DocumentURL: "https://w3c-ccg.github.io/ldp-bbs2020/contexts/v1/",
+				Content:     ldpBBS2020Vocab,
+			},
+			jld.ContextDocument{
+				URL:         "https://w3id.org/security/suites/x25519-2019/v1",
+				DocumentURL: "https://ns.did.ai/suites/x25519-2019/v1/",
+				Content:     x255192019Vocab,
+			},
+			jld.ContextDocument{
+				URL:         "https://w3id.org/security/suites/secp256k1-2019/v1",
+				DocumentURL: "https://ns.did.ai/suites/secp256k1-2019/v1/",
+				Content:     secp256k12019Vocab,
+			},
+		),
+	)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	vdr, err := orb.New(keyRetriever, orb.WithTLSConfig(ctx.TLSConfig), orb.WithDomain("https://testnet.orb.local"),
+		orb.WithDocumentLoader(loader))
 	if err != nil {
 		panic(err.Error())
 	}
