@@ -33,9 +33,9 @@ services:
       - DATABASE_PREFIX=orb1
       - KMSSECRETS_DATABASE_TYPE=couchdb
       - KMSSECRETS_DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
-      - KMSSECRETS_DATABASE_PREFIX=orb1kms\
-      - ORB_AUTH_TOKENS_DEF=/services/orb/keys,/services/orb/outbox|admin&read|admin,/services/orb/inbox|admin&read&admin|admin,/services/orb/.*|read&admin,/transactions|read&admin
-      - ORB_AUTH_TOKENS=admin=ADMIN_TOKEN,read=READ_TOKEN
+      - KMSSECRETS_DATABASE_PREFIX=orb1kms
+      - ORB_AUTH_TOKENS_DEF=/services/orb/outbox||admin,/services/orb/inbox||admin,/sidetree/.*/operations||admin
+      - ORB_AUTH_TOKENS=admin=ADMIN_TOKEN
       - HTTP_SIGNATURES_ENABLED=true
     ports:
       - 443:443
@@ -73,7 +73,7 @@ services:
       - KMSSECRETS_DATABASE_TYPE=couchdb
       - KMSSECRETS_DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
       - KMSSECRETS_DATABASE_PREFIX=orb2kms
-      - ORB_AUTH_TOKENS_DEF=/services/orb/keys,/services/orb/outbox|admin&read|admin,/services/orb/inbox|admin&read&admin|admin,/services/orb/.*|read&admin,/transactions|read&admin
+      - ORB_AUTH_TOKENS_DEF=/services/orb/outbox||admin,/services/orb/inbox||admin,/sidetree/.*/operations||admin
       - ORB_AUTH_TOKENS=admin=ADMIN_TOKEN,read=READ_TOKEN
       - HTTP_SIGNATURES_ENABLED=true
     ports:
@@ -102,24 +102,24 @@ services:
 
   orb.trillian.log.server:
     container_name: orb.trillian.log.server
-    image: gcr.io/trillian-opensource-ci/log_server:eacf01ddf6503e04cda3ee941d94820f139c7737
+    image: ghcr.io/trustbloc/vct-log-server:v0.1.1
     restart: always
     command:
       - --mysql_uri=root@tcp(orb.mysql:3306)/test
       - --rpc_endpoint=0.0.0.0:8090
-      - --alsologtostderr
+      - --logtostderr
     ports:
       - 8090:8090
 
   orb.trillian.log.signer:
     container_name: orb.trillian.log.signer
-    image: gcr.io/trillian-opensource-ci/log_signer:eacf01ddf6503e04cda3ee941d94820f139c7737
+    image: ghcr.io/trustbloc/vct-log-signer:v0.1.1
     restart: always
     command:
       - --mysql_uri=root@tcp(orb.mysql:3306)/test
       - --http_endpoint=0.0.0.0:8091
       - --force_master=true
-      - --alsologtostderr
+      - --logtostderr
     depends_on:
       - orb.mysql
     ports:
