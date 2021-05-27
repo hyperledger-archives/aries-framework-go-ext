@@ -9,9 +9,9 @@ set -e
 
 rm -rf .build
 mkdir -p .build
-wget https://nightly.link/trustbloc/orb/actions/artifacts/61088009.zip -O .build/orb-cli.zip
+wget https://github.com/trustbloc/orb/releases/download/v0.1.1/orb-cli-linux-amd64.tar.gz -O .build/orb-cli-linux-amd64.tar.gz
+wget https://github.com/trustbloc/orb/releases/download/v0.1.1/orb-cli-darwin-amd64.tar.gz -O .build/orb-cli-darwin-amd64.tar.gz
 cd .build
-unzip orb-cli.zip
 tar -zxf orb-cli-linux-amd64.tar.gz
 tar -zxf orb-cli-darwin-amd64.tar.gz
 

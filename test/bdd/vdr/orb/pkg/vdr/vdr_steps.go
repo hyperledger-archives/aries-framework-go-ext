@@ -59,7 +59,8 @@ type Steps struct {
 func NewSteps(ctx *context.BDDContext) *Steps {
 	keyRetriever := &keyRetriever{}
 
-	vdr, err := orb.New(keyRetriever, orb.WithTLSConfig(ctx.TLSConfig), orb.WithDomain("https://testnet.orb.local"))
+	vdr, err := orb.New(keyRetriever, orb.WithTLSConfig(ctx.TLSConfig),
+		orb.WithDomain("https://testnet.orb.local"), orb.WithAuthToken("ADMIN_TOKEN"))
 	if err != nil {
 		panic(err.Error())
 	}
