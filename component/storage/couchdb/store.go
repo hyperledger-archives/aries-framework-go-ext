@@ -28,24 +28,36 @@ import (
 const (
 	couchDBUsersTable = "_users"
 
-	designDocumentName = "AriesStorageDesignDocument"
+	// CouchDB won't allow us to put Mango query index-based views in a design document with MapReduce-based views,
+	// so we'll need one for each type.
+	designDocumentName                  = "AriesStorageDesignDocument"
+	mapReduceDesignDocumentName         = "AriesStorageMapReduceDesignDocument"
+	mapReduceDesignDocumentNameWithPath = "_design/" + mapReduceDesignDocumentName
+	countViewNameTemplate               = "%s_count"
 
 	// Hardcoded strings returned from Kivik/CouchDB that we check for.
-	docNotFoundErrMsgFromKivik                  = "Not Found: missing"
-	bulkGetDocNotFoundErrMsgFromKivik           = "not_found: missing"
-	docDeletedErrMsgFromKivik                   = "Not Found: deleted"
-	databaseNotFoundErrMsgFromKivik             = "Not Found: Database does not exist."
-	documentUpdateConflictErrMsgFromKivik       = "Conflict: Document update conflict."
-	designDocumentUpdateConflictErrMsgFromKivik = "Internal Server Error: " +
+	docNotFoundErrMsgFromKivik                            = "Not Found: missing"
+	bulkGetDocNotFoundErrMsgFromKivik                     = "not_found: missing"
+	docDeletedErrMsgFromKivik                             = "Not Found: deleted"
+	databaseNotFoundErrMsgFromKivik                       = "Not Found: Database does not exist."
+	documentUpdateConflictErrMsgFromKivik                 = "Conflict: Document update conflict."
+	mangoIndexDesignDocumentUpdateConflictErrMsgFromKivik = "Internal Server Error: " +
 		"Encountered a conflict while saving the design document."
 
-	invalidTagName               = `"%s" is an invalid tag name since it contains one or more ':' characters`
-	invalidTagValue              = `"%s" is an invalid tag value since it contains one or more ':' characters`
-	failGetDatabaseHandle        = "failed to get database handle: %w"
-	failGetExistingIndexes       = "failed to get existing indexes: %w"
-	failCreateIndex              = "failed to create index in CouchDB: %w"
-	failCreateIndexDueToConflict = "failed to create index in CouchDB due to " +
+	failCreateOrUpdateMapReduceDesignDoc = "failed to create/update MapReduce design document: %w"
+	invalidTagName                       = `"%s" is an invalid tag name since it contains one or more ':' characters`
+	invalidTagValue                      = `"%s" is an invalid tag value since it contains one or more ':' characters`
+	failGetDatabaseHandle                = "failed to get database handle: %w"
+	failGetExistingIndexes               = "failed to get existing indexes: %w"
+	failCreateIndex                      = "failed to create index in CouchDB: %w"
+	failCreateIndexDueToConflict         = "failed to create index in CouchDB due to " +
 		"design document conflict after %d attempts. This storage provider may need to be started with a higher " +
+		"max retry limit. Original error message from CouchDB: %w"
+	failUpdateDesignDocumentDueToConflict = "failed to update design document in CouchDB due to " +
+		"document conflict after %d attempts. This storage provider may need to be started with a higher " +
+		"max retry limit. Original error message from CouchDB: %w"
+	failUpdateDocumentDueToConflict = "failed to store document for [Key: %s] in CouchDB due to " +
+		"document conflict after %d attempts. This storage provider may need to be started with a higher " +
 		"max retry limit. Original error message from CouchDB: %w"
 	failureWhileScanningRow       = "failure while scanning row: %w"
 	failGetRevisionID             = "failed to get revision ID: %w"
@@ -57,9 +69,9 @@ const (
 	expressionTagNameOnlyLength     = 1
 	expressionTagNameAndValueLength = 2
 
-	fieldNameExistsSelectorTemplate   = `{"%s":{"$exists":true}}`
-	fieldNameAndValueSelectorTemplate = `{"%s":"%s"}`
-	sortOptionsTemplate               = `[{"%s": "%s"}]`
+	fieldNameExistsSelectorTemplate   = `{"tags.%s":{"$exists":true}}`
+	fieldNameAndValueSelectorTemplate = `{"tags.%s":"%s"}`
+	sortOptionsTemplate               = `[{"tags.%s": "%s"}]`
 )
 
 type findQuery struct {
@@ -94,6 +106,11 @@ func (d *defaultLogger) Warnf(msg string, args ...interface{}) {
 	d.logger.Printf(msg, args...)
 }
 
+type designDoc struct {
+	RevisionID string                       `json:"_rev,omitempty"`
+	Views      map[string]map[string]string `json:"views,omitempty"`
+}
+
 type document struct {
 	ID         string                 `json:"_id,omitempty"`      // CouchDB-internal field
 	RevisionID string                 `json:"_rev,omitempty"`     // CouchDB-internal field
@@ -105,7 +122,11 @@ type document struct {
 type db interface {
 	Get(ctx context.Context, docID string, options ...kivik.Options) *kivik.Row
 	Put(ctx context.Context, docID string, doc interface{}, options ...kivik.Options) (rev string, err error)
+	GetIndexes(ctx context.Context, options ...kivik.Options) ([]kivik.Index, error)
+	CreateIndex(ctx context.Context, ddoc, name string, index interface{}, options ...kivik.Options) error
+	DeleteIndex(ctx context.Context, ddoc, name string, options ...kivik.Options) error
 	Find(ctx context.Context, query interface{}, options ...kivik.Options) (*kivik.Rows, error)
+	Query(ctx context.Context, ddoc, view string, options ...kivik.Options) (*kivik.Rows, error)
 	Delete(ctx context.Context, docID, rev string, options ...kivik.Options) (newRev string, err error)
 	BulkGet(ctx context.Context, docs []kivik.BulkGetReference, options ...kivik.Options) (*kivik.Rows, error)
 	Close(ctx context.Context) error
@@ -262,9 +283,9 @@ func (p *Provider) SetStoreConfig(name string, config storage.StoreConfiguration
 		return fmt.Errorf(failGetDatabaseHandle, err)
 	}
 
-	err = p.setIndexes(db, config, name)
+	err = p.setDesignDocuments(name, config, db)
 	if err != nil {
-		return fmt.Errorf("failure while setting indexes: %w", err)
+		return err
 	}
 
 	return nil
@@ -372,7 +393,21 @@ func (p *Provider) createStore(name string) (storage.Store, error) {
 	return newStore, nil
 }
 
-func (p *Provider) setIndexes(db *kivik.DB, config storage.StoreConfiguration, storeName string) error {
+func (p *Provider) setDesignDocuments(name string, config storage.StoreConfiguration, db db) error {
+	err := p.updateMangoIndexDesignDocument(db, config, name)
+	if err != nil {
+		return fmt.Errorf("failure while updating Mango index design document: %w", err)
+	}
+
+	err = p.updateMapReduceDesignDocument(name, config, db)
+	if err != nil {
+		return fmt.Errorf("failure while updating the MapReduce design document: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Provider) updateMangoIndexDesignDocument(db db, config storage.StoreConfiguration, storeName string) error {
 	existingIndexes, err := db.GetIndexes(context.Background())
 	if err != nil {
 		if err.Error() == databaseNotFoundErrMsgFromKivik {
@@ -390,7 +425,7 @@ func (p *Provider) setIndexes(db *kivik.DB, config storage.StoreConfiguration, s
 	return nil
 }
 
-func (p *Provider) updateIndexes(db *kivik.DB, config storage.StoreConfiguration,
+func (p *Provider) updateIndexes(db db, config storage.StoreConfiguration,
 	existingIndexes []kivik.Index, storeName string) error {
 	tagNameIndexesAlreadyConfigured := make(map[string]struct{})
 
@@ -440,7 +475,7 @@ func (p *Provider) updateIndexes(db *kivik.DB, config storage.StoreConfiguration
 	return nil
 }
 
-func (p *Provider) createIndexes(db *kivik.DB, tagNamesNeedIndexCreation []string, storeName string) error {
+func (p *Provider) createIndexes(db db, tagNamesNeedIndexCreation []string, storeName string) error {
 	for _, tagName := range tagNamesNeedIndexCreation {
 		var attemptsMade int
 
@@ -454,7 +489,7 @@ func (p *Provider) createIndexes(db *kivik.DB, tagNamesNeedIndexCreation []strin
 				// to get a document update conflict. In cases where those multiple CouchDB providers are trying
 				// to set the exact same store configuration, retrying here allows them to succeed without failing
 				// unnecessarily.
-				if err.Error() == designDocumentUpdateConflictErrMsgFromKivik {
+				if err.Error() == mangoIndexDesignDocumentUpdateConflictErrMsgFromKivik {
 					p.logger.Infof("[Store name: %s] Attempt %d - design document update conflict while creating "+
 						"index for %s. This can happen if multiple CouchDB providers set the store configuration at the "+
 						"same time.", storeName, attemptsMade, tagName)
@@ -475,6 +510,75 @@ func (p *Provider) createIndexes(db *kivik.DB, tagNamesNeedIndexCreation []strin
 			return err
 		}
 	}
+
+	return nil
+}
+
+func (p *Provider) updateMapReduceDesignDocument(name string, config storage.StoreConfiguration, db db) error {
+	var attemptsMade int
+
+	err := backoff.Retry(func() error {
+		attemptsMade++
+
+		row := db.Get(context.Background(), mapReduceDesignDocumentNameWithPath)
+
+		var existingDesignDocument designDoc
+
+		err := row.ScanDoc(&existingDesignDocument)
+		if err != nil {
+			if !strings.Contains(err.Error(), docNotFoundErrMsgFromKivik) &&
+				!strings.Contains(err.Error(), docDeletedErrMsgFromKivik) {
+				return backoff.Permanent(fmt.Errorf("unexpected failure while checking for an "+
+					"existing MapReduce design document: %w", err))
+			}
+		}
+
+		if existingDesignDocHasAllViewsAlready(config, existingDesignDocument) {
+			p.logger.Infof("[Store name: %s] Skipping count view creation for %v since they all already exist.",
+				name, config.TagNames)
+		} else {
+			err = p.putMapReduceDesignDocument(config, existingDesignDocument.RevisionID, db, name, attemptsMade)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond), uint64(p.maxDocumentConflictRetries)))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *Provider) putMapReduceDesignDocument(config storage.StoreConfiguration, existingRevID string, db db,
+	storeName string, attemptsMade int) error {
+	mapReduceDesignDocument := createMapReduceDesignDocument(config, existingRevID)
+
+	mapReduceDesignDocumentBytes, err := json.Marshal(mapReduceDesignDocument)
+	if err != nil {
+		return fmt.Errorf("failed to marshal MapReduce design document: %w", err)
+	}
+
+	_, err = db.Put(context.Background(), mapReduceDesignDocumentNameWithPath, string(mapReduceDesignDocumentBytes))
+	if err != nil {
+		if err.Error() == documentUpdateConflictErrMsgFromKivik {
+			// This means that the document was updated since we got the revision ID.
+			// Need to get the new revision ID and try again.
+			p.logger.Infof("[Store name: %s] Attempt %d - MapReduce design document update conflict. "+
+				"This can happen if multiple CouchDB providers set the store configuration at the "+
+				"same time.", storeName, attemptsMade)
+
+			return fmt.Errorf(failUpdateDesignDocumentDueToConflict, attemptsMade, err)
+		}
+
+		// This is an unexpected error.
+		return backoff.Permanent(fmt.Errorf(failCreateOrUpdateMapReduceDesignDoc, err))
+	}
+
+	p.logger.Infof("[Store name: %s] Attempt %d - successfully created count views for %v.",
+		storeName, attemptsMade, config.TagNames)
 
 	return nil
 }
@@ -617,37 +721,39 @@ func (s *store) Query(expression string, options ...storage.QueryOption) (storag
 		}
 
 		query.Sort = json.RawMessage(fmt.Sprintf(
-			sortOptionsTemplate, "tags."+queryOptions.SortOptions.TagName, sortOrder))
+			sortOptionsTemplate, queryOptions.SortOptions.TagName, sortOrder))
 	}
 
 	var resultRows *kivik.Rows
 
+	var queryTagName, queryTagValue string
+
 	switch len(expressionSplit) {
 	case expressionTagNameOnlyLength:
-		query.Selector = json.RawMessage(fmt.Sprintf(fieldNameExistsSelectorTemplate, "tags."+expressionSplit[0]))
+		queryTagName = expressionSplit[0]
+		query.Selector = json.RawMessage(fmt.Sprintf(fieldNameExistsSelectorTemplate, queryTagName))
 	case expressionTagNameAndValueLength:
+		queryTagName = expressionSplit[0]
+		queryTagValue = expressionSplit[1]
 		query.Selector = json.RawMessage(fmt.Sprintf(fieldNameAndValueSelectorTemplate,
-			"tags."+expressionSplit[0], expressionSplit[1]))
+			queryTagName, queryTagValue))
 	default:
 		return &couchDBResultsIterator{}, errInvalidQueryExpressionFormat
 	}
 
-	findQueryBytes, err := json.Marshal(query)
+	resultRows, err := s.executeFindQuery(&query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal find query to JSON: %w", err)
-	}
-
-	resultRows, err = s.db.Find(context.Background(), findQueryBytes)
-	if err != nil {
-		return nil, fmt.Errorf(failSendRequestToFindEndpoint, err)
+		return nil, err
 	}
 
 	return &couchDBResultsIterator{
-		store:      s,
-		resultRows: resultRows,
-		pageSize:   queryOptions.PageSize,
-		findQuery:  query,
-		marshal:    json.Marshal,
+		store:         s,
+		resultRows:    resultRows,
+		pageSize:      queryOptions.PageSize,
+		queryTagName:  queryTagName,
+		queryTagValue: queryTagValue,
+		findQuery:     query,
+		marshal:       json.Marshal,
 	}, nil
 }
 
@@ -747,7 +853,11 @@ func (s *store) Flush() error {
 }
 
 func (s *store) put(k string, documentToPut document) error {
+	var attemptsMade int
+
 	err := backoff.Retry(func() error {
+		attemptsMade++
+
 		revID, err := s.getRevID(k)
 		if err != nil {
 			// This is an unexpected error. Return a backoff.Permanent wrapped error to prevent further retries.
@@ -768,7 +878,12 @@ func (s *store) put(k string, documentToPut document) error {
 			if err.Error() == documentUpdateConflictErrMsgFromKivik {
 				// This means that the document was updated since we got the revision ID.
 				// Need to get the new revision ID and try again.
-				return fmt.Errorf(failPutValueViaClient, err)
+
+				s.logger.Infof("[Store name: %s] [Key: %s] Attempt %d - document update conflict. "+
+					"This can happen if multiple CouchDB providers store data under the same key at the same time.",
+					s.name, k, attemptsMade)
+
+				return fmt.Errorf(failUpdateDocumentDueToConflict, k, attemptsMade, err)
 			}
 
 			// This is an unexpected error.
@@ -778,12 +893,7 @@ func (s *store) put(k string, documentToPut document) error {
 		return nil
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond), uint64(s.maxDocumentConflictRetries)))
 	if err != nil {
-		if strings.Contains(err.Error(), documentUpdateConflictErrMsgFromKivik) {
-			return fmt.Errorf("maximum number of retry attempts (%d) exceeded: %w",
-				s.maxDocumentConflictRetries, err)
-		}
-
-		return err // No need for more error wrapping here.
+		return err
 	}
 
 	return nil
@@ -833,10 +943,26 @@ func (s *store) getDocuments(keys []string) ([]*document, error) {
 	return documents, nil
 }
 
+func (s *store) executeFindQuery(query *findQuery) (*kivik.Rows, error) {
+	findQueryBytes, err := s.marshal(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal find query to JSON: %w", err)
+	}
+
+	resultRows, err := s.db.Find(context.Background(), findQueryBytes)
+	if err != nil {
+		return nil, fmt.Errorf(failSendRequestToFindEndpoint, err)
+	}
+
+	return resultRows, nil
+}
+
 type couchDBResultsIterator struct {
 	store                          *store
 	resultRows                     rows
 	pageSize                       int
+	queryTagName                   string
+	queryTagValue                  string
 	findQuery                      findQuery
 	numDocumentsReturnedInThisPage int
 	marshal                        marshalFunc
@@ -940,6 +1066,47 @@ func (i *couchDBResultsIterator) Tags() ([]storage.Tag, error) {
 	}
 
 	return tags, nil
+}
+
+func (i *couchDBResultsIterator) TotalItems() (int, error) {
+	var options kivik.Options
+
+	if i.queryTagValue != "" {
+		options = kivik.Options{
+			"key": i.queryTagValue,
+		}
+	}
+
+	resultRows, err := i.store.db.Query(context.Background(),
+		mapReduceDesignDocumentName,
+		fmt.Sprintf(countViewNameTemplate, i.queryTagName),
+		options)
+	if err != nil {
+		if strings.Contains(err.Error(), docNotFoundErrMsgFromKivik) ||
+			strings.Contains(err.Error(), "missing-named_view") {
+			return -1, fmt.Errorf("failed to query CouchDB. "+
+				"The view could not be found for counting the number of query results. "+
+				"To resolve this, make sure the store configuration has been set using the "+
+				"Store.SetStoreConfig method. "+
+				"The store configuration must contain the tag name used in the query. "+
+				"Original error from CouchDB client: %w", err)
+		}
+
+		return -1, fmt.Errorf("failed to query CouchDB: %w", err)
+	}
+
+	if !resultRows.Next() {
+		return 0, nil
+	}
+
+	var count int
+
+	err = resultRows.ScanValue(&count)
+	if err != nil {
+		return -1, err
+	}
+
+	return count, nil
 }
 
 func (i *couchDBResultsIterator) fetchAnotherPage() (bool, error) {
@@ -1112,6 +1279,35 @@ func (i *couchDBResultsIterator) logAnyWarning() error {
 	}
 
 	return nil
+}
+
+func existingDesignDocHasAllViewsAlready(config storage.StoreConfiguration, existingDesignDocument designDoc) bool {
+	allExistAlready := true
+
+	for _, tagName := range config.TagNames {
+		_, allExistAlready = existingDesignDocument.Views[fmt.Sprintf(countViewNameTemplate, tagName)]
+
+		if !allExistAlready {
+			break
+		}
+	}
+
+	return allExistAlready
+}
+
+func createMapReduceDesignDocument(config storage.StoreConfiguration, existingRevID string) designDoc {
+	views := map[string]map[string]string{}
+
+	for _, tagName := range config.TagNames {
+		view := map[string]string{}
+
+		view["map"] = fmt.Sprintf("function(doc){if(doc.tags.%s){emit(doc.tags.%s,doc.value);}}", tagName, tagName)
+		view["reduce"] = "_count"
+
+		views[fmt.Sprintf(countViewNameTemplate, tagName)] = view
+	}
+
+	return designDoc{RevisionID: existingRevID, Views: views}
 }
 
 func removeDuplicatesKeepingOnlyLast(operations []storage.Operation) []storage.Operation {

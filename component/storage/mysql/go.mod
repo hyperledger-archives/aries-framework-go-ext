@@ -12,8 +12,8 @@ require (
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/google/go-cmp v0.5.4 // indirect
 	github.com/google/uuid v1.2.0
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210429205242-c5e97865879c
-	github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210429205242-c5e97865879c
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210603222351-ed8817420d42
+	github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210603222351-ed8817420d42
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.9.0 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
