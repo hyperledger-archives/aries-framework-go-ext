@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io/ioutil"
+	"log"
+	"os"
 	"strings"
 	"testing"
 
@@ -20,6 +22,8 @@ import (
 
 type mockDB struct {
 	errPut         error
+	errGetIndexes  error
+	errCreateIndex error
 	getRowBodyData string
 	errGetRow      error
 	errBulkGet     error
@@ -36,8 +40,24 @@ func (m *mockDB) Put(context.Context, string, interface{}, ...kivik.Options) (st
 	return "", m.errPut
 }
 
-func (m *mockDB) Find(ctx context.Context, query interface{}, options ...kivik.Options) (*kivik.Rows, error) {
+func (m *mockDB) GetIndexes(context.Context, ...kivik.Options) ([]kivik.Index, error) {
+	return nil, m.errGetIndexes
+}
+
+func (m *mockDB) CreateIndex(context.Context, string, string, interface{}, ...kivik.Options) error {
+	return m.errCreateIndex
+}
+
+func (m *mockDB) DeleteIndex(context.Context, string, string, ...kivik.Options) error {
+	panic("implement me")
+}
+
+func (m *mockDB) Find(context.Context, interface{}, ...kivik.Options) (*kivik.Rows, error) {
 	return nil, errors.New("mockDB Find always fails")
+}
+
+func (m *mockDB) Query(context.Context, string, string, ...kivik.Options) (*kivik.Rows, error) {
+	panic("implement me")
 }
 
 func (m *mockDB) Delete(context.Context, string, string, ...kivik.Options) (string, error) {
@@ -94,6 +114,10 @@ func failingMarshal(interface{}) ([]byte, error) {
 func TestStore_Put_Internal(t *testing.T) {
 	t.Run("Document update conflict: exceed maximum number of retries", func(t *testing.T) {
 		store := &store{
+			name: "TestStore",
+			logger: &defaultLogger{
+				log.New(os.Stdout, "CouchDB-Provider ", log.Ldate|log.Ltime|log.LUTC),
+			},
 			db: &mockDB{
 				errPut:         errors.New(documentUpdateConflictErrMsgFromKivik),
 				getRowBodyData: `{"_rev":"SomeRevID"}`,
@@ -102,8 +126,10 @@ func TestStore_Put_Internal(t *testing.T) {
 		}
 
 		err := store.Put("key", []byte("value"))
-		require.EqualError(t, err, "failure while putting document into CouchDB database: maximum number of "+
-			"retry attempts (3) exceeded: failed to put value via client: Conflict: Document update conflict.")
+		require.EqualError(t, err, "failure while putting document into CouchDB database: "+
+			"failed to store document for [Key: key] in CouchDB due to document conflict after 4 attempts. "+
+			"This storage provider may need to be started with a higher max retry limit. "+
+			"Original error message from CouchDB: Conflict: Document update conflict.")
 	})
 	t.Run("Other error while putting value via client", func(t *testing.T) {
 		store := &store{
@@ -154,20 +180,20 @@ func TestStore_GetBulk_Internal(t *testing.T) {
 }
 
 func TestStore_Query_Internal(t *testing.T) {
-	t.Run("Failure sending tag name only query to find endpoint", func(t *testing.T) {
-		store := &store{db: &mockDB{}}
+	t.Run("Failure sending query to find endpoint", func(t *testing.T) {
+		store := &store{db: &mockDB{}, marshal: json.Marshal}
 
 		iterator, err := store.Query("tagName")
 		require.EqualError(t, err,
 			"failure while sending request to CouchDB find endpoint: mockDB Find always fails")
 		require.Empty(t, iterator)
 	})
-	t.Run("Failure sending tag name and value query to find endpoint", func(t *testing.T) {
-		store := &store{db: &mockDB{}}
+	t.Run("Fail to marshal find query", func(t *testing.T) {
+		store := &store{marshal: failingMarshal}
 
-		iterator, err := store.Query("tagName:tagValue")
+		iterator, err := store.Query("tagName")
 		require.EqualError(t, err,
-			"failure while sending request to CouchDB find endpoint: mockDB Find always fails")
+			"failed to marshal find query to JSON: marshal failure")
 		require.Empty(t, iterator)
 	})
 }
@@ -297,4 +323,94 @@ func TestCouchDBResultsIterator_Tags_Internal(t *testing.T) {
 func TestGetQueryOptions_InvalidInitialPageIsChangedToDefault(t *testing.T) {
 	queryOptions := getQueryOptions([]spi.QueryOption{spi.WithInitialPageNum(-1)})
 	require.Equal(t, 0, queryOptions.InitialPageNum)
+}
+
+func TestProvider_SetDesignDocuments(t *testing.T) {
+	t.Run("Fail to update Mango index design document", func(t *testing.T) {
+		t.Run("Fail to get existing indexes", func(t *testing.T) {
+			provider := Provider{}
+
+			err := provider.setDesignDocuments("StoreName",
+				spi.StoreConfiguration{TagNames: []string{"TagName1"}},
+				&mockDB{errGetIndexes: errors.New("get indexes error")})
+			require.EqualError(t, err, "failure while updating Mango index design document: "+
+				"failed to get existing indexes: get indexes error")
+		})
+		t.Run("Fail to create index", func(t *testing.T) {
+			t.Run("Unexpected error", func(t *testing.T) {
+				provider := Provider{}
+
+				err := provider.setDesignDocuments("StoreName",
+					spi.StoreConfiguration{TagNames: []string{"TagName1"}},
+					&mockDB{errCreateIndex: errors.New("create index error")})
+				require.EqualError(t, err, "failure while updating Mango index design document: "+
+					"failure while updating indexes in CouchDB: failed to create indexes: "+
+					"failed to create index in CouchDB: create index error")
+			})
+			t.Run("Too many document update conflicts - max retry attempts exceeded", func(t *testing.T) {
+				provider := Provider{
+					logger: &defaultLogger{
+						log.New(os.Stdout, "CouchDB-Provider ", log.Ldate|log.Ltime|log.LUTC),
+					},
+					maxDocumentConflictRetries: 1,
+				}
+
+				err := provider.setDesignDocuments("StoreName",
+					spi.StoreConfiguration{TagNames: []string{"TagName1"}},
+					&mockDB{errCreateIndex: errors.New(mangoIndexDesignDocumentUpdateConflictErrMsgFromKivik)})
+				require.EqualError(t, err, "failure while updating Mango index design document: "+
+					"failure while updating indexes in CouchDB: failed to create indexes: "+
+					"failed to create index in CouchDB due to design document conflict after 2 attempts. "+
+					"This storage provider may need to be started with a higher max retry limit. "+
+					"Original error message from CouchDB: Internal Server Error: Encountered a conflict while "+
+					"saving the design document.")
+			})
+		})
+	})
+
+	t.Run("Fail to update MapReduce design document", func(t *testing.T) {
+		t.Run("Unexpected failure while getting existing design document", func(t *testing.T) {
+			provider := Provider{logger: &defaultLogger{
+				log.New(os.Stdout, "CouchDB-Provider ", log.Ldate|log.Ltime|log.LUTC),
+			}}
+
+			err := provider.setDesignDocuments("StoreName",
+				spi.StoreConfiguration{TagNames: []string{"TagName1"}},
+				&mockDB{})
+			require.EqualError(t, err, "failure while updating the MapReduce design document: "+
+				"unexpected failure while checking for an existing MapReduce design document: EOF")
+		})
+		t.Run("Fail to store updated design document", func(t *testing.T) {
+			t.Run("Unexpected failure", func(t *testing.T) {
+				provider := Provider{
+					logger: &defaultLogger{
+						log.New(os.Stdout, "CouchDB-Provider ", log.Ldate|log.Ltime|log.LUTC),
+					},
+					maxDocumentConflictRetries: 1,
+				}
+
+				err := provider.setDesignDocuments("StoreName",
+					spi.StoreConfiguration{TagNames: []string{"TagName1"}},
+					&mockDB{getRowBodyData: "{}", errPut: errors.New("put error")})
+				require.EqualError(t, err, "failure while updating the MapReduce design document: "+
+					"failed to create/update MapReduce design document: put error")
+			})
+			t.Run("Too many document update conflicts - max retry attempts exceeded", func(t *testing.T) {
+				provider := Provider{
+					logger: &defaultLogger{
+						log.New(os.Stdout, "CouchDB-Provider ", log.Ldate|log.Ltime|log.LUTC),
+					},
+					maxDocumentConflictRetries: 1,
+				}
+
+				err := provider.setDesignDocuments("StoreName",
+					spi.StoreConfiguration{TagNames: []string{"TagName1"}},
+					&mockDB{getRowBodyData: "{}", errPut: errors.New(documentUpdateConflictErrMsgFromKivik)})
+				require.EqualError(t, err, "failure while updating the MapReduce design document: "+
+					"failed to update design document in CouchDB due to document conflict after 2 attempts. "+
+					"This storage provider may need to be started with a higher max retry limit. "+
+					"Original error message from CouchDB: Conflict: Document update conflict.")
+			})
+		})
+	})
 }

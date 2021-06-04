@@ -42,18 +42,6 @@ func (*mockLogger) Warnf(string, ...interface{}) {
 	log.Printf("mock logger output")
 }
 
-type stringLogger struct {
-	log string
-}
-
-func (s *stringLogger) Infof(msg string, args ...interface{}) {
-	s.log += fmt.Sprintf(msg, args...)
-}
-
-func (s *stringLogger) Warnf(msg string, args ...interface{}) {
-	s.log += fmt.Sprintf(msg, args...)
-}
-
 func TestMain(m *testing.M) {
 	code := 1
 
@@ -106,6 +94,18 @@ func checkCouchDB() error {
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), retries))
 }
 
+type stringLogger struct {
+	log string
+}
+
+func (s *stringLogger) Infof(msg string, args ...interface{}) {
+	s.log += fmt.Sprintf(msg, args...)
+}
+
+func (s *stringLogger) Warnf(msg string, args ...interface{}) {
+	s.log += fmt.Sprintf(msg, args...)
+}
+
 func TestCommon(t *testing.T) {
 	t.Run("Without prefix option", func(t *testing.T) {
 		t.Run("Without max document conflict retries option", func(t *testing.T) {
@@ -113,13 +113,13 @@ func TestCommon(t *testing.T) {
 				prov, err := NewProvider(couchDBURL)
 				require.NoError(t, err)
 
-				commontest.TestAll(t, prov)
+				commontest.TestStoreQuery(t, prov, commontest.WithIteratorTotalItemCountTests())
 			})
 			t.Run("With custom logger option", func(t *testing.T) {
 				prov, err := NewProvider(couchDBURL, WithLogger(&mockLogger{}))
 				require.NoError(t, err)
 
-				commontest.TestAll(t, prov)
+				commontest.TestAll(t, prov, commontest.WithIteratorTotalItemCountTests())
 			})
 		})
 		t.Run("With Max Document Conflict Retries option set to 2", func(t *testing.T) {
@@ -127,14 +127,14 @@ func TestCommon(t *testing.T) {
 				prov, err := NewProvider(couchDBURL, WithMaxDocumentConflictRetries(2))
 				require.NoError(t, err)
 
-				commontest.TestAll(t, prov)
+				commontest.TestAll(t, prov, commontest.WithIteratorTotalItemCountTests())
 			})
 			t.Run("With custom logger", func(t *testing.T) {
 				prov, err := NewProvider(couchDBURL, WithMaxDocumentConflictRetries(2),
 					WithLogger(&mockLogger{}))
 				require.NoError(t, err)
 
-				commontest.TestAll(t, prov)
+				commontest.TestAll(t, prov, commontest.WithIteratorTotalItemCountTests())
 			})
 		})
 	})
@@ -144,13 +144,13 @@ func TestCommon(t *testing.T) {
 				prov, err := NewProvider(couchDBURL, WithDBPrefix("test-prefix"))
 				require.NoError(t, err)
 
-				commontest.TestAll(t, prov)
+				commontest.TestAll(t, prov, commontest.WithIteratorTotalItemCountTests())
 			})
 			t.Run("With custom logger", func(t *testing.T) {
 				prov, err := NewProvider(couchDBURL, WithDBPrefix("test-prefix"), WithLogger(&mockLogger{}))
 				require.NoError(t, err)
 
-				commontest.TestAll(t, prov)
+				commontest.TestAll(t, prov, commontest.WithIteratorTotalItemCountTests())
 			})
 		})
 		t.Run("With max document conflict retries option set to 2", func(t *testing.T) {
@@ -159,14 +159,14 @@ func TestCommon(t *testing.T) {
 					WithMaxDocumentConflictRetries(2))
 				require.NoError(t, err)
 
-				commontest.TestAll(t, prov)
+				commontest.TestAll(t, prov, commontest.WithIteratorTotalItemCountTests())
 			})
 			t.Run("With custom logger", func(t *testing.T) {
 				prov, err := NewProvider(couchDBURL, WithDBPrefix("test-prefix"),
 					WithMaxDocumentConflictRetries(2), WithLogger(&mockLogger{}))
 				require.NoError(t, err)
 
-				commontest.TestAll(t, prov)
+				commontest.TestAll(t, prov, commontest.WithIteratorTotalItemCountTests())
 			})
 		})
 	})
