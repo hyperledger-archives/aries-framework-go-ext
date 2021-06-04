@@ -113,7 +113,7 @@ func TestCommon(t *testing.T) {
 				prov, err := NewProvider(couchDBURL)
 				require.NoError(t, err)
 
-				commontest.TestStoreQuery(t, prov, commontest.WithIteratorTotalItemCountTests())
+				commontest.TestAll(t, prov, commontest.WithIteratorTotalItemCountTests())
 			})
 			t.Run("With custom logger option", func(t *testing.T) {
 				prov, err := NewProvider(couchDBURL, WithLogger(&mockLogger{}))
@@ -257,4 +257,41 @@ func TestMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t *testing.
 	}
 
 	waitGroup.Wait()
+}
+
+func TestIteratorTotalItemsCountWithTagsWithBlankTagValues(t *testing.T) {
+	prov, err := NewProvider(couchDBURL)
+	require.NoError(t, err)
+
+	store, err := prov.OpenStore("TotalItemBlankTagValueTest")
+	require.NoError(t, err)
+
+	tagName := "tagName1"
+
+	err = prov.SetStoreConfig("TotalItemBlankTagValueTest",
+		spi.StoreConfiguration{TagNames: []string{tagName}})
+	require.NoError(t, err)
+
+	iterator, err := store.Query(tagName)
+	require.NoError(t, err)
+
+	totalCount, err := iterator.TotalItems()
+	require.NoError(t, err)
+	require.Equal(t, 0, totalCount)
+
+	err = store.Put("key1", []byte("value1"), spi.Tag{Name: tagName})
+	require.NoError(t, err)
+
+	// Since the iterator makes an explicit query to CouchDB every time we call TotalItems,
+	// there's no need to re-run store.Query. TotalItems() will always reflect the current state of the database.
+	totalCount, err = iterator.TotalItems()
+	require.NoError(t, err)
+	require.Equal(t, 1, totalCount)
+
+	err = store.Put("key2", []byte("value2"), spi.Tag{Name: tagName, Value: "tagValue1"})
+	require.NoError(t, err)
+
+	totalCount, err = iterator.TotalItems()
+	require.NoError(t, err)
+	require.Equal(t, 2, totalCount)
 }
