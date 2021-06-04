@@ -1068,6 +1068,8 @@ func (i *couchDBResultsIterator) Tags() ([]storage.Tag, error) {
 	return tags, nil
 }
 
+// This runs a separate query on CouchDB, so the total item count returned reflects the current state of the database,
+// which may have changed since this iterator was created.
 func (i *couchDBResultsIterator) TotalItems() (int, error) {
 	var options kivik.Options
 
@@ -1301,7 +1303,8 @@ func createMapReduceDesignDocument(config storage.StoreConfiguration, existingRe
 	for _, tagName := range config.TagNames {
 		view := map[string]string{}
 
-		view["map"] = fmt.Sprintf("function(doc){if(doc.tags.%s){emit(doc.tags.%s,doc.value);}}", tagName, tagName)
+		view["map"] = fmt.Sprintf("function(doc){if('%s'in doc.tags){emit(doc.tags.%s,doc.value);}}",
+			tagName, tagName)
 		view["reduce"] = "_count"
 
 		views[fmt.Sprintf(countViewNameTemplate, tagName)] = view
