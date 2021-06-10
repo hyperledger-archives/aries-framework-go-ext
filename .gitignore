@@ -11,6 +11,7 @@ coverage.out
 test/bdd/vdr/trustbloc/fixtures/keys
 test/bdd/vdr/orb/fixtures/keys
 test/bdd/vdr/orb/fixtures/orb/data
+test/bdd/vdr/orb/fixtures/orb/export
 
 *.log
 

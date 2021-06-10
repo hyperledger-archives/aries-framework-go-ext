@@ -629,6 +629,46 @@ func TestVDRI_Read(t *testing.T) {
 		require.Nil(t, doc)
 	})
 
+	t.Run("test error domain is empty and did not ipfs", func(t *testing.T) {
+		v, err := New(nil)
+		require.NoError(t, err)
+
+		_, err = v.getHTTPVDR("")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "empty url")
+
+		v.getHTTPVDR = func(url string) (v vdr, err error) {
+			return nil, fmt.Errorf("get http vdri error")
+		}
+
+		doc, err := v.Read("did")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get endpoints domain is empty and did not ipf")
+		require.Nil(t, doc)
+	})
+
+	t.Run("test error from get endpoint from ipns", func(t *testing.T) {
+		v, err := New(nil)
+		require.NoError(t, err)
+
+		v.configService = &mockConfigService{getEndpointIPNSFunc: func(did string) (*models.Endpoint, error) {
+			return nil, fmt.Errorf("failed to get endpoint ipns")
+		}}
+
+		_, err = v.getHTTPVDR("")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "empty url")
+
+		v.getHTTPVDR = func(url string) (v vdr, err error) {
+			return nil, fmt.Errorf("get http vdri error")
+		}
+
+		doc, err := v.Read("did:orb:ipfs:aaa:123")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get endpoint ipns")
+		require.Nil(t, doc)
+	})
+
 	t.Run("test success for resolver url", func(t *testing.T) {
 		v, err := New(nil)
 		require.NoError(t, err)
@@ -641,7 +681,7 @@ func TestVDRI_Read(t *testing.T) {
 	})
 
 	t.Run("test success for fetch endpoint from domain", func(t *testing.T) {
-		v, err := New(nil)
+		v, err := New(nil, WithDomain("d1"))
 		require.NoError(t, err)
 
 		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)
@@ -655,7 +695,7 @@ func TestVDRI_Read(t *testing.T) {
 	})
 
 	t.Run("test error from fetch endpoint from domain", func(t *testing.T) {
-		v, err := New(nil)
+		v, err := New(nil, WithDomain("d1"))
 		require.NoError(t, err)
 
 		v.getHTTPVDR = httpVdrFunc(nil, fmt.Errorf("failed to resolve"))
@@ -669,7 +709,7 @@ func TestVDRI_Read(t *testing.T) {
 	})
 
 	t.Run("test error different doc returned", func(t *testing.T) {
-		v, err := New(nil)
+		v, err := New(nil, WithDomain("d1"))
 		require.NoError(t, err)
 
 		c := 1
@@ -697,7 +737,7 @@ func TestVDRI_Read(t *testing.T) {
 	})
 
 	t.Run("test fetch endpoints from did not not supported", func(t *testing.T) {
-		v, err := New(nil)
+		v, err := New(nil, WithDomain("d1"))
 		require.NoError(t, err)
 
 		_, err = v.Read("did:orb:domain:123")
@@ -715,7 +755,7 @@ func TestVDRI_Read(t *testing.T) {
 	})
 
 	t.Run("cannot load jsonld context", func(t *testing.T) {
-		v, err := New(nil, WithDocumentLoader(&mockDocLoader{}))
+		v, err := New(nil, WithDomain("d1"), WithDocumentLoader(&mockDocLoader{}))
 		require.NoError(t, err)
 
 		v.getHTTPVDR = func(url string) (v vdr, e error) {
@@ -789,6 +829,7 @@ func (m *mockKeyRetriever) GetSigningKey(didID string, ot OperationType) (crypto
 type mockConfigService struct {
 	getSidetreeConfigFunc func() (*models.SidetreeConfig, error)
 	getEndpointFunc       func(domain string) (*models.Endpoint, error)
+	getEndpointIPNSFunc   func(did string) (*models.Endpoint, error)
 }
 
 func (m *mockConfigService) GetSidetreeConfig() (*models.SidetreeConfig, error) {
@@ -802,6 +843,14 @@ func (m *mockConfigService) GetSidetreeConfig() (*models.SidetreeConfig, error) 
 func (m *mockConfigService) GetEndpoint(domain string) (*models.Endpoint, error) {
 	if m.getEndpointFunc != nil {
 		return m.getEndpointFunc(domain)
+	}
+
+	return nil, nil
+}
+
+func (m *mockConfigService) GetEndpointFromIPNS(didURI string) (*models.Endpoint, error) {
+	if m.getEndpointIPNSFunc != nil {
+		return m.getEndpointIPNSFunc(didURI)
 	}
 
 	return nil, nil

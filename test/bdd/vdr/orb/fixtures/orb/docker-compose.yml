@@ -153,13 +153,13 @@ services:
 
   orb.vct:
     container_name: orb.vct
-    image: ghcr.io/trustbloc/vct:v0.1.0
+    image: ghcr.io/trustbloc-cicd/vct:v0.1.0-snapshot-f1185c0
     restart: always
     environment:
       - VCT_API_HOST=0.0.0.0:8077
       - VCT_AUTO_INIT_TREE=true
       - VCT_KMS_ENDPOINT=http://orb.kms:7878
-      - VCT_DSN=mysql://root@tcp(orb.mysql:3306)/test
+      - VCT_DSN=mysql://root@tcp(orb.mysql:3306)/test?interpolateParams=true&multiStatements=true
       - VCT_LOG_ENDPOINT=orb.trillian.log.server:8090
       - VCT_TLS_CACERTS=/etc/orb/tls/ec-cacert.pem
       - VCT_TLS_SYSTEMCERTPOOL=true
@@ -175,13 +175,15 @@ services:
 
   ipfs:
     container_name: ipfs
-    image: ipfs/go-ipfs:master-2021-04-22-eea198f
-    environment:
-      - IPFS_PATH=/data/ipfs
+    image: ipfs/go-ipfs:v0.8.0
+    ports:
+      - "4001:4001"
+      - "4001:4001/udp"
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:5001:5001"
     volumes:
       - ./data/ipfs:/data/ipfs
-    ports:
-      - "5001:5001"
+      - ./export:/export
 
   couchdb.example.com:
     container_name: couchdb.example.com

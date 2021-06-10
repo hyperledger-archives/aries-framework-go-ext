@@ -78,6 +78,7 @@ type vdr interface {
 type configService interface {
 	GetSidetreeConfig() (*models.SidetreeConfig, error)
 	GetEndpoint(domain string) (*models.Endpoint, error)
+	GetEndpointFromIPNS(did string) (*models.Endpoint, error)
 }
 
 // VDR bloc.
@@ -125,9 +126,14 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 
 	v.keyRetriever = keyRetriever
 
-	v.configService = config.NewService(config.WithHTTPClient(&http.Client{
+	var err error
+
+	v.configService, err = config.NewService(v.docLoader, config.WithHTTPClient(&http.Client{
 		Transport: &http.Transport{TLSClientConfig: v.tlsConfig},
 	}))
+	if err != nil {
+		return nil, err
+	}
 
 	return v, nil
 }
@@ -229,9 +235,23 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 		return v.sidetreeResolve(endpoints[0], did, opts...)
 	}
 
-	endpoint, err := v.configService.GetEndpoint(v.domain)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get endpoints: %w", err)
+	var endpoint *models.Endpoint
+
+	var err error
+
+	switch {
+	case v.domain != "":
+		endpoint, err = v.configService.GetEndpoint(v.domain)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get endpoints: %w", err)
+		}
+	case strings.Contains(did, fmt.Sprintf("%s:ipfs", DIDMethod)):
+		endpoint, err = v.configService.GetEndpointFromIPNS(did)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get endpoints: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("failed to get endpoints domain is empty and did not ipfs")
 	}
 
 	var docResolution *docdid.DocResolution
