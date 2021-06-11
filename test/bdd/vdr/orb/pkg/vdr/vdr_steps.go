@@ -47,12 +47,13 @@ const (
 
 // Steps is steps for VC BDD tests.
 type Steps struct {
-	bddContext   *context.BDDContext
-	createdDID   string
-	kid          string
-	httpClient   *http.Client
-	vdr          *orb.VDR
-	keyRetriever *keyRetriever
+	bddContext       *context.BDDContext
+	createdDID       string
+	kid              string
+	httpClient       *http.Client
+	vdr              *orb.VDR
+	vdrWithoutDomain *orb.VDR
+	keyRetriever     *keyRetriever
 }
 
 // NewSteps returns new agent from client SDK.
@@ -65,17 +66,33 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 		panic(err.Error())
 	}
 
-	return &Steps{bddContext: ctx, httpClient: &http.Client{}, vdr: vdr, keyRetriever: keyRetriever}
+	vdrWithoutDomain, err := orb.New(keyRetriever, orb.WithTLSConfig(ctx.TLSConfig),
+		orb.WithAuthToken("ADMIN_TOKEN"), orb.WithDisableProofCheck(true))
+	if err != nil {
+		panic(err.Error())
+	}
+
+	return &Steps{
+		bddContext:       ctx,
+		httpClient:       &http.Client{},
+		vdr:              vdr,
+		vdrWithoutDomain: vdrWithoutDomain,
+		keyRetriever:     keyRetriever,
+	}
 }
 
 // RegisterSteps registers agent steps.
 func (e *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^Orb DID is created with key type "([^"]*)" with signature suite "([^"]*)"$`,
-		e.createDID)
+		e.create)
+	s.Step(`^Orb DID is created with key type "([^"]*)" with signature suite "([^"]*)" with anchor origin ipns$`,
+		e.createWithIPNS)
 	s.Step(`^Execute shell script "([^"]*)"$`,
 		e.executeScript)
 	s.Step(`^Resolve created DID and validate key type "([^"]*)", signature suite "([^"]*)"$`,
 		e.resolveCreatedDID)
+	s.Step(`^Resolve created DID through ipns$`,
+		e.resolveCreatedDIDIPNS)
 	s.Step(`^Resolve updated DID$`,
 		e.resolveUpdatedDID)
 	s.Step(`^Resolve recovered DID$`,
@@ -218,7 +235,15 @@ func (e *Steps) updateDID(keyType, signatureSuite string) error {
 	return nil
 }
 
-func (e *Steps) createDID(keyType, signatureSuite string) error {
+func (e *Steps) create(keyType, signatureSuite string) error {
+	return e.createDID(keyType, signatureSuite, origin)
+}
+
+func (e *Steps) createWithIPNS(keyType, signatureSuite string) error {
+	return e.createDID(keyType, signatureSuite, "ipns://k51qzi5uqu5dgjceyz40t6xfnae8jqn5z17ojojggzwz2mhl7uyhdre8ateqek")
+}
+
+func (e *Steps) createDID(keyType, signatureSuite, origin string) error {
 	kid, pubKey, err := e.getPublicKey(keyType)
 	if err != nil {
 		return err
@@ -262,6 +287,29 @@ func (e *Steps) createDID(keyType, signatureSuite string) error {
 	e.kid = kid
 
 	return nil
+}
+
+func (e *Steps) resolveDIDWithoutDomain(did string) (*ariesdid.DocResolution, error) {
+	time.Sleep(3 * time.Second) //nolint: gomnd
+
+	var docResolution *ariesdid.DocResolution
+
+	for i := 1; i <= maxRetry; i++ {
+		var err error
+		docResolution, err = e.vdrWithoutDomain.Read(did)
+
+		if err == nil {
+			return docResolution, nil
+		}
+
+		if !strings.Contains(err.Error(), "DID does not exist") || i == maxRetry {
+			return nil, err
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+
+	return docResolution, nil
 }
 
 func (e *Steps) resolveDID(did string) (*ariesdid.DocResolution, error) {
@@ -351,6 +399,20 @@ func (e *Steps) resolveUpdatedDID() error {
 
 	if len(docResolution.DIDDocument.CapabilityInvocation) != 1 {
 		return fmt.Errorf("resolved updated did capabilityInvocation count is not equal to %d", 1)
+	}
+
+	return nil
+}
+
+func (e *Steps) resolveCreatedDIDIPNS() error {
+	docResolution, err := e.resolveDID(e.createdDID)
+	if err != nil {
+		return err
+	}
+
+	_, err = e.resolveDIDWithoutDomain(docResolution.DocumentMetadata.EquivalentID[1])
+	if err != nil {
+		return err
 	}
 
 	return nil

@@ -25,3 +25,10 @@ Feature: Test orb vdr
       | Bls12381G2 |  Bls12381G2Key2020          |
       | P256       |  JsonWebKey2020             |
       | P384       |  JsonWebKey2020             |
+
+
+  @orb_did_ipns
+  Scenario:
+    Then Execute shell script "./create_follow_activity.sh"
+    Then Orb DID is created with key type "Ed25519" with signature suite "JsonWebKey2020" with anchor origin ipns
+    Then Resolve created DID through ipns
