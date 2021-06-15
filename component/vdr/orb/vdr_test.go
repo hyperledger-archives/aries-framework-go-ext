@@ -651,7 +651,7 @@ func TestVDRI_Read(t *testing.T) {
 		v, err := New(nil)
 		require.NoError(t, err)
 
-		v.configService = &mockConfigService{getEndpointIPNSFunc: func(did string) (*models.Endpoint, error) {
+		v.configService = &mockConfigService{getEndpointAnchorOriginFunc: func(did string) (*models.Endpoint, error) {
 			return nil, fmt.Errorf("failed to get endpoint ipns")
 		}}
 
@@ -827,9 +827,9 @@ func (m *mockKeyRetriever) GetSigningKey(didID string, ot OperationType) (crypto
 }
 
 type mockConfigService struct {
-	getSidetreeConfigFunc func() (*models.SidetreeConfig, error)
-	getEndpointFunc       func(domain string) (*models.Endpoint, error)
-	getEndpointIPNSFunc   func(did string) (*models.Endpoint, error)
+	getSidetreeConfigFunc       func() (*models.SidetreeConfig, error)
+	getEndpointFunc             func(domain string) (*models.Endpoint, error)
+	getEndpointAnchorOriginFunc func(did string) (*models.Endpoint, error)
 }
 
 func (m *mockConfigService) GetSidetreeConfig() (*models.SidetreeConfig, error) {
@@ -848,9 +848,9 @@ func (m *mockConfigService) GetEndpoint(domain string) (*models.Endpoint, error)
 	return nil, nil
 }
 
-func (m *mockConfigService) GetEndpointFromIPNS(didURI string) (*models.Endpoint, error) {
-	if m.getEndpointIPNSFunc != nil {
-		return m.getEndpointIPNSFunc(didURI)
+func (m *mockConfigService) GetEndpointFromAnchorOrigin(didURI string) (*models.Endpoint, error) {
+	if m.getEndpointAnchorOriginFunc != nil {
+		return m.getEndpointAnchorOriginFunc(didURI)
 	}
 
 	return nil, nil

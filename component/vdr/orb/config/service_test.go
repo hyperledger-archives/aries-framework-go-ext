@@ -19,6 +19,10 @@ import (
 	"github.com/trustbloc/orb/pkg/discovery/endpoint/restapi"
 )
 
+const (
+	ipnsURL = "ipns://wwrrww"
+)
+
 func TestConfigService_GetSidetreeConfig(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		cs, err := NewService(nil)
@@ -31,12 +35,12 @@ func TestConfigService_GetSidetreeConfig(t *testing.T) {
 	})
 }
 
-func TestConfigService_GetEndpointIPNS(t *testing.T) {
+func TestConfigService_GetEndpointAnchorOrigin(t *testing.T) {
 	t.Run("test wrong did", func(t *testing.T) {
 		cs, err := NewService(nil, WithAuthToken("t1"))
 		require.NoError(t, err)
 
-		_, err = cs.getEndpointIPNS("did")
+		_, err = cs.GetEndpointFromAnchorOrigin("did")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "did format is wrong")
 	})
@@ -49,7 +53,7 @@ func TestConfigService_GetEndpointIPNS(t *testing.T) {
 			return nil, fmt.Errorf("failed to get anchor origin")
 		}}
 
-		_, err = cs.getEndpointIPNS("did:orb:ipfs:a:123")
+		_, err = cs.GetEndpointFromAnchorOrigin("did:orb:ipfs:a:123")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get anchor origin")
 	})
@@ -62,20 +66,7 @@ func TestConfigService_GetEndpointIPNS(t *testing.T) {
 			return []byte(""), nil
 		}}
 
-		_, err = cs.getEndpointIPNS("did:orb:ipfs:a:123")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "get anchor origin didn't return string")
-	})
-
-	t.Run("test get anchor origin return not string", func(t *testing.T) {
-		cs, err := NewService(nil, WithAuthToken("t1"))
-		require.NoError(t, err)
-
-		cs.orbClient = &mockOrbClient{getAnchorOriginFunc: func(cid, suffix string) (interface{}, error) {
-			return []byte(""), nil
-		}}
-
-		_, err = cs.getEndpointIPNS("did:orb:ipfs:a:123")
+		_, err = cs.GetEndpointFromAnchorOrigin("did:orb:ipfs:a:123")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "get anchor origin didn't return string")
 	})
@@ -88,9 +79,22 @@ func TestConfigService_GetEndpointIPNS(t *testing.T) {
 			return "wrong", nil
 		}}
 
-		_, err = cs.getEndpointIPNS("did:orb:ipfs:a:123")
+		_, err = cs.GetEndpointFromAnchorOrigin("did:orb:ipfs:a:123")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "anchor origin is not ipns")
+		require.Contains(t, err.Error(), "anchorOrigin wrong not supported")
+	})
+
+	t.Run("test get anchor origin return https", func(t *testing.T) {
+		cs, err := NewService(nil, WithAuthToken("t1"))
+		require.NoError(t, err)
+
+		cs.orbClient = &mockOrbClient{getAnchorOriginFunc: func(cid, suffix string) (interface{}, error) {
+			return "https://localhost", nil
+		}}
+
+		_, err = cs.GetEndpointFromAnchorOrigin("did:orb:ipfs:a:123")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "https://localhost/.well-known")
 	})
 
 	t.Run("test error fetch ipns webfinger", func(t *testing.T) {
@@ -98,12 +102,145 @@ func TestConfigService_GetEndpointIPNS(t *testing.T) {
 		require.NoError(t, err)
 
 		cs.orbClient = &mockOrbClient{getAnchorOriginFunc: func(cid, suffix string) (interface{}, error) {
-			return "ipns://wwrrww", nil
+			return ipnsURL, nil
 		}}
 
-		_, err = cs.getEndpointIPNS("did:orb:ipfs:a:123")
+		_, err = cs.GetEndpointFromAnchorOrigin("did:orb:ipfs:a:123")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "got unexpected response from")
+	})
+
+	t.Run("test error origin property not string", func(t *testing.T) {
+		cs, err := NewService(nil, WithAuthToken("t1"))
+		require.NoError(t, err)
+
+		cs.httpClient = &mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "ipns/wwrrww/.well-known/webfinger") {
+				b, errMarshal := json.Marshal(restapi.WebFingerResponse{})
+				require.NoError(t, errMarshal)
+				r := ioutil.NopCloser(bytes.NewReader(b))
+
+				return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+			}
+
+			return nil, nil
+		}}
+
+		cs.orbClient = &mockOrbClient{getAnchorOriginFunc: func(cid, suffix string) (interface{}, error) {
+			return ipnsURL, nil
+		}}
+
+		_, err = cs.GetEndpointFromAnchorOrigin("did:orb:ipfs:a:123")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "https://trustbloc.dev/ns/origin property is not string")
+	})
+
+	t.Run("test error get latest origin webfinger", func(t *testing.T) {
+		cs, err := NewService(nil, WithAuthToken("t1"))
+		require.NoError(t, err)
+
+		cs.httpClient = &mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "ipns/wwrrww/.well-known/webfinger") {
+				b, errMarshal := json.Marshal(restapi.WebFingerResponse{Properties: map[string]interface{}{
+					originResource: "https://localhost/origin",
+				}})
+				require.NoError(t, errMarshal)
+				r := ioutil.NopCloser(bytes.NewReader(b))
+
+				return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+			} else if strings.Contains(req.URL.Path, ".well-known/webfinger") {
+				return nil, fmt.Errorf("failed to get origin webfinger")
+			}
+
+			return nil, nil
+		}}
+
+		cs.orbClient = &mockOrbClient{getAnchorOriginFunc: func(cid, suffix string) (interface{}, error) {
+			return ipnsURL, nil
+		}}
+
+		_, err = cs.GetEndpointFromAnchorOrigin("did:orb:ipfs:a:123")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get origin webfinger")
+	})
+
+	t.Run("test error get latest origin", func(t *testing.T) {
+		cs, err := NewService(nil, WithAuthToken("t1"))
+		require.NoError(t, err)
+
+		cs.httpClient = &mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "ipns/wwrrww/.well-known/webfinger") {
+				b, errMarshal := json.Marshal(restapi.WebFingerResponse{Properties: map[string]interface{}{
+					originResource: "https://localhost/origin",
+				}})
+				require.NoError(t, errMarshal)
+				r := ioutil.NopCloser(bytes.NewReader(b))
+
+				return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+			} else if strings.Contains(req.URL.Path, ".well-known/webfinger") {
+				b, errMarshal := json.Marshal(restapi.WebFingerResponse{Links: []restapi.WebFingerLink{{Href: "/origin"}}})
+				require.NoError(t, errMarshal)
+				r := ioutil.NopCloser(bytes.NewReader(b))
+
+				return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+			}
+
+			return nil, fmt.Errorf("failed to get origin")
+		}}
+
+		cs.orbClient = &mockOrbClient{getAnchorOriginFunc: func(cid, suffix string) (interface{}, error) {
+			return ipnsURL, nil
+		}}
+
+		_, err = cs.GetEndpointFromAnchorOrigin("did:orb:ipfs:a:123")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get origin")
+	})
+
+	t.Run("success get latest origin", func(t *testing.T) {
+		cs, err := NewService(nil, WithAuthToken("t1"))
+		require.NoError(t, err)
+
+		cs.httpClient = &mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "ipns/wwrrww/.well-known/webfinger") { //nolint:gocritic
+				fmt.Println(req.URL.Path)
+				b, errMarshal := json.Marshal(restapi.WebFingerResponse{
+					Properties: map[string]interface{}{
+						minResolvers:   float64(2),
+						originResource: "https://localhost/origin",
+					},
+					Links: []restapi.WebFingerLink{
+						{Href: "https://localhost/resolve1", Rel: "self"},
+						{Href: "https://localhost/resolve2", Rel: "alternate"},
+					},
+				})
+
+				require.NoError(t, errMarshal)
+				r := ioutil.NopCloser(bytes.NewReader(b))
+
+				return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+			} else if strings.Contains(req.URL.Path, ".well-known/webfinger") {
+				b, errMarshal := json.Marshal(restapi.WebFingerResponse{Links: []restapi.WebFingerLink{{Href: "/origin"}}})
+				require.NoError(t, errMarshal)
+				r := ioutil.NopCloser(bytes.NewReader(b))
+
+				return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+			} else if strings.Contains(req.URL.Path, "origin") {
+				r := ioutil.NopCloser(bytes.NewReader([]byte(ipnsURL)))
+
+				return &http.Response{StatusCode: http.StatusOK, Body: r}, nil
+			}
+
+			return nil, nil
+		}}
+
+		cs.orbClient = &mockOrbClient{getAnchorOriginFunc: func(cid, suffix string) (interface{}, error) {
+			return ipnsURL, nil
+		}}
+
+		_, err = cs.GetEndpointFromAnchorOrigin("did:orb:ipfs:a:123")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "https://trustbloc.dev/ns/min-resolvers property is not float64")
 	})
 }
 
