@@ -30,7 +30,7 @@ type BDDContext struct {
 
 // NewBDDContext create new BDDContext.
 func NewBDDContext(caCertPaths ...string) (*BDDContext, error) {
-	rootCAs, err := tlsutils.GetCertPool(false, caCertPaths)
+	rootCAs, err := tlsutils.GetCertPool(true, caCertPaths)
 	if err != nil {
 		return nil, err
 	}

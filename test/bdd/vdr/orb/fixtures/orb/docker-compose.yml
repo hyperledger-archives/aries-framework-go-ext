@@ -20,9 +20,9 @@ services:
       - ORB_TLS_KEY=/etc/orb/tls/ec-key.pem
       - DID_NAMESPACE=did:orb
       - DID_ALIASES=did:orb:testnet.orb.local
-      - ALLOWED_ORIGINS=https://orb2/services/orb
+      - ALLOWED_ORIGINS=https://orb2/services/orb,ipns://k51qzi5uqu5dgjceyz40t6xfnae8jqn5z17ojojggzwz2mhl7uyhdre8ateqek
       - BATCH_WRITER_TIMEOUT=200
-      - CAS_TYPE=local
+      - CAS_TYPE=ipfs
       - IPFS_URL=ipfs:5001
       - ANCHOR_CREDENTIAL_ISSUER=https://orb1
       - ANCHOR_CREDENTIAL_URL=https://orb1/vc
@@ -59,9 +59,9 @@ services:
       - ORB_TLS_KEY=/etc/orb/tls/ec-key.pem
       - DID_NAMESPACE=did:orb
       - DID_ALIASES=did:orb:testnet.orb.local
-      - ALLOWED_ORIGINS=https://testnet.orb.local/services/orb
+      - ALLOWED_ORIGINS=https://testnet.orb.local/services/orb,ipns://k51qzi5uqu5dgjceyz40t6xfnae8jqn5z17ojojggzwz2mhl7uyhdre8ateqek
       - BATCH_WRITER_TIMEOUT=200
-      - CAS_TYPE=local
+      - CAS_TYPE=ipfs
       - IPFS_URL=ipfs:5001
       - ANCHOR_CREDENTIAL_ISSUER=https://orb2
       - ANCHOR_CREDENTIAL_URL=https://orb2/vc

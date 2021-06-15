@@ -61,6 +61,7 @@ type Service struct {
 	endpointsIPNSCache  gcache.Cache
 	httpClient          httpClient
 	authToken           string
+	disableProofCheck   bool
 	docLoader           ld.DocumentLoader
 	orbClient           orbClient
 }
@@ -77,13 +78,22 @@ func NewService(docLoader ld.DocumentLoader, opts ...Option) (*Service, error) {
 		opt(configService)
 	}
 
-	orbClient, err := orbclient.New(fmt.Sprintf("did:%s", didMethod), &casReader{s: configService},
-		orbclient.WithJSONLDDocumentLoader(docLoader), orbclient.WithPublicKeyFetcher(
+	var orbclientOpts []orbclient.Option
+
+	orbclientOpts = append(orbclientOpts, orbclient.WithJSONLDDocumentLoader(docLoader))
+
+	if configService.disableProofCheck {
+		orbclientOpts = append(orbclientOpts, orbclient.WithDisableProofCheck(configService.disableProofCheck))
+	} else {
+		orbclientOpts = append(orbclientOpts, orbclient.WithPublicKeyFetcher(
 			verifiable.NewVDRKeyResolver(vdr.New(vdr.WithVDR(&webVDR{
 				http: configService.httpClient,
 				VDR:  web.New(),
 			}),
 			)).PublicKeyFetcher()))
+	}
+
+	orbClient, err := orbclient.New(fmt.Sprintf("did:%s", didMethod), &casReader{s: configService}, orbclientOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +339,7 @@ func (cs *Service) getEndpointIPNS(didURI string) (*models.Endpoint, error) {
 
 	anchorOriginSplit := strings.Split(anchorOrigin, "ipns://")
 
-	return cs.populateResolutionEndpoint(fmt.Sprintf("%s/%s", ipfsGlobal, anchorOriginSplit[1]),
+	return cs.populateResolutionEndpoint(fmt.Sprintf("%s/%s/%s", ipfsGlobal, "ipns", anchorOriginSplit[1]),
 		url.PathEscape(anchorOrigin))
 }
 
@@ -407,6 +417,13 @@ func WithAuthToken(authToken string) Option {
 	}
 }
 
+// WithDisableProofCheck disable proof check.
+func WithDisableProofCheck(disable bool) Option {
+	return func(opts *Service) {
+		opts.disableProofCheck = disable
+	}
+}
+
 type webVDR struct {
 	http httpClient
 	*web.VDR
@@ -422,5 +439,5 @@ type casReader struct {
 }
 
 func (c *casReader) Read(key string) ([]byte, error) {
-	return c.s.send(nil, http.MethodGet, fmt.Sprintf("%s/%s", ipfsGlobal, key))
+	return c.s.send(nil, http.MethodGet, fmt.Sprintf("%s/%s/%s", ipfsGlobal, "ipfs", key))
 }

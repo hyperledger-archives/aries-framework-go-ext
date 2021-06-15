@@ -26,6 +26,7 @@ import (
 	"github.com/piprate/json-gold/ld"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/config"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/internal/ldcontext"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/models"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
@@ -83,14 +84,15 @@ type configService interface {
 
 // VDR bloc.
 type VDR struct {
-	getHTTPVDR     func(url string) (vdr, error) // needed for unit test
-	tlsConfig      *tls.Config
-	authToken      string
-	domain         string
-	sidetreeClient sidetreeClient
-	keyRetriever   KeyRetriever
-	configService  configService
-	docLoader      ld.DocumentLoader
+	getHTTPVDR        func(url string) (vdr, error) // needed for unit test
+	tlsConfig         *tls.Config
+	authToken         string
+	domain            string
+	disableProofCheck bool
+	sidetreeClient    sidetreeClient
+	keyRetriever      KeyRetriever
+	configService     configService
+	docLoader         ld.DocumentLoader
 }
 
 // KeyRetriever key retriever.
@@ -109,7 +111,12 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 	}
 
 	if v.docLoader == nil {
-		l, err := jld.NewDocumentLoader(mem.NewProvider())
+		defaultContexts, err := ldcontext.GetAll()
+		if err != nil {
+			return nil, err
+		}
+
+		l, err := jld.NewDocumentLoader(mem.NewProvider(), jld.WithExtraContexts(defaultContexts...))
 		if err != nil {
 			return nil, fmt.Errorf("failed to init default jsonld document loader: %w", err)
 		}
@@ -128,9 +135,10 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 
 	var err error
 
-	v.configService, err = config.NewService(v.docLoader, config.WithHTTPClient(&http.Client{
-		Transport: &http.Transport{TLSClientConfig: v.tlsConfig},
-	}))
+	v.configService, err = config.NewService(v.docLoader, config.WithDisableProofCheck(v.disableProofCheck),
+		config.WithHTTPClient(&http.Client{
+			Transport: &http.Transport{TLSClientConfig: v.tlsConfig},
+		}))
 	if err != nil {
 		return nil, err
 	}
@@ -640,6 +648,13 @@ func WithAuthToken(authToken string) Option {
 func WithDomain(domain string) Option {
 	return func(opts *VDR) {
 		opts.domain = domain
+	}
+}
+
+// WithDisableProofCheck disable proof check.
+func WithDisableProofCheck(disable bool) Option {
+	return func(opts *VDR) {
+		opts.disableProofCheck = disable
 	}
 }
 
