@@ -51,6 +51,7 @@ const (
 	RecoverOpt = "recover"
 	// AnchorOriginOpt anchor origin opt.
 	AnchorOriginOpt = "anchorOrigin"
+	didParts        = 5
 )
 
 var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
@@ -258,8 +259,19 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 		if err != nil {
 			return nil, fmt.Errorf("failed to get endpoints: %w", err)
 		}
+	case strings.Contains(did, fmt.Sprintf("%s:webcas", DIDMethod)):
+		didSplit := strings.Split(did, ":")
+
+		if len(didSplit) < didParts {
+			return nil, fmt.Errorf("did format is wrong")
+		}
+
+		endpoint, err = v.configService.GetEndpoint(didSplit[3])
+		if err != nil {
+			return nil, fmt.Errorf("failed to get endpoints: %w", err)
+		}
 	default:
-		return nil, fmt.Errorf("failed to get endpoints domain is empty and did not ipfs")
+		return nil, fmt.Errorf("failed to get endpoints domain is empty and did not ipfs or webcase")
 	}
 
 	var docResolution *docdid.DocResolution

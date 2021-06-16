@@ -629,7 +629,7 @@ func TestVDRI_Read(t *testing.T) {
 		require.Nil(t, doc)
 	})
 
-	t.Run("test error domain is empty and did not ipfs", func(t *testing.T) {
+	t.Run("test error domain is empty and did not ipfs or webcas", func(t *testing.T) {
 		v, err := New(nil)
 		require.NoError(t, err)
 
@@ -643,7 +643,7 @@ func TestVDRI_Read(t *testing.T) {
 
 		doc, err := v.Read("did")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to get endpoints domain is empty and did not ipf")
+		require.Contains(t, err.Error(), "failed to get endpoints domain is empty and did not ipfs or webcas")
 		require.Nil(t, doc)
 	})
 
@@ -690,6 +690,20 @@ func TestVDRI_Read(t *testing.T) {
 		}}
 
 		doc, err := v.Read("did:ex:domain:1234")
+		require.NoError(t, err)
+		require.Equal(t, "did", doc.DIDDocument.ID)
+	})
+
+	t.Run("test success for fetch endpoint from webcas", func(t *testing.T) {
+		v, err := New(nil, WithDomain("d1"))
+		require.NoError(t, err)
+
+		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)
+		v.configService = &mockConfigService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
+		}}
+
+		doc, err := v.Read("did:orb:webcas:domain:1234")
 		require.NoError(t, err)
 		require.Equal(t, "did", doc.DIDDocument.ID)
 	})
