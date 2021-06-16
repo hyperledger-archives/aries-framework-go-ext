@@ -79,7 +79,7 @@ type vdr interface {
 type configService interface {
 	GetSidetreeConfig() (*models.SidetreeConfig, error)
 	GetEndpoint(domain string) (*models.Endpoint, error)
-	GetEndpointFromIPNS(did string) (*models.Endpoint, error)
+	GetEndpointFromAnchorOrigin(did string) (*models.Endpoint, error)
 }
 
 // VDR bloc.
@@ -254,7 +254,7 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 			return nil, fmt.Errorf("failed to get endpoints: %w", err)
 		}
 	case strings.Contains(did, fmt.Sprintf("%s:ipfs", DIDMethod)):
-		endpoint, err = v.configService.GetEndpointFromIPNS(did)
+		endpoint, err = v.configService.GetEndpointFromAnchorOrigin(did)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get endpoints: %w", err)
 		}

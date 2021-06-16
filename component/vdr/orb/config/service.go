@@ -37,9 +37,10 @@ var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
 
 const (
 	// default hashes for sidetree.
-	sha2_256     = 18 // multihash
-	maxAge       = 3600
-	minResolvers = "https://trustbloc.dev/ns/min-resolvers"
+	sha2_256       = 18 // multihash
+	maxAge         = 3600
+	minResolvers   = "https://trustbloc.dev/ns/min-resolvers"
+	originResource = "https://trustbloc.dev/ns/origin"
 	// did method.
 	didMethod  = "orb"
 	ipfsGlobal = "https://ipfs.io"
@@ -56,14 +57,14 @@ type orbClient interface {
 
 // Service fetches configs, caching results in-memory.
 type Service struct {
-	sidetreeConfigCache gcache.Cache
-	endpointsCache      gcache.Cache
-	endpointsIPNSCache  gcache.Cache
-	httpClient          httpClient
-	authToken           string
-	disableProofCheck   bool
-	docLoader           ld.DocumentLoader
-	orbClient           orbClient
+	sidetreeConfigCache        gcache.Cache
+	endpointsCache             gcache.Cache
+	endpointsAnchorOriginCache gcache.Cache
+	httpClient                 httpClient
+	authToken                  string
+	disableProofCheck          bool
+	docLoader                  ld.DocumentLoader
+	orbClient                  orbClient
 }
 
 type req struct {
@@ -110,9 +111,9 @@ func NewService(docLoader ld.DocumentLoader, opts ...Option) (*Service, error) {
 			return configService.getEndpoint(domain)
 		}))
 
-	configService.endpointsIPNSCache = makeCache(
+	configService.endpointsAnchorOriginCache = makeCache(
 		configService.getNewCacheable(func(did, domain string) (cacheable, error) {
-			return configService.getEndpointIPNS(did)
+			return configService.getEndpointAnchorOrigin(did)
 		}))
 
 	return configService, nil
@@ -184,11 +185,11 @@ func (cs *Service) GetEndpoint(domain string) (*models.Endpoint, error) {
 	return endpoint.(*models.Endpoint), nil
 }
 
-// GetEndpointFromIPNS fetches endpoints from ipns, caching the value.
-func (cs *Service) GetEndpointFromIPNS(didURI string) (*models.Endpoint, error) {
-	endpoint, err := getEntryHelper(cs.endpointsIPNSCache, req{
+// GetEndpointFromAnchorOrigin fetches endpoints from anchor origin, caching the value.
+func (cs *Service) GetEndpointFromAnchorOrigin(didURI string) (*models.Endpoint, error) {
+	endpoint, err := getEntryHelper(cs.endpointsAnchorOriginCache, req{
 		did: didURI,
-	}, "endpointIPNS")
+	}, "endpointAnchorOrigin")
 	if err != nil {
 		return nil, err
 	}
@@ -221,8 +222,8 @@ func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) {
 		return nil, err
 	}
 
-	endpoint, err := cs.populateResolutionEndpoint(fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host),
-		url.PathEscape(wellKnownResponse.ResolutionEndpoint))
+	endpoint, err := cs.populateResolutionEndpoint(fmt.Sprintf("%s://%s/.well-known/webfinger?resource=%s",
+		parsedURL.Scheme, parsedURL.Host, url.PathEscape(wellKnownResponse.ResolutionEndpoint)))
 	if err != nil {
 		return nil, err
 	}
@@ -241,11 +242,10 @@ func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) {
 }
 
 //nolint: funlen,gocyclo
-func (cs *Service) populateResolutionEndpoint(path, resource string) (*models.Endpoint, error) {
+func (cs *Service) populateResolutionEndpoint(webFingerURL string) (*models.Endpoint, error) {
 	var webFingerResponse restapi.WebFingerResponse
 
-	err := cs.sendRequest(nil, http.MethodGet, fmt.Sprintf("%s/.well-known/webfinger?resource=%s",
-		path, resource), &webFingerResponse)
+	err := cs.sendRequest(nil, http.MethodGet, webFingerURL, &webFingerResponse)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +316,7 @@ func (cs *Service) populateResolutionEndpoint(path, resource string) (*models.En
 	return endpoint, nil
 }
 
-func (cs *Service) getEndpointIPNS(didURI string) (*models.Endpoint, error) {
+func (cs *Service) getEndpointAnchorOrigin(didURI string) (*models.Endpoint, error) {
 	didSplit := strings.Split(didURI, ":")
 
 	if len(didSplit) < didParts {
@@ -333,14 +333,85 @@ func (cs *Service) getEndpointIPNS(didURI string) (*models.Endpoint, error) {
 		return nil, fmt.Errorf("get anchor origin didn't return string")
 	}
 
-	if !strings.HasPrefix(anchorOrigin, "ipns://") {
-		return nil, fmt.Errorf("anchor origin is not ipns")
+	currentAnchorOrigin := anchorOrigin
+
+	for {
+		latestAnchorOrigin, errGet := cs.getLatestAnchorOrigin(currentAnchorOrigin, didSplit[4])
+		if errGet != nil {
+			return nil, errGet
+		}
+
+		if latestAnchorOrigin == currentAnchorOrigin {
+			break
+		}
+
+		currentAnchorOrigin = latestAnchorOrigin
 	}
 
-	anchorOriginSplit := strings.Split(anchorOrigin, "ipns://")
+	webFingerURL, err := cs.getWebFingerURL(currentAnchorOrigin)
+	if err != nil {
+		return nil, err
+	}
 
-	return cs.populateResolutionEndpoint(fmt.Sprintf("%s/%s/%s", ipfsGlobal, "ipns", anchorOriginSplit[1]),
-		url.PathEscape(anchorOrigin))
+	return cs.populateResolutionEndpoint(webFingerURL)
+}
+
+func (cs *Service) getWebFingerURL(anchorOrigin string) (string, error) {
+	if strings.HasPrefix(anchorOrigin, "ipns://") {
+		anchorOriginSplit := strings.Split(anchorOrigin, "ipns://")
+
+		return fmt.Sprintf("%s/%s/%s/.well-known/webfinger?resource=%s", ipfsGlobal, "ipns",
+			anchorOriginSplit[1], url.PathEscape(anchorOrigin)), nil
+	} else if strings.HasPrefix(anchorOrigin, "http://") || strings.HasPrefix(anchorOrigin, "https://") {
+		parsedURL, err := url.Parse(anchorOrigin)
+		if err != nil {
+			return "", err
+		}
+
+		urlValue := fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host)
+
+		return fmt.Sprintf("%s/.well-known/webfinger?resource=%s", urlValue, url.PathEscape(urlValue)), nil
+	}
+
+	return "", fmt.Errorf("anchorOrigin %s not supported", anchorOrigin)
+}
+
+func (cs *Service) getLatestAnchorOrigin(anchorOrigin, suffix string) (string, error) {
+	var webFingerResponse restapi.WebFingerResponse
+
+	webFingerURL, err := cs.getWebFingerURL(anchorOrigin)
+	if err != nil {
+		return "", err
+	}
+
+	err = cs.sendRequest(nil, http.MethodGet, webFingerURL, &webFingerResponse)
+	if err != nil {
+		return "", err
+	}
+
+	origin, ok := webFingerResponse.Properties[originResource].(string)
+	if !ok {
+		return "", fmt.Errorf("%s property is not string", originResource)
+	}
+
+	parsedURL, err := url.Parse(origin)
+	if err != nil {
+		return "", err
+	}
+
+	err = cs.sendRequest(nil, http.MethodGet, fmt.Sprintf("%s://%s/.well-known/webfinger?resource=%s",
+		parsedURL.Scheme, parsedURL.Host, url.PathEscape(origin)), &webFingerResponse)
+	if err != nil {
+		return "", err
+	}
+
+	respBytes, err := cs.send(nil, http.MethodGet, fmt.Sprintf("%s/%s",
+		webFingerResponse.Links[0].Href, suffix))
+	if err != nil {
+		return "", err
+	}
+
+	return string(respBytes), nil
 }
 
 func (cs *Service) send(req []byte, method, endpointURL string) ([]byte, error) {

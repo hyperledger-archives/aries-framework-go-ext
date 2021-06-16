@@ -87,12 +87,14 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 		e.create)
 	s.Step(`^Orb DID is created with key type "([^"]*)" with signature suite "([^"]*)" with anchor origin ipns$`,
 		e.createWithIPNS)
+	s.Step(`^Orb DID is created with key type "([^"]*)" with signature suite "([^"]*)" with anchor origin https`,
+		e.createWithHTTPS)
 	s.Step(`^Execute shell script "([^"]*)"$`,
 		e.executeScript)
 	s.Step(`^Resolve created DID and validate key type "([^"]*)", signature suite "([^"]*)"$`,
 		e.resolveCreatedDID)
-	s.Step(`^Resolve created DID through ipns$`,
-		e.resolveCreatedDIDIPNS)
+	s.Step(`^Resolve created DID through anchor origin`,
+		e.resolveCreatedDIDThroughAnchorOrigin)
 	s.Step(`^Resolve updated DID$`,
 		e.resolveUpdatedDID)
 	s.Step(`^Resolve recovered DID$`,
@@ -240,7 +242,11 @@ func (e *Steps) create(keyType, signatureSuite string) error {
 }
 
 func (e *Steps) createWithIPNS(keyType, signatureSuite string) error {
-	return e.createDID(keyType, signatureSuite, "ipns://k51qzi5uqu5dgjceyz40t6xfnae8jqn5z17ojojggzwz2mhl7uyhdre8ateqek")
+	return e.createDID(keyType, signatureSuite, "ipns://k51qzi5uqu5djant7q3o3x04vtnr4yhannb491x9vo0vodlu7v22yy51k3wwzw")
+}
+
+func (e *Steps) createWithHTTPS(keyType, signatureSuite string) error {
+	return e.createDID(keyType, signatureSuite, "https://testnet.orb.local/services/orb")
 }
 
 func (e *Steps) createDID(keyType, signatureSuite, origin string) error {
@@ -404,7 +410,7 @@ func (e *Steps) resolveUpdatedDID() error {
 	return nil
 }
 
-func (e *Steps) resolveCreatedDIDIPNS() error {
+func (e *Steps) resolveCreatedDIDThroughAnchorOrigin() error {
 	docResolution, err := e.resolveDID(e.createdDID)
 	if err != nil {
 		return err
