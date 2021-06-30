@@ -116,7 +116,7 @@ func TestConfigService_GetEndpointAnchorOrigin(t *testing.T) {
 
 		cs.httpClient = &mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
 			if strings.Contains(req.URL.Path, "ipns/wwrrww/.well-known/host-meta.json") {
-				b, errMarshal := json.Marshal(restapi.WebFingerResponse{})
+				b, errMarshal := json.Marshal(restapi.JRD{})
 				require.NoError(t, errMarshal)
 				r := ioutil.NopCloser(bytes.NewReader(b))
 
@@ -141,11 +141,11 @@ func TestConfigService_GetEndpointAnchorOrigin(t *testing.T) {
 
 		cs.httpClient = &mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
 			if strings.Contains(req.URL.Path, "ipns/wwrrww/.well-known/host-meta.json") {
-				b, errMarshal := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{Links: []restapi.Link{{
+				b, errMarshal := json.Marshal(restapi.JRD{Links: []restapi.Link{{
 					Rel:      "self",
 					Template: "https://localhost/.well-known/webfinger?resource={uri}",
 					Type:     "application/jrd+json",
-				}}}})
+				}}})
 				require.NoError(t, errMarshal)
 				r := ioutil.NopCloser(bytes.NewReader(b))
 
@@ -172,11 +172,11 @@ func TestConfigService_GetEndpointAnchorOrigin(t *testing.T) {
 
 		cs.httpClient = &mockHTTPClient{doFunc: func(req *http.Request) (*http.Response, error) {
 			if strings.Contains(req.URL.Path, "ipns/wwrrww/.well-known/host-meta.json") {
-				b, errMarshal := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{Links: []restapi.Link{{
+				b, errMarshal := json.Marshal(restapi.JRD{Links: []restapi.Link{{
 					Rel:      "self",
 					Template: "https://localhost/.well-known/webfinger?resource={uri}",
 					Type:     "application/jrd+json",
-				}}}})
+				}}})
 				require.NoError(t, errMarshal)
 				r := ioutil.NopCloser(bytes.NewReader(b))
 
@@ -184,7 +184,7 @@ func TestConfigService_GetEndpointAnchorOrigin(t *testing.T) {
 			}
 			if strings.Contains(req.URL.Path, ".well-known/webfinger") {
 				fmt.Println(req.URL.Path)
-				b, errMarshal := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{
+				b, errMarshal := json.Marshal(restapi.JRD{
 					Properties: map[string]interface{}{
 						minResolvers:         float64(2),
 						anchorOriginProperty: ipnsURL,
@@ -193,7 +193,7 @@ func TestConfigService_GetEndpointAnchorOrigin(t *testing.T) {
 						{Href: "https://localhost/resolve1/did:orb:ipfs:a:123", Rel: "self", Type: "application/did+ld+json"},
 						{Href: "https://localhost/resolve2/did:orb:ipfs:a:123", Rel: "alternate", Type: "application/did+ld+json"},
 					},
-				}})
+				})
 
 				require.NoError(t, errMarshal)
 				r := ioutil.NopCloser(bytes.NewReader(b))
@@ -232,9 +232,9 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 
 				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
 					strings.Contains(req.URL.RawQuery, "op") {
-					b, err := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{
+					b, err := json.Marshal(restapi.JRD{
 						Links: []restapi.Link{{Href: "https://localhost/op1"}, {Href: "https://localhost/op2"}},
-					}})
+					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
 
@@ -243,13 +243,13 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 
 				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
 					strings.Contains(req.URL.RawQuery, "resolve1") {
-					b, err := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{
+					b, err := json.Marshal(restapi.JRD{
 						Properties: map[string]interface{}{minResolvers: float64(2)},
 						Links: []restapi.Link{
 							{Href: "https://localhost/resolve1", Rel: "self"},
 							{Href: "https://localhost/resolve2", Rel: "alternate"},
 						},
-					}})
+					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
 
@@ -258,13 +258,13 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 
 				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
 					strings.Contains(req.URL.RawQuery, "resolve2") {
-					b, err := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{
+					b, err := json.Marshal(restapi.JRD{
 						Properties: map[string]interface{}{minResolvers: float64(2)},
 						Links: []restapi.Link{
 							{Href: "https://localhost/resolve2", Rel: "self"},
 							{Href: "https://localhost/resolve1", Rel: "alternate"},
 						},
-					}})
+					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
 
@@ -299,13 +299,13 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 
 				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
 					strings.Contains(req.URL.RawQuery, "resolve1") {
-					b, err := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{
+					b, err := json.Marshal(restapi.JRD{
 						Properties: map[string]interface{}{minResolvers: float64(2)},
 						Links: []restapi.Link{
 							{Href: "https://localhost/resolve1", Rel: "self"},
 							{Href: "https://localhost/resolve2", Rel: "alternate"},
 						},
-					}})
+					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
 
@@ -346,9 +346,9 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 
 				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
 					strings.Contains(req.URL.RawQuery, "op") {
-					b, err := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{
+					b, err := json.Marshal(restapi.JRD{
 						Links: []restapi.Link{{Href: "https://localhost/op1"}, {Href: "https://localhost/op2"}},
-					}})
+					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
 
@@ -357,13 +357,13 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 
 				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
 					strings.Contains(req.URL.RawQuery, "resolve1") {
-					b, err := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{
+					b, err := json.Marshal(restapi.JRD{
 						Properties: map[string]interface{}{minResolvers: float64(2)},
 						Links: []restapi.Link{
 							{Href: "https://localhost/resolve1", Rel: "self"},
 							{Href: "https://localhost/resolve2", Rel: "alternate"},
 						},
-					}})
+					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
 
@@ -372,13 +372,13 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 
 				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
 					strings.Contains(req.URL.RawQuery, "resolve2") {
-					b, err := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{
+					b, err := json.Marshal(restapi.JRD{
 						Properties: map[string]interface{}{minResolvers: float64(3)},
 						Links: []restapi.Link{
 							{Href: "https://localhost/resolve2", Rel: "self"},
 							{Href: "https://localhost/resolve1", Rel: "alternate"},
 						},
-					}})
+					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
 
@@ -413,9 +413,9 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 
 				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
 					strings.Contains(req.URL.RawQuery, "op") {
-					b, err := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{
+					b, err := json.Marshal(restapi.JRD{
 						Links: []restapi.Link{{Href: "https://localhost/op1"}, {Href: "https://localhost/op2"}},
-					}})
+					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
 
@@ -424,13 +424,13 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 
 				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
 					strings.Contains(req.URL.RawQuery, "resolve1") {
-					b, err := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{
+					b, err := json.Marshal(restapi.JRD{
 						Properties: map[string]interface{}{minResolvers: float64(2)},
 						Links: []restapi.Link{
 							{Href: "https://localhost/resolve1", Rel: "self"},
 							{Href: "https://localhost/resolve2", Rel: "alternate"},
 						},
-					}})
+					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
 
@@ -439,12 +439,12 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 
 				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
 					strings.Contains(req.URL.RawQuery, "resolve2") {
-					b, err := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{
+					b, err := json.Marshal(restapi.JRD{
 						Properties: map[string]interface{}{minResolvers: float64(2)},
 						Links: []restapi.Link{
 							{Href: "https://localhost/resolve2", Rel: "self"},
 						},
-					}})
+					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
 
@@ -534,13 +534,13 @@ func TestConfigService_GetEndpoint(t *testing.T) { //nolint: gocyclo,gocognit
 
 				if strings.Contains(req.URL.Path, ".well-known/webfinger") &&
 					strings.Contains(req.URL.RawQuery, "resolve") {
-					b, err := json.Marshal(restapi.WebFingerResponse{JRD: restapi.JRD{
+					b, err := json.Marshal(restapi.JRD{
 						Properties: map[string]interface{}{minResolvers: float64(2)},
 						Links: []restapi.Link{
 							{Href: "https://localhost/resolve1"},
 							{Href: "https://localhost/resolve2"},
 						},
-					}})
+					})
 					require.NoError(t, err)
 					r := ioutil.NopCloser(bytes.NewReader(b))
 

@@ -215,7 +215,7 @@ func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) {
 		return nil, err
 	}
 
-	var webFingerResponse restapi.WebFingerResponse
+	var jrd restapi.JRD
 
 	parsedURL, err := url.Parse(wellKnownResponse.ResolutionEndpoint)
 	if err != nil {
@@ -229,12 +229,12 @@ func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) {
 	}
 
 	err = cs.sendRequest(nil, http.MethodGet, fmt.Sprintf("%s://%s/.well-known/webfinger?resource=%s",
-		parsedURL.Scheme, parsedURL.Host, url.PathEscape(wellKnownResponse.OperationEndpoint)), &webFingerResponse)
+		parsedURL.Scheme, parsedURL.Host, url.PathEscape(wellKnownResponse.OperationEndpoint)), &jrd)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, v := range webFingerResponse.Links {
+	for _, v := range jrd.Links {
 		endpoint.OperationEndpoints = append(endpoint.OperationEndpoints, v.Href)
 	}
 
@@ -242,17 +242,17 @@ func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) {
 }
 
 func (cs *Service) populateAnchorResolutionEndpoint(
-	webFingerResponse *restapi.WebFingerResponse) (*models.Endpoint, error) {
+	jrd *restapi.JRD) (*models.Endpoint, error) {
 	endpoint := &models.Endpoint{}
 
-	min, ok := webFingerResponse.Properties[minResolvers].(float64)
+	min, ok := jrd.Properties[minResolvers].(float64)
 	if !ok {
 		return nil, fmt.Errorf("%s property is not float64", minResolvers)
 	}
 
 	endpoint.MinResolvers = int(min)
 
-	for _, v := range webFingerResponse.Links {
+	for _, v := range jrd.Links {
 		if v.Type == "application/did+ld+json" {
 			endpoint.ResolutionEndpoints = append(endpoint.ResolutionEndpoints,
 				v.Href[:strings.Index(v.Href, fmt.Sprintf("did:%s", didMethod))-1])
@@ -264,16 +264,16 @@ func (cs *Service) populateAnchorResolutionEndpoint(
 
 //nolint: funlen,gocyclo
 func (cs *Service) populateResolutionEndpoint(webFingerURL string) (*models.Endpoint, error) {
-	var webFingerResponse restapi.WebFingerResponse
+	var jrd restapi.JRD
 
-	err := cs.sendRequest(nil, http.MethodGet, webFingerURL, &webFingerResponse)
+	err := cs.sendRequest(nil, http.MethodGet, webFingerURL, &jrd)
 	if err != nil {
 		return nil, err
 	}
 
 	endpoint := &models.Endpoint{}
 
-	min, ok := webFingerResponse.Properties[minResolvers].(float64)
+	min, ok := jrd.Properties[minResolvers].(float64)
 	if !ok {
 		return nil, fmt.Errorf("%s property is not float64", minResolvers)
 	}
@@ -282,7 +282,7 @@ func (cs *Service) populateResolutionEndpoint(webFingerURL string) (*models.Endp
 
 	m := make(map[string]struct{})
 
-	for _, v := range webFingerResponse.Links {
+	for _, v := range jrd.Links {
 		m[v.Href] = struct{}{}
 	}
 
@@ -290,9 +290,9 @@ func (cs *Service) populateResolutionEndpoint(webFingerURL string) (*models.Endp
 	// Validates that each well-known configuration has the same policy for n and that all of the
 	// chosen links are listed in the n fetched configurations.
 
-	for _, v := range webFingerResponse.Links {
+	for _, v := range jrd.Links {
 		if v.Rel != "self" { //nolint: nestif
-			var webFingerResp restapi.WebFingerResponse
+			var webFingerResp restapi.JRD
 
 			parsedURL, err := url.Parse(v.Href)
 			if err != nil {
@@ -316,7 +316,7 @@ func (cs *Service) populateResolutionEndpoint(webFingerURL string) (*models.Endp
 				continue
 			}
 
-			if len(webFingerResp.Links) != len(webFingerResponse.Links) {
+			if len(webFingerResp.Links) != len(jrd.Links) {
 				logger.Warnf("%s has different link", v.Href, minResolvers)
 
 				continue
@@ -356,21 +356,21 @@ func (cs *Service) getEndpointAnchorOrigin(didURI string) (*models.Endpoint, err
 
 	currentAnchorOrigin := anchorOrigin
 
-	var currentWebFingerRespone *restapi.WebFingerResponse
+	var currentWebFingerRespone *restapi.JRD
 
 	for {
-		webFingerResponseLatestAnchorOrigin, errGet := cs.getLatestAnchorOrigin(currentAnchorOrigin, didURI)
+		jrdLatestAnchorOrigin, errGet := cs.getLatestAnchorOrigin(currentAnchorOrigin, didURI)
 		if errGet != nil {
 			return nil, errGet
 		}
 
-		latestAnchorOrigin, ok := webFingerResponseLatestAnchorOrigin.Properties[anchorOriginProperty].(string)
+		latestAnchorOrigin, ok := jrdLatestAnchorOrigin.Properties[anchorOriginProperty].(string)
 		if !ok {
 			return nil, fmt.Errorf("%s property is not string", anchorOriginProperty)
 		}
 
 		if latestAnchorOrigin == currentAnchorOrigin {
-			currentWebFingerRespone = webFingerResponseLatestAnchorOrigin
+			currentWebFingerRespone = jrdLatestAnchorOrigin
 
 			break
 		}
@@ -401,22 +401,22 @@ func (cs *Service) getWebFingerURL(anchorOrigin string) (string, error) {
 	return "", fmt.Errorf("anchorOrigin %s not supported", anchorOrigin)
 }
 
-func (cs *Service) getLatestAnchorOrigin(anchorOrigin, didURI string) (*restapi.WebFingerResponse, error) {
-	var webFingerResponse restapi.WebFingerResponse
+func (cs *Service) getLatestAnchorOrigin(anchorOrigin, didURI string) (*restapi.JRD, error) {
+	var jrd restapi.JRD
 
 	webFingerURL, err := cs.getWebFingerURL(anchorOrigin)
 	if err != nil {
 		return nil, err
 	}
 
-	err = cs.sendRequest(nil, http.MethodGet, webFingerURL, &webFingerResponse)
+	err = cs.sendRequest(nil, http.MethodGet, webFingerURL, &jrd)
 	if err != nil {
 		return nil, err
 	}
 
 	templateURL := ""
 
-	for _, v := range webFingerResponse.Links {
+	for _, v := range jrd.Links {
 		if v.Rel == "self" && v.Type == "application/jrd+json" {
 			templateURL = strings.ReplaceAll(v.Template, "{uri}", didURI)
 
@@ -428,12 +428,12 @@ func (cs *Service) getLatestAnchorOrigin(anchorOrigin, didURI string) (*restapi.
 		return nil, fmt.Errorf("failed to find template url in webfinger doc")
 	}
 
-	err = cs.sendRequest(nil, http.MethodGet, templateURL, &webFingerResponse)
+	err = cs.sendRequest(nil, http.MethodGet, templateURL, &jrd)
 	if err != nil {
 		return nil, err
 	}
 
-	return &webFingerResponse, nil
+	return &jrd, nil
 }
 
 func (cs *Service) send(req []byte, method, endpointURL string) ([]byte, error) {
