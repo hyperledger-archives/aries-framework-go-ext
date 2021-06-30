@@ -276,6 +276,7 @@ type store struct {
 	name      string
 	tableName string
 	close     closer
+	lock      sync.RWMutex
 }
 
 func (s *store) Put(key string, value []byte, tags ...storage.Tag) error {
@@ -494,6 +495,9 @@ func (s *store) Close() error {
 
 // TODO optimize tagMap: https://github.com/hyperledger/aries-framework-go-ext/issues/109
 func (s *store) updateTagMap(key string, tags []storage.Tag) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	tagMap, err := s.getTagMap()
 	if err != nil {
 		return fmt.Errorf("failed to get tag map: %w", err)
@@ -569,6 +573,9 @@ func (s *store) getDBEntry(key string) (dbEntry, error) {
 }
 
 func (s *store) removeFromTagMap(keyToRemove string) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	tagMap, err := s.getTagMap()
 	if err != nil {
 		// If there's no tag map, then this means that no store configuration was set.
