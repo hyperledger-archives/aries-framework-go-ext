@@ -12,5 +12,5 @@ require (
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210604191029-fce55e13c101
 	github.com/piprate/json-gold v0.4.0
 	github.com/stretchr/testify v1.7.0
-	github.com/trustbloc/orb v0.1.2-0.20210609211752-6b2a1f8d7f21
+	github.com/trustbloc/orb v0.1.2-0.20210630053623-2436c6c2da6a
 )

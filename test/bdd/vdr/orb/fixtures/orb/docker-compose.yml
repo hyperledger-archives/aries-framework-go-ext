@@ -13,14 +13,14 @@ services:
     restart: always
     environment:
       - ORB_KMS_ENDPOINT=http://orb.kms:7878
-      - ORB_VCT_URL=http://orb.vct:8077
+      - ORB_VCT_URL=http://orb.vct:8077/maple2020
       - ORB_HOST_URL=0.0.0.0:443
       - ORB_EXTERNAL_ENDPOINT=https://testnet.orb.local
       - ORB_TLS_CERTIFICATE=/etc/orb/tls/ec-pubCert.pem
       - ORB_TLS_KEY=/etc/orb/tls/ec-key.pem
       - DID_NAMESPACE=did:orb
       - DID_ALIASES=did:orb:testnet.orb.local
-      - ALLOWED_ORIGINS=https://testnet.orb.local/services/orb,https://orb2/services/orb,ipns://k51qzi5uqu5djant7q3o3x04vtnr4yhannb491x9vo0vodlu7v22yy51k3wwzw
+      - ALLOWED_ORIGINS=https://testnet.orb.local/services/orb,https://orb2/services/orb,ipns://k51qzi5uqu5dgkmm1afrkmex5mzpu5r774jstpxjmro6mdsaullur27nfxle1q
       - BATCH_WRITER_TIMEOUT=200
       - CAS_TYPE=ipfs
       - IPFS_URL=ipfs:5001
@@ -52,14 +52,14 @@ services:
     restart: always
     environment:
       - ORB_KMS_ENDPOINT=http://orb.kms:7878
-      - ORB_VCT_URL=http://orb.vct:8077
+      - ORB_VCT_URL=http://orb.vct:8077/maple2020
       - ORB_HOST_URL=0.0.0.0:443
       - ORB_EXTERNAL_ENDPOINT=https://orb2
       - ORB_TLS_CERTIFICATE=/etc/orb/tls/ec-pubCert.pem
       - ORB_TLS_KEY=/etc/orb/tls/ec-key.pem
       - DID_NAMESPACE=did:orb
       - DID_ALIASES=did:orb:testnet.orb.local
-      - ALLOWED_ORIGINS=https://testnet.orb.local/services/orb,ipns://k51qzi5uqu5djant7q3o3x04vtnr4yhannb491x9vo0vodlu7v22yy51k3wwzw
+      - ALLOWED_ORIGINS=https://testnet.orb.local/services/orb,ipns://k51qzi5uqu5dgkmm1afrkmex5mzpu5r774jstpxjmro6mdsaullur27nfxle1q
       - BATCH_WRITER_TIMEOUT=200
       - CAS_TYPE=ipfs
       - IPFS_URL=ipfs:5001
@@ -102,7 +102,7 @@ services:
 
   orb.trillian.log.server:
     container_name: orb.trillian.log.server
-    image: ghcr.io/trustbloc/vct-log-server:v0.1.1
+    image: ghcr.io/trustbloc-cicd/vct-log-server:v0.1.0-snapshot-eca8d26
     restart: always
     command:
       - --mysql_uri=root@tcp(orb.mysql:3306)/test
@@ -113,7 +113,7 @@ services:
 
   orb.trillian.log.signer:
     container_name: orb.trillian.log.signer
-    image: ghcr.io/trustbloc/vct-log-signer:v0.1.1
+    image: ghcr.io/trustbloc-cicd/vct-log-signer:v0.1.0-snapshot-eca8d26
     restart: always
     command:
       - --mysql_uri=root@tcp(orb.mysql:3306)/test
@@ -153,11 +153,11 @@ services:
 
   orb.vct:
     container_name: orb.vct
-    image: ghcr.io/trustbloc-cicd/vct:v0.1.0-snapshot-f1185c0
+    image: ghcr.io/trustbloc-cicd/vct:v0.1.0-snapshot-eca8d26
     restart: always
     environment:
       - VCT_API_HOST=0.0.0.0:8077
-      - VCT_AUTO_INIT_TREE=true
+      - VCT_LOGS=maple2020:rw@orb.trillian.log.server:8090
       - VCT_KMS_ENDPOINT=http://orb.kms:7878
       - VCT_DSN=mysql://root@tcp(orb.mysql:3306)/test?interpolateParams=true&multiStatements=true
       - VCT_LOG_ENDPOINT=orb.trillian.log.server:8090

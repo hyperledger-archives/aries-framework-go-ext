@@ -242,7 +242,7 @@ func (e *Steps) create(keyType, signatureSuite string) error {
 }
 
 func (e *Steps) createWithIPNS(keyType, signatureSuite string) error {
-	return e.createDID(keyType, signatureSuite, "ipns://k51qzi5uqu5djant7q3o3x04vtnr4yhannb491x9vo0vodlu7v22yy51k3wwzw")
+	return e.createDID(keyType, signatureSuite, "ipns://k51qzi5uqu5dgkmm1afrkmex5mzpu5r774jstpxjmro6mdsaullur27nfxle1q")
 }
 
 func (e *Steps) createWithHTTPS(keyType, signatureSuite string) error {
