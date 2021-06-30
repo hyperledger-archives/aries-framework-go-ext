@@ -37,10 +37,10 @@ var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
 
 const (
 	// default hashes for sidetree.
-	sha2_256       = 18 // multihash
-	maxAge         = 3600
-	minResolvers   = "https://trustbloc.dev/ns/min-resolvers"
-	originResource = "https://trustbloc.dev/ns/origin"
+	sha2_256             = 18 // multihash
+	maxAge               = 3600
+	minResolvers         = "https://trustbloc.dev/ns/min-resolvers"
+	anchorOriginProperty = "https://trustbloc.dev/ns/anchor-origin"
 	// did method.
 	didMethod  = "orb"
 	ipfsGlobal = "https://ipfs.io"
@@ -241,6 +241,27 @@ func (cs *Service) getEndpoint(domain string) (*models.Endpoint, error) {
 	return endpoint, nil
 }
 
+func (cs *Service) populateAnchorResolutionEndpoint(
+	webFingerResponse *restapi.WebFingerResponse) (*models.Endpoint, error) {
+	endpoint := &models.Endpoint{}
+
+	min, ok := webFingerResponse.Properties[minResolvers].(float64)
+	if !ok {
+		return nil, fmt.Errorf("%s property is not float64", minResolvers)
+	}
+
+	endpoint.MinResolvers = int(min)
+
+	for _, v := range webFingerResponse.Links {
+		if v.Type == "application/did+ld+json" {
+			endpoint.ResolutionEndpoints = append(endpoint.ResolutionEndpoints,
+				v.Href[:strings.Index(v.Href, fmt.Sprintf("did:%s", didMethod))-1])
+		}
+	}
+
+	return endpoint, nil
+}
+
 //nolint: funlen,gocyclo
 func (cs *Service) populateResolutionEndpoint(webFingerURL string) (*models.Endpoint, error) {
 	var webFingerResponse restapi.WebFingerResponse
@@ -335,33 +356,37 @@ func (cs *Service) getEndpointAnchorOrigin(didURI string) (*models.Endpoint, err
 
 	currentAnchorOrigin := anchorOrigin
 
+	var currentWebFingerRespone *restapi.WebFingerResponse
+
 	for {
-		latestAnchorOrigin, errGet := cs.getLatestAnchorOrigin(currentAnchorOrigin, didSplit[4])
+		webFingerResponseLatestAnchorOrigin, errGet := cs.getLatestAnchorOrigin(currentAnchorOrigin, didURI)
 		if errGet != nil {
 			return nil, errGet
 		}
 
+		latestAnchorOrigin, ok := webFingerResponseLatestAnchorOrigin.Properties[anchorOriginProperty].(string)
+		if !ok {
+			return nil, fmt.Errorf("%s property is not string", anchorOriginProperty)
+		}
+
 		if latestAnchorOrigin == currentAnchorOrigin {
+			currentWebFingerRespone = webFingerResponseLatestAnchorOrigin
+
 			break
 		}
 
 		currentAnchorOrigin = latestAnchorOrigin
 	}
 
-	webFingerURL, err := cs.getWebFingerURL(currentAnchorOrigin)
-	if err != nil {
-		return nil, err
-	}
-
-	return cs.populateResolutionEndpoint(webFingerURL)
+	return cs.populateAnchorResolutionEndpoint(currentWebFingerRespone)
 }
 
 func (cs *Service) getWebFingerURL(anchorOrigin string) (string, error) {
 	if strings.HasPrefix(anchorOrigin, "ipns://") {
 		anchorOriginSplit := strings.Split(anchorOrigin, "ipns://")
 
-		return fmt.Sprintf("%s/%s/%s/.well-known/webfinger?resource=%s", ipfsGlobal, "ipns",
-			anchorOriginSplit[1], url.PathEscape(anchorOrigin)), nil
+		return fmt.Sprintf("%s/%s/%s/.well-known/host-meta.json", ipfsGlobal, "ipns",
+			anchorOriginSplit[1]), nil
 	} else if strings.HasPrefix(anchorOrigin, "http://") || strings.HasPrefix(anchorOrigin, "https://") {
 		parsedURL, err := url.Parse(anchorOrigin)
 		if err != nil {
@@ -370,48 +395,45 @@ func (cs *Service) getWebFingerURL(anchorOrigin string) (string, error) {
 
 		urlValue := fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host)
 
-		return fmt.Sprintf("%s/.well-known/webfinger?resource=%s", urlValue, url.PathEscape(urlValue)), nil
+		return fmt.Sprintf("%s/.well-known/host-meta.json", urlValue), nil
 	}
 
 	return "", fmt.Errorf("anchorOrigin %s not supported", anchorOrigin)
 }
 
-func (cs *Service) getLatestAnchorOrigin(anchorOrigin, suffix string) (string, error) {
+func (cs *Service) getLatestAnchorOrigin(anchorOrigin, didURI string) (*restapi.WebFingerResponse, error) {
 	var webFingerResponse restapi.WebFingerResponse
 
 	webFingerURL, err := cs.getWebFingerURL(anchorOrigin)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	err = cs.sendRequest(nil, http.MethodGet, webFingerURL, &webFingerResponse)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	origin, ok := webFingerResponse.Properties[originResource].(string)
-	if !ok {
-		return "", fmt.Errorf("%s property is not string", originResource)
+	templateURL := ""
+
+	for _, v := range webFingerResponse.Links {
+		if v.Rel == "self" && v.Type == "application/jrd+json" {
+			templateURL = strings.ReplaceAll(v.Template, "{uri}", didURI)
+
+			break
+		}
 	}
 
-	parsedURL, err := url.Parse(origin)
+	if templateURL == "" {
+		return nil, fmt.Errorf("failed to find template url in webfinger doc")
+	}
+
+	err = cs.sendRequest(nil, http.MethodGet, templateURL, &webFingerResponse)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	err = cs.sendRequest(nil, http.MethodGet, fmt.Sprintf("%s://%s/.well-known/webfinger?resource=%s",
-		parsedURL.Scheme, parsedURL.Host, url.PathEscape(origin)), &webFingerResponse)
-	if err != nil {
-		return "", err
-	}
-
-	respBytes, err := cs.send(nil, http.MethodGet, fmt.Sprintf("%s/%s",
-		webFingerResponse.Links[0].Href, suffix))
-	if err != nil {
-		return "", err
-	}
-
-	return string(respBytes), nil
+	return &webFingerResponse, nil
 }
 
 func (cs *Service) send(req []byte, method, endpointURL string) ([]byte, error) {
@@ -510,5 +532,5 @@ type casReader struct {
 }
 
 func (c *casReader) Read(key string) ([]byte, error) {
-	return c.s.send(nil, http.MethodGet, fmt.Sprintf("%s/%s/%s", ipfsGlobal, "ipfs", key))
+	return c.s.send(nil, http.MethodPost, fmt.Sprintf("http://127.0.0.1:5001/api/v0/cat?arg=%s", key))
 }
