@@ -532,5 +532,5 @@ type casReader struct {
 }
 
 func (c *casReader) Read(key string) ([]byte, error) {
-	return c.s.send(nil, http.MethodPost, fmt.Sprintf("http://127.0.0.1:5001/api/v0/cat?arg=%s", key))
+	return c.s.send(nil, http.MethodGet, fmt.Sprintf("%s/%s/%s", ipfsGlobal, "ipfs", key))
 }
