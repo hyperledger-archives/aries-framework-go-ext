@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -57,6 +58,22 @@ func runBDDTests(tags, format string) int { //nolint: gocognit
 		composeFiles := []string{"./fixtures/orb"}
 		s.BeforeSuite(func() {
 			if os.Getenv("DISABLE_COMPOSITION") != "true" {
+				if err := os.Setenv("ORB_STRESS_DID_DOMAINS", "https://testnet.orb.local"); err != nil {
+					panic(err.Error())
+				}
+
+				if err := os.Setenv("ORB_STRESS_DID_NUMS", "1"); err != nil {
+					panic(err.Error())
+				}
+
+				if err := os.Setenv("ORB_STRESS_ANCHOR_ORIGIN", "https://orb2/services/orb"); err != nil {
+					panic(err.Error())
+				}
+
+				if err := os.Setenv("ORB_STRESS_CONCURRENT_REQ", "1"); err != nil {
+					panic(err.Error())
+				}
+
 				// Need a unique name, but docker does not allow '-' in names
 				composeProjectName := strings.ReplaceAll(generateUUID(), "-", "")
 
@@ -81,6 +98,10 @@ func runBDDTests(tags, format string) int { //nolint: gocognit
 				fmt.Printf("*** testSleep=%d", testSleep)
 				println()
 				time.Sleep(time.Second * time.Duration(testSleep))
+				_, err := exec.Command("./create_follow_activity.sh").CombinedOutput() //nolint: gosec
+				if err != nil {
+					panic(err.Error())
+				}
 			}
 		})
 		s.AfterSuite(func() {
@@ -131,4 +152,6 @@ func FeatureContext(s *godog.Suite) {
 	}
 
 	vdr.NewSteps(bddContext).RegisterSteps(s)
+	vdr.NewStressSteps(bddContext).RegisterSteps(s)
+
 }

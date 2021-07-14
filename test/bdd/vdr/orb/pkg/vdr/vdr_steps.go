@@ -15,7 +15,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"net/http"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -89,8 +88,6 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 		e.createWithIPNS)
 	s.Step(`^Orb DID is created with key type "([^"]*)" with signature suite "([^"]*)" with anchor origin https`,
 		e.createWithHTTPS)
-	s.Step(`^Execute shell script "([^"]*)"$`,
-		e.executeScript)
 	s.Step(`^Resolve created DID and validate key type "([^"]*)", signature suite "([^"]*)"$`,
 		e.resolveCreatedDID)
 	s.Step(`^Resolve created DID through anchor origin`,
@@ -501,15 +498,6 @@ func (e *Steps) verifyPublicKeyAndType(didDoc *ariesdid.Doc, signatureSuite stri
 	if didDoc.VerificationMethod[0].Type != signatureSuite {
 		return fmt.Errorf("resolved did public key type %s not equal to %s",
 			didDoc.VerificationMethod[0].Type, signatureSuite)
-	}
-
-	return nil
-}
-
-func (e *Steps) executeScript(scriptPath string) error {
-	_, err := exec.Command(scriptPath).CombinedOutput() //nolint: gosec
-	if err != nil {
-		return err
 	}
 
 	return nil

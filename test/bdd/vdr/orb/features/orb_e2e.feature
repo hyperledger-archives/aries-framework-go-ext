@@ -10,7 +10,6 @@ Feature: Test orb vdr
 
   @orb_did_ops
   Scenario Outline:
-    Then Execute shell script "./create_follow_activity.sh"
     Then Orb DID is created with key type "<keyType>" with signature suite "<signatureSuite>"
     Then Resolve created DID and validate key type "<keyType>", signature suite "<signatureSuite>"
     Then Orb DID is updated with key type "<keyType>" with signature suite "<signatureSuite>"
@@ -29,8 +28,12 @@ Feature: Test orb vdr
 
   @orb_did_anchor_origin
   Scenario:
-    Then Execute shell script "./create_follow_activity.sh"
     Then Orb DID is created with key type "Ed25519" with signature suite "JsonWebKey2020" with anchor origin ipns
     Then Resolve created DID through anchor origin
     Then Orb DID is created with key type "Ed25519" with signature suite "JsonWebKey2020" with anchor origin https
     Then Resolve created DID through anchor origin
+
+  @orb_did_stress_test
+  Scenario:
+    When client sends request to "ORB_STRESS_DID_DOMAINS" to create and update "ORB_STRESS_DID_NUMS" DID documents with anchor origin "ORB_STRESS_ANCHOR_ORIGIN" using "ORB_STRESS_CONCURRENT_REQ" concurrent requests
+
