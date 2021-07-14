@@ -24,10 +24,10 @@ services:
       - BATCH_WRITER_TIMEOUT=200
       - CAS_TYPE=ipfs
       - IPFS_URL=ipfs:5001
-      - ANCHOR_CREDENTIAL_ISSUER=https://orb1
-      - ANCHOR_CREDENTIAL_URL=https://orb1/vc
+      - ANCHOR_CREDENTIAL_ISSUER=https://testnet.orb.local
+      - ANCHOR_CREDENTIAL_URL=https://testnet.orb.local/vc
       - ANCHOR_CREDENTIAL_SIGNATURE_SUITE=Ed25519Signature2018
-      - ANCHOR_CREDENTIAL_DOMAIN=orb1
+      - ANCHOR_CREDENTIAL_DOMAIN=https://testnet.orb.local
       - DATABASE_TYPE=couchdb
       - DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
       - DATABASE_PREFIX=orb1
@@ -45,6 +45,8 @@ services:
     depends_on:
       - ipfs
       - couchdb.example.com
+      - orb.kms
+      - orb.vct
 
   orb2:
     container_name: orb2
@@ -66,7 +68,7 @@ services:
       - ANCHOR_CREDENTIAL_ISSUER=https://orb2
       - ANCHOR_CREDENTIAL_URL=https://orb2/vc
       - ANCHOR_CREDENTIAL_SIGNATURE_SUITE=Ed25519Signature2018
-      - ANCHOR_CREDENTIAL_DOMAIN=orb2
+      - ANCHOR_CREDENTIAL_DOMAIN=https://orb2
       - DATABASE_TYPE=couchdb
       - DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
       - DATABASE_PREFIX=orb2
@@ -84,15 +86,18 @@ services:
     depends_on:
       - ipfs
       - couchdb.example.com
+      - orb.kms
+      - orb.vct
 
   orb.mysql:
     container_name: orb.mysql
-    image: mysql:8.0.24
+    image: mysql:8.0.25
     restart: always
     cap_add:
       - SYS_NICE
     environment:
       - MYSQL_ALLOW_EMPTY_PASSWORD=true
+      - MYSQL_DATABASE=test
     logging:
       driver: "none"
     ports:
