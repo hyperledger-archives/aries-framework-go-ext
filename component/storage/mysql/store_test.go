@@ -358,12 +358,6 @@ func TestSqlDBStore_Common(t *testing.T) {
 }
 
 func TestSqlDBStore_Batch(t *testing.T) {
-	t.Run("no-op on empty batch", func(t *testing.T) {
-		s := newStore(t, randomStoreName())
-		err := s.Batch(nil)
-		require.NoError(t, err)
-	})
-
 	t.Run("error on empty key", func(t *testing.T) {
 		s := newStore(t, randomStoreName())
 		err := s.Batch([]storage.Operation{{}})

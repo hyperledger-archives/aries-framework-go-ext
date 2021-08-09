@@ -409,10 +409,8 @@ func (s *store) Delete(k string) error {
 // slice with O(2*N) space holding the values for the query. Callers should take care of this additional
 // memory usage by limiting the size of the batch.
 func (s *store) Batch(batch []storage.Operation) error { // nolint:gocyclo
-	// Batch godocs are moot on what to do if batch is empty.
-	// None of the other implementations return an error in such a case.
 	if len(batch) == 0 {
-		return nil
+		return errors.New("batch requires at least one operation")
 	}
 
 	var (

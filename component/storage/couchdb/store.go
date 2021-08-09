@@ -784,6 +784,10 @@ func (s *store) Delete(k string) error {
 
 // Batch performs multiple Put and/or Delete operations in order.
 func (s *store) Batch(operations []storage.Operation) error {
+	if len(operations) == 0 {
+		return errors.New("batch requires at least one operation")
+	}
+
 	// If CouchDB receives the same key multiple times in one batch call, it will just keep the first operation and
 	// disregard the rest. We want the opposite behaviour - we need it to only keep the last operation and disregard
 	// the earlier ones as if they've been overwritten or deleted.
