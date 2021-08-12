@@ -9,13 +9,16 @@ go 1.16
 require (
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.6.0
-	github.com/hyperledger/aries-framework-go v0.1.7-0.20210517160459-a72f856f36b8
+	github.com/hyperledger/aries-framework-go v0.1.7-0.20210811135743-532e65035d3b
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210423164427-96362080a25e
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc v0.0.0
-	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210429205242-c5e97865879c
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210429205242-c5e97865879c
-	github.com/trustbloc/edge-core v0.1.7-0.20210429222332-96b987820e63
+	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210807121559-b41545a4f1e8
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210807121559-b41545a4f1e8
+	github.com/trustbloc/edge-core v0.1.7-0.20210812092729-6c61997fa9dd
 	gotest.tools/v3 v3.0.3 // indirect
 )
 
-replace github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc => ../../../../component/vdr/trustbloc/
+replace (
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree => ../../../../component/vdr/sidetree/
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc => ../../../../component/vdr/trustbloc/
+)

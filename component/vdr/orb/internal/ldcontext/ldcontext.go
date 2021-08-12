@@ -13,7 +13,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/ldcontext"
 )
 
 const dataDir = "data"
@@ -23,13 +23,13 @@ var (
 	//go:embed data/*.json
 	fs embed.FS
 
-	contexts []jsonld.ContextDocument
+	contexts []ldcontext.Document
 	once     sync.Once
 	errOnce  error
 )
 
 // GetAll returns all predefined contexts.
-func GetAll() ([]jsonld.ContextDocument, error) {
+func GetAll() ([]ldcontext.Document, error) {
 	once.Do(func() {
 		var entries []os.DirEntry
 
@@ -53,7 +53,7 @@ func GetAll() ([]jsonld.ContextDocument, error) {
 				return
 			}
 
-			var doc jsonld.ContextDocument
+			var doc ldcontext.Document
 
 			errOnce = json.Unmarshal(content, &doc)
 			if errOnce != nil {
@@ -68,7 +68,7 @@ func GetAll() ([]jsonld.ContextDocument, error) {
 }
 
 // MustGetAll returns all predefined contexts.
-func MustGetAll() []jsonld.ContextDocument {
+func MustGetAll() []ldcontext.Document {
 	docs, err := GetAll()
 	if err != nil {
 		panic(err)

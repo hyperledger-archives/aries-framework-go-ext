@@ -12,7 +12,7 @@ import (
 	"fmt"
 
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 )
 
 const (
@@ -60,7 +60,7 @@ type PublicKey struct {
 	ID       string
 	Type     string
 	Purposes []string
-	JWK      jose.JWK
+	JWK      jwk.JWK
 }
 
 // JSONBytes converts document to json bytes.

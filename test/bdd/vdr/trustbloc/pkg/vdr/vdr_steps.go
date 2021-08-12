@@ -18,7 +18,7 @@ import (
 
 	"github.com/cucumber/godog"
 	ariesdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 
@@ -84,7 +84,7 @@ func (e *Steps) createDIDBloc(url, keyType, signatureSuite string) error {
 		k = ed25519.PublicKey(pubKey)
 	}
 
-	jwk, err := jose.JWKFromKey(k)
+	jwk, err := jwksupport.JWKFromKey(k)
 	if err != nil {
 		return err
 	}

@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	ariesjose "github.com/hyperledger/aries-framework-go/pkg/doc/jose"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/piprate/json-gold/ld"
@@ -119,7 +119,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromKey(pk)
+		jwk, err := jwksupport.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -160,7 +160,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromKey(pk)
+		jwk, err := jwksupport.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -200,7 +200,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromKey(pk)
+		jwk, err := jwksupport.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -228,7 +228,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromKey(pk)
+		jwk, err := jwksupport.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -257,7 +257,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromKey(pk)
+		jwk, err := jwksupport.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -338,7 +338,7 @@ func TestVDRI_Update(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromKey(pk)
+		jwk, err := jwksupport.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -434,7 +434,7 @@ func TestVDRI_Recover(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromKey(pk)
+		jwk, err := jwksupport.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
