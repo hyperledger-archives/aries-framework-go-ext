@@ -77,7 +77,7 @@ func TestProvider_SetStoreConfig_Failure(t *testing.T) {
 
 	err = provider.SetStoreConfig("StoreName", storage.StoreConfiguration{TagNames: []string{"tagName1"}})
 	require.EqualError(t, err, "failed to set indexes: failed to get existing indexed tag names: "+
-		"failed to get list of indexes from MongoDB: context deadline exceeded")
+		"failed to get list of indexes from MongoDB: server selection error: context deadline exceeded, current topology: { Type: Unknown, Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }")
 }
 
 func TestProvider_GetStoreConfig_Failure(t *testing.T) {
@@ -87,8 +87,9 @@ func TestProvider_GetStoreConfig_Failure(t *testing.T) {
 	require.NoError(t, err)
 
 	config, err := provider.GetStoreConfig("StoreName")
-	require.EqualError(t, err, "failed to get existing indexed tag names: "+
-		"failed to get list of indexes from MongoDB: context deadline exceeded")
+	require.EqualError(t, err, "failed to get existing indexed tag names: failed to get list of indexes "+
+		"from MongoDB: server selection error: context deadline exceeded, current topology: { Type: Unknown, "+
+		"Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }")
 	require.Empty(t, config)
 }
 
@@ -99,7 +100,8 @@ func TestStore_Put_Failure(t *testing.T) {
 	require.NoError(t, err)
 
 	err = store.Put("key", []byte("value"))
-	require.EqualError(t, err, "failed to run UpdateOne command in MongoDB: context deadline exceeded")
+	require.EqualError(t, err, "failed to run UpdateOne command in MongoDB: server selection error: context "+
+		"deadline exceeded, current topology: { Type: Unknown, Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }")
 }
 
 func TestStore_Get_Failure(t *testing.T) {
@@ -109,7 +111,8 @@ func TestStore_Get_Failure(t *testing.T) {
 	require.NoError(t, err)
 
 	value, err := store.Get("key")
-	require.EqualError(t, err, "failed to run FindOne command in MongoDB: context deadline exceeded")
+	require.EqualError(t, err, "failed to run FindOne command in MongoDB: server selection error: context "+
+		"deadline exceeded, current topology: { Type: Unknown, Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }")
 	require.Nil(t, value)
 }
 
@@ -120,7 +123,9 @@ func TestStore_GetTags_Failure(t *testing.T) {
 	require.NoError(t, err)
 
 	tags, err := store.GetTags("key")
-	require.EqualError(t, err, "failed to run FindOne command in MongoDB: context deadline exceeded")
+	require.EqualError(t, err, "failed to run FindOne command in MongoDB: server selection error: "+
+		"context deadline exceeded, current topology: { Type: Unknown, Servers: [{ Addr: badurl:27017, "+
+		"Type: Unknown }, ] }")
 	require.Nil(t, tags)
 }
 
@@ -131,7 +136,8 @@ func TestStore_GetBulk_Failure(t *testing.T) {
 	require.NoError(t, err)
 
 	values, err := store.GetBulk("key1", "key2")
-	require.EqualError(t, err, "failed to run Find command in MongoDB: context deadline exceeded")
+	require.EqualError(t, err, "failed to run Find command in MongoDB: server selection error: context "+
+		"deadline exceeded, current topology: { Type: Unknown, Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }")
 	require.Nil(t, values)
 }
 
@@ -142,7 +148,8 @@ func TestStore_Delete_Failure(t *testing.T) {
 	require.NoError(t, err)
 
 	err = store.Delete("key1")
-	require.EqualError(t, err, "failed to run DeleteOne command in MongoDB: context deadline exceeded")
+	require.EqualError(t, err, "failed to run DeleteOne command in MongoDB: server selection error: context "+
+		"deadline exceeded, current topology: { Type: Unknown, Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }")
 }
 
 func TestStore_Batch_Failure(t *testing.T) {
@@ -152,7 +159,8 @@ func TestStore_Batch_Failure(t *testing.T) {
 	require.NoError(t, err)
 
 	err = store.Batch([]storage.Operation{{Key: "key"}})
-	require.EqualError(t, err, "failed to run BulkWrite command in MongoDB: context deadline exceeded")
+	require.EqualError(t, err, "failed to run BulkWrite command in MongoDB: server selection error: context "+
+		"deadline exceeded, current topology: { Type: Unknown, Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }")
 }
 
 func startContainerAndDoAllTests(t *testing.T, dockerMongoDBTag string) {
