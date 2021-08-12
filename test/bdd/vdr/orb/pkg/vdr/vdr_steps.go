@@ -116,7 +116,7 @@ func (e *Steps) deactivateDID() error {
 
 func (e *Steps) createVerificationMethod(keyType string, pubKey []byte, kid,
 	signatureSuite string) (*ariesdid.VerificationMethod, error) {
-	var jwk *jwk.JWK
+	var j *jwk.JWK
 
 	var err error
 
@@ -124,14 +124,14 @@ func (e *Steps) createVerificationMethod(keyType string, pubKey []byte, kid,
 	case P256KeyType:
 		x, y := elliptic.Unmarshal(elliptic.P256(), pubKey)
 
-		jwk, err = jwksupport.JWKFromKey(&ecdsa.PublicKey{X: x, Y: y, Curve: elliptic.P256()})
+		j, err = jwksupport.JWKFromKey(&ecdsa.PublicKey{X: x, Y: y, Curve: elliptic.P256()})
 		if err != nil {
 			return nil, err
 		}
 	case p384KeyType:
 		x, y := elliptic.Unmarshal(elliptic.P384(), pubKey)
 
-		jwk, err = jwksupport.JWKFromKey(&ecdsa.PublicKey{X: x, Y: y, Curve: elliptic.P384()})
+		j, err = jwksupport.JWKFromKey(&ecdsa.PublicKey{X: x, Y: y, Curve: elliptic.P384()})
 		if err != nil {
 			return nil, err
 		}
@@ -141,18 +141,18 @@ func (e *Steps) createVerificationMethod(keyType string, pubKey []byte, kid,
 			return nil, e
 		}
 
-		jwk, err = jwksupport.JWKFromKey(pk)
+		j, err = jwksupport.JWKFromKey(pk)
 		if err != nil {
 			return nil, err
 		}
 	default:
-		jwk, err = jwksupport.JWKFromKey(ed25519.PublicKey(pubKey))
+		j, err = jwksupport.JWKFromKey(ed25519.PublicKey(pubKey))
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return ariesdid.NewVerificationMethodFromJWK(kid, signatureSuite, "", jwk)
+	return ariesdid.NewVerificationMethodFromJWK(kid, signatureSuite, "", j)
 }
 
 func (e *Steps) recoverDID(keyType, signatureSuite string) error {
