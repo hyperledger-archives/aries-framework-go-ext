@@ -11,7 +11,7 @@ require (
 	github.com/fsouza/go-dockerclient v1.6.0
 	github.com/hyperledger/aries-framework-go v0.1.7-0.20210811135743-532e65035d3b
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.0.0
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210413155718-eeb5b3c708be
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210812160710-5d844cfdf379
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210807121559-b41545a4f1e8
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210807121559-b41545a4f1e8
 	github.com/trustbloc/edge-core v0.1.7-0.20210812092729-6c61997fa9dd
