@@ -22,12 +22,15 @@ import (
 	"github.com/bluele/gcache"
 	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	"github.com/hyperledger/aries-framework-go/pkg/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/web"
 	"github.com/piprate/json-gold/ld"
+	"github.com/trustbloc/orb/pkg/discovery/endpoint/restapi"
+	"github.com/trustbloc/orb/pkg/orbclient"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/models"
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/restapi"
 )
 
 var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
@@ -76,27 +79,27 @@ func NewService(docLoader ld.DocumentLoader, opts ...Option) (*Service, error) {
 		opt(configService)
 	}
 
-	//var orbclientOpts []orbclient.Option
-	//
-	//orbclientOpts = append(orbclientOpts, orbclient.WithJSONLDDocumentLoader(docLoader))
-	//
-	//if configService.disableProofCheck {
-	//	orbclientOpts = append(orbclientOpts, orbclient.WithDisableProofCheck(configService.disableProofCheck))
-	//} else {
-	//	orbclientOpts = append(orbclientOpts, orbclient.WithPublicKeyFetcher(
-	//		verifiable.NewVDRKeyResolver(vdr.New(vdr.WithVDR(&webVDR{
-	//			http: configService.httpClient,
-	//			VDR:  web.New(),
-	//		}),
-	//		)).PublicKeyFetcher()))
-	//}
+	var orbclientOpts []orbclient.Option
 
-	//orbClient, err := orbclient.New(fmt.Sprintf("did:%s", didMethod), &casReader{s: configService}, orbclientOpts...)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//configService.orbClient = orbClient
+	orbclientOpts = append(orbclientOpts, orbclient.WithJSONLDDocumentLoader(docLoader))
+
+	if configService.disableProofCheck {
+		orbclientOpts = append(orbclientOpts, orbclient.WithDisableProofCheck(configService.disableProofCheck))
+	} else {
+		orbclientOpts = append(orbclientOpts, orbclient.WithPublicKeyFetcher(
+			verifiable.NewVDRKeyResolver(vdr.New(vdr.WithVDR(&webVDR{
+				http: configService.httpClient,
+				VDR:  web.New(),
+			}),
+			)).PublicKeyFetcher()))
+	}
+
+	orbClient, err := orbclient.New(fmt.Sprintf("did:%s", didMethod), &casReader{s: configService}, orbclientOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	configService.orbClient = orbClient
 
 	configService.sidetreeConfigCache = makeCache(
 		configService.getNewCacheable(func(did, domain string) (cacheable, error) {
