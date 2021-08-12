@@ -87,6 +87,10 @@ func (r *VDR) getPubKey(did *diddoc.DID) (*indyPubkey, error) {
 		return nil, err
 	}
 
+	if rply.Data == nil {
+		return nil, errors.New("couldn't resolve did")
+	}
+
 	m := map[string]interface{}{}
 
 	err = json.Unmarshal([]byte(rply.Data.(string)), &m)
