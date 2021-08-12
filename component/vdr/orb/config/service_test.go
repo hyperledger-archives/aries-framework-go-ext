@@ -16,7 +16,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/trustbloc/orb/pkg/discovery/endpoint/restapi"
+
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/restapi"
 )
 
 const (

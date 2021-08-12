@@ -15,6 +15,7 @@ require (
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210807121559-b41545a4f1e8
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210807121559-b41545a4f1e8
 	github.com/trustbloc/edge-core v0.1.7-0.20210812092729-6c61997fa9dd
+	gotest.tools/v3 v3.0.3 // indirect
 )
 
 replace (
