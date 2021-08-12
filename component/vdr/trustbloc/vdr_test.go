@@ -21,11 +21,12 @@ import (
 	"time"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	ariesjose "github.com/hyperledger/aries-framework-go/pkg/doc/jose"
-	jld "github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/ld"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
-	"github.com/hyperledger/aries-framework-go/pkg/mock/storage"
+	mockldstore "github.com/hyperledger/aries-framework-go/pkg/mock/ld"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
+	ldstore "github.com/hyperledger/aries-framework-go/pkg/store/ld"
 	log "github.com/sirupsen/logrus"
 	"github.com/square/go-jose/v3"
 	"github.com/stretchr/testify/require"
@@ -147,7 +148,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromKey(pk)
+		jwk, err := jwksupport.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -199,7 +200,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromKey(pk)
+		jwk, err := jwksupport.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -239,7 +240,7 @@ func TestVDRI_Create(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromKey(pk)
+		jwk, err := jwksupport.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -398,7 +399,7 @@ func TestVDRI_Update(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromKey(pk)
+		jwk, err := jwksupport.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -513,7 +514,7 @@ func TestVDRI_Recover(t *testing.T) {
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		jwk, err := ariesjose.JWKFromKey(pk)
+		jwk, err := jwksupport.JWKFromKey(pk)
 		require.NoError(t, err)
 
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
@@ -1546,10 +1547,28 @@ func Test_canonicalizeDoc(t *testing.T) {
 	})
 }
 
-func createTestDocLoader(t *testing.T) *jld.DocumentLoader {
+type mockLDStoreProvider struct {
+	ContextStore        ldstore.ContextStore
+	RemoteProviderStore ldstore.RemoteProviderStore
+}
+
+func (m *mockLDStoreProvider) JSONLDContextStore() ldstore.ContextStore {
+	return m.ContextStore
+}
+
+func (m *mockLDStoreProvider) JSONLDRemoteProviderStore() ldstore.RemoteProviderStore {
+	return m.RemoteProviderStore
+}
+
+func createTestDocLoader(t *testing.T) *ld.DocumentLoader {
 	t.Helper()
 
-	loader, err := jld.NewDocumentLoader(storage.NewMockStoreProvider())
+	p := &mockLDStoreProvider{
+		ContextStore:        mockldstore.NewMockContextStore(),
+		RemoteProviderStore: mockldstore.NewMockRemoteProviderStore(),
+	}
+
+	loader, err := ld.NewDocumentLoader(p)
 	require.NoError(t, err)
 
 	return loader

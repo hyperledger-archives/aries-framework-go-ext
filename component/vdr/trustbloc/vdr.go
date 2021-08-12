@@ -22,11 +22,12 @@ import (
 
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	jld "github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/ld"
+	ldprocessor "github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	ldstore "github.com/hyperledger/aries-framework-go/pkg/store/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
-	"github.com/piprate/json-gold/ld"
+	jsonld "github.com/piprate/json-gold/ld"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
@@ -112,7 +113,7 @@ type VDR struct {
 	genesisFiles                []genesisFileData
 	sidetreeClient              sidetreeClient
 	keyRetriever                KeyRetriever
-	documentLoader              ld.DocumentLoader
+	documentLoader              jsonld.DocumentLoader
 }
 
 type genesisFileData struct {
@@ -139,7 +140,7 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 	if v.documentLoader == nil {
 		var err error
 
-		v.documentLoader, err = jld.NewDocumentLoader(mem.NewProvider())
+		v.documentLoader, err = createJSONLDDocumentLoader()
 		if err != nil {
 			return nil, fmt.Errorf("new vdr: %w", err)
 		}
@@ -182,6 +183,43 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 	}
 
 	return v, nil
+}
+
+type ldStoreProvider struct {
+	ContextStore        ldstore.ContextStore
+	RemoteProviderStore ldstore.RemoteProviderStore
+}
+
+func (p *ldStoreProvider) JSONLDContextStore() ldstore.ContextStore {
+	return p.ContextStore
+}
+
+func (p *ldStoreProvider) JSONLDRemoteProviderStore() ldstore.RemoteProviderStore {
+	return p.RemoteProviderStore
+}
+
+func createJSONLDDocumentLoader() (jsonld.DocumentLoader, error) {
+	contextStore, err := ldstore.NewContextStore(mem.NewProvider())
+	if err != nil {
+		return nil, fmt.Errorf("create JSON-LD context store: %w", err)
+	}
+
+	remoteProviderStore, err := ldstore.NewRemoteProviderStore(mem.NewProvider())
+	if err != nil {
+		return nil, fmt.Errorf("create remote provider store: %w", err)
+	}
+
+	ldStore := &ldStoreProvider{
+		ContextStore:        contextStore,
+		RemoteProviderStore: remoteProviderStore,
+	}
+
+	documentLoader, err := ld.NewDocumentLoader(ldStore)
+	if err != nil {
+		return nil, fmt.Errorf("new document loader: %w", err)
+	}
+
+	return documentLoader, nil
 }
 
 // Accept did method.
@@ -768,7 +806,7 @@ func (v *VDR) selectStakeholders(consortium *models.Consortium) ([]*models.Stake
 }
 
 // canonicalizeDoc canonicalizes a DID doc using json-ld canonicalization.
-func canonicalizeDoc(didDoc *docdid.Doc, docLoader ld.DocumentLoader) ([]byte, error) {
+func canonicalizeDoc(didDoc *docdid.Doc, docLoader jsonld.DocumentLoader) ([]byte, error) {
 	marshaled, err := didDoc.JSONBytes()
 	if err != nil {
 		return nil, err
@@ -781,9 +819,9 @@ func canonicalizeDoc(didDoc *docdid.Doc, docLoader ld.DocumentLoader) ([]byte, e
 		return nil, err
 	}
 
-	proc := jsonld.Default()
+	proc := ldprocessor.Default()
 
-	return proc.GetCanonicalDocument(docMap, jsonld.WithDocumentLoader(docLoader))
+	return proc.GetCanonicalDocument(docMap, ldprocessor.WithDocumentLoader(docLoader))
 }
 
 // Option configures the bloc vdr.
@@ -852,7 +890,7 @@ func operationsEndpointFunc(endpoints []string) func() ([]string, error) {
 }
 
 // WithDocumentLoader sets a JSON-LD document loader.
-func WithDocumentLoader(docLoader ld.DocumentLoader) Option {
+func WithDocumentLoader(docLoader jsonld.DocumentLoader) Option {
 	return func(opts *VDR) {
 		opts.documentLoader = docLoader
 	}

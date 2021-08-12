@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	jose2 "github.com/hyperledger/aries-framework-go/pkg/doc/jose"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	log "github.com/sirupsen/logrus"
 	"github.com/square/go-jose/v3"
 
@@ -186,25 +186,25 @@ func VerifyDIDSignature(jws *jose.JSONWebSignature, doc *did.Doc) ([]byte, error
 	return val, nil
 }
 
-func getJWKs(doc *did.Doc) []*jose2.JWK {
-	jwkList := make([]*jose2.JWK, 0)
+func getJWKs(doc *did.Doc) []*jwk.JWK {
+	jwkList := make([]*jwk.JWK, 0)
 
 	for _, pk := range doc.VerificationMethod {
-		jwk := pk.JSONWebKey()
-		if jwk == nil || jwk.Key == nil {
+		jwkKey := pk.JSONWebKey()
+		if jwkKey == nil || jwkKey.Key == nil {
 			continue
 		}
 
-		jwkList = append(jwkList, jwk)
+		jwkList = append(jwkList, jwkKey)
 	}
 
 	for _, method := range doc.Authentication {
-		jwk := method.VerificationMethod.JSONWebKey()
-		if jwk == nil || jwk.Key == nil {
+		jwkKey := method.VerificationMethod.JSONWebKey()
+		if jwkKey == nil || jwkKey.Key == nil {
 			continue
 		}
 
-		jwkList = append(jwkList, jwk)
+		jwkList = append(jwkList, jwkKey)
 	}
 
 	return jwkList
