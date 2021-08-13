@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	gojose "github.com/square/go-jose/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/sidetree-core-go/pkg/commitment"
@@ -310,7 +310,7 @@ func TestClient_RecoverDID(t *testing.T) {
 			}), recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&doc.PublicKey{
 				ID:   "key3",
 				Type: doc.JWSVerificationKey2020,
-				JWK:  jose.JWK{},
+				JWK:  jwk.JWK{},
 			}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unknown key type")
@@ -344,7 +344,7 @@ func TestClient_RecoverDID(t *testing.T) {
 			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&doc.PublicKey{
 				ID:   "key3",
 				Type: doc.Ed25519VerificationKey2018,
-				JWK:  jose.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
+				JWK:  jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
 			}),
 			recovery.WithService(&did.Service{ID: "svc3"}))
 		require.Error(t, err)
@@ -368,7 +368,7 @@ func TestClient_RecoverDID(t *testing.T) {
 			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&doc.PublicKey{
 				ID:   "key3",
 				Type: doc.Ed25519VerificationKey2018,
-				JWK:  jose.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
+				JWK:  jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
 			}),
 			recovery.WithService(&did.Service{ID: "svc3"}))
 		require.Error(t, err)
@@ -410,7 +410,7 @@ func TestClient_RecoverDID(t *testing.T) {
 			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&doc.PublicKey{
 				ID:   "key3",
 				Type: doc.Ed25519VerificationKey2018,
-				JWK:  jose.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
+				JWK:  jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
 			}),
 			recovery.WithService(&did.Service{ID: "svc3"}))
 		require.NoError(t, err)
@@ -537,7 +537,7 @@ func TestClient_UpdateDID(t *testing.T) {
 			update.WithRemovePublicKey("k2"), update.WithAddPublicKey(&doc.PublicKey{
 				ID:   "key3",
 				Type: doc.Ed25519VerificationKey2018,
-				JWK:  jose.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
+				JWK:  jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
 			}),
 			update.WithAddService(&did.Service{ID: "svc3"}))
 		require.Error(t, err)
@@ -561,7 +561,7 @@ func TestClient_UpdateDID(t *testing.T) {
 			update.WithRemovePublicKey("k2"), update.WithAddPublicKey(&doc.PublicKey{
 				ID:   "key3",
 				Type: doc.Ed25519VerificationKey2018,
-				JWK:  jose.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
+				JWK:  jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
 			}),
 			update.WithAddService(&did.Service{ID: "svc3"}))
 		require.Error(t, err)
@@ -596,7 +596,7 @@ func TestClient_UpdateDID(t *testing.T) {
 			update.WithRemovePublicKey("k2"), update.WithAddPublicKey(&doc.PublicKey{
 				ID:   "key3",
 				Type: doc.Ed25519VerificationKey2018,
-				JWK:  jose.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
+				JWK:  jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
 			}),
 			update.WithAddService(&did.Service{ID: "svc3"}))
 		require.NoError(t, err)
@@ -705,13 +705,13 @@ func TestClient_CreateDID(t *testing.T) {
 			create.WithPublicKey(&doc.PublicKey{
 				ID:       "key1",
 				Type:     doc.JWSVerificationKey2020,
-				JWK:      jose.JWK{JSONWebKey: gojose.JSONWebKey{Key: ed25519RecoveryPubKey}},
+				JWK:      jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: ed25519RecoveryPubKey}},
 				Purposes: []string{doc.KeyPurposeAuthentication},
 			}),
 			create.WithPublicKey(&doc.PublicKey{
 				ID:       "key2",
 				Type:     doc.JWSVerificationKey2020,
-				JWK:      jose.JWK{JSONWebKey: gojose.JSONWebKey{Key: ecPrivKey.Public()}},
+				JWK:      jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: ecPrivKey.Public()}},
 				Purposes: []string{doc.KeyPurposeAuthentication},
 			}),
 			create.WithService(&did.Service{

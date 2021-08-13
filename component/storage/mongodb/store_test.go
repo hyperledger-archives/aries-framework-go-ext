@@ -77,7 +77,7 @@ func TestProvider_SetStoreConfig_Failure(t *testing.T) {
 
 	err = provider.SetStoreConfig("StoreName", storage.StoreConfiguration{TagNames: []string{"tagName1"}})
 	require.EqualError(t, err, "failed to set indexes: failed to get existing indexed tag names: "+
-		"failed to get list of indexes from MongoDB: server selection error: context deadline exceeded, current topology: { Type: Unknown, Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }")
+		"failed to get list of indexes from MongoDB: server selection error: context deadline exceeded, current topology: { Type: Unknown, Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }") //nolint:lll
 }
 
 func TestProvider_GetStoreConfig_Failure(t *testing.T) {
