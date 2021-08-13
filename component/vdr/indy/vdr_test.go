@@ -181,15 +181,6 @@ func TestVDRI_Close(t *testing.T) {
 	}
 }
 
-func TestVDRI_Store(t *testing.T) {
-	t.Run("no op", func(t *testing.T) {
-		r := &VDR{}
-
-		err := r.Store(nil, nil)
-		require.NoError(t, err)
-	})
-}
-
 func TestWithRefresh(t *testing.T) {
 	t.Run("refresh sets the value", func(t *testing.T) {
 		refresh := WithRefresh(true)

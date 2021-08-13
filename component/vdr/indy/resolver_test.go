@@ -26,7 +26,7 @@ func TestVDRI_Read(t *testing.T) {
 
 	type args struct {
 		did  string
-		opts []vdri.ResolveOpts
+		opts []vdri.DIDMethodOpts
 	}
 
 	tests := []struct {
@@ -39,7 +39,7 @@ func TestVDRI_Read(t *testing.T) {
 		{
 			name:    "invalid did string",
 			fields:  fields{},
-			args:    args{"dXd:invalid", []vdri.ResolveOpts{}},
+			args:    args{"dXd:invalid", []vdri.DIDMethodOpts{}},
 			want:    require.Nil,
 			wantErr: true,
 		},
@@ -48,7 +48,7 @@ func TestVDRI_Read(t *testing.T) {
 			fields: fields{
 				methodName: "sov",
 			},
-			args:    args{"did:peer:abc123", []vdri.ResolveOpts{}},
+			args:    args{"did:peer:abc123", []vdri.DIDMethodOpts{}},
 			want:    require.Nil,
 			wantErr: true,
 		},
@@ -60,7 +60,7 @@ func TestVDRI_Read(t *testing.T) {
 					GetNymErr: errors.New("boom"),
 				},
 			},
-			args:    args{"did:sov:abc123", []vdri.ResolveOpts{}},
+			args:    args{"did:sov:abc123", []vdri.DIDMethodOpts{}},
 			want:    require.Nil,
 			wantErr: true,
 		},
@@ -73,7 +73,7 @@ func TestVDRI_Read(t *testing.T) {
 					GetNymErr:   nil,
 				},
 			},
-			args:    args{"did:sov:abc123", []vdri.ResolveOpts{}},
+			args:    args{"did:sov:abc123", []vdri.DIDMethodOpts{}},
 			want:    require.Nil,
 			wantErr: true,
 		},
@@ -87,7 +87,7 @@ func TestVDRI_Read(t *testing.T) {
 					GetEndpointVal: &vdr.ReadReply{Data: `_ not JSON_`},
 				},
 			},
-			args:    args{"did:sov:abc123", []vdri.ResolveOpts{}},
+			args:    args{"did:sov:abc123", []vdri.DIDMethodOpts{}},
 			want:    require.NotNil,
 			wantErr: false,
 		},
@@ -101,7 +101,7 @@ func TestVDRI_Read(t *testing.T) {
 					GetEndpointVal: &vdr.ReadReply{Data: `{}`},
 				},
 			},
-			args:    args{"did:sov:abc123", []vdri.ResolveOpts{}},
+			args:    args{"did:sov:abc123", []vdri.DIDMethodOpts{}},
 			want:    require.NotNil,
 			wantErr: false,
 		},
@@ -115,7 +115,7 @@ func TestVDRI_Read(t *testing.T) {
 					GetEndpointVal: &vdr.ReadReply{Data: `{"endpoint": {}}`},
 				},
 			},
-			args:    args{"did:sov:abc123", []vdri.ResolveOpts{}},
+			args:    args{"did:sov:abc123", []vdri.DIDMethodOpts{}},
 			want:    require.NotNil,
 			wantErr: false,
 		},
@@ -130,7 +130,7 @@ func TestVDRI_Read(t *testing.T) {
 				MethodName: thisTest.fields.methodName,
 				Client:     thisTest.fields.client,
 			}
-			got, err := r.Read(thisTest.args.did, thisTest.args.opts...)
+			got, err := r.Read(thisTest.args.did)
 			if (err != nil) != thisTest.wantErr {
 				t.Errorf("Read() error = %v, wantErr %v", err, thisTest.wantErr)
 
@@ -151,16 +151,19 @@ func TestVDRI_Read(t *testing.T) {
 			MethodName: "sov",
 			Client:     indycl,
 		}
-		doc, err := r.Read(did, vdri.WithNoCache(true))
+		doc, err := r.Read(did)
 		require.NoError(t, err)
 		require.NotNil(t, doc)
-		require.Equal(t, did, doc.ID)
-		require.NotNil(t, doc.Context)
-		require.NotNil(t, doc.Updated)
-		require.NotNil(t, doc.Created)
-		require.Len(t, doc.Authentication, 1)
-		require.Len(t, doc.VerificationMethod, 1)
-		require.Nil(t, doc.Service)
+
+		didDoc := doc.DIDDocument
+
+		require.Equal(t, did, didDoc.ID)
+		require.NotNil(t, didDoc.Context)
+		require.NotNil(t, didDoc.Updated)
+		require.NotNil(t, didDoc.Created)
+		require.Len(t, didDoc.Authentication, 1)
+		require.Len(t, didDoc.VerificationMethod, 1)
+		require.Nil(t, didDoc.Service)
 	})
 
 	t.Run("did with service endpoint", func(t *testing.T) {
@@ -174,15 +177,20 @@ func TestVDRI_Read(t *testing.T) {
 			MethodName: "sov",
 			Client:     indycl,
 		}
-		doc, err := r.Read(did, vdri.WithNoCache(true))
+		doc, err := r.Read(did)
 		require.NoError(t, err)
 		require.NotNil(t, doc)
-		require.Equal(t, did, doc.ID)
-		require.NotNil(t, doc.Context)
-		require.NotNil(t, doc.Updated)
-		require.NotNil(t, doc.Created)
-		require.NotNil(t, doc.Service)
-		require.Len(t, doc.Authentication, 1)
-		require.Len(t, doc.VerificationMethod, 1)
+
+		didDoc := doc.DIDDocument
+
+		require.NoError(t, err)
+		require.NotNil(t, doc)
+		require.Equal(t, did, didDoc.ID)
+		require.NotNil(t, didDoc.Context)
+		require.NotNil(t, didDoc.Updated)
+		require.NotNil(t, didDoc.Created)
+		require.NotNil(t, didDoc.Service)
+		require.Len(t, didDoc.Authentication, 1)
+		require.Len(t, didDoc.VerificationMethod, 1)
 	})
 }

@@ -16,9 +16,16 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	diddoc "github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/indy-vdr/wrappers/golang/vdr"
+)
+
+const (
+	// DefaultServiceType default service type.
+	DefaultServiceType = "defaultServiceType"
+	// DefaultServiceEndpoint default service endpoint.
+	DefaultServiceEndpoint = "defaultServiceEndpoint"
 )
 
 // Client is the API for interacting with the Indy VDR client.
@@ -59,19 +66,24 @@ func New(methodName string, opts ...Option) (*VDR, error) {
 	return vdri, nil
 }
 
-// Store is a no-op for the Indy VDR.
-func (r *VDR) Store(doc *did.Doc, by *[]vdrapi.ModifiedBy) error {
-	return nil
+// Accept the did method.
+func (v *VDR) Accept(method string) bool {
+	return method == v.MethodName
 }
 
-// Accept the did method.
-func (r *VDR) Accept(method string) bool {
-	return method == r.MethodName
+// Update did doc.
+func (v *VDR) Update(didDoc *diddoc.Doc, opts ...vdrapi.DIDMethodOption) error {
+	return fmt.Errorf("not supported")
+}
+
+// Deactivate did doc.
+func (v *VDR) Deactivate(did string, opts ...vdrapi.DIDMethodOption) error {
+	return fmt.Errorf("not supported")
 }
 
 // Close the client connection.
-func (r *VDR) Close() error {
-	return r.Client.Close()
+func (v *VDR) Close() error {
+	return v.Client.Close()
 }
 
 // Option configures the Indy vdri.
