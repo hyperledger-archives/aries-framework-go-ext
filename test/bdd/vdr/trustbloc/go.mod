@@ -10,7 +10,7 @@ require (
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.6.0
 	github.com/hyperledger/aries-framework-go v0.1.7-0.20210816113201-26c0665ef2b9
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210813115605-bcae6a85979c
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210816132213-a0d886dde049
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc v0.0.0
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210807121559-b41545a4f1e8
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210807121559-b41545a4f1e8
