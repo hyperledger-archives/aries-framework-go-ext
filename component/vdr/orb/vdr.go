@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/common/log"
@@ -53,6 +54,7 @@ const (
 	// AnchorOriginOpt anchor origin opt.
 	AnchorOriginOpt = "anchorOrigin"
 	didParts        = 5
+	httpTimeOut     = 5 * time.Second
 )
 
 var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
@@ -125,7 +127,8 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 
 	v.getHTTPVDR = func(url string) (vdr, error) {
 		return httpbinding.New(url,
-			httpbinding.WithTLSConfig(v.tlsConfig), httpbinding.WithResolveAuthToken(v.authToken))
+			httpbinding.WithTLSConfig(v.tlsConfig), httpbinding.WithResolveAuthToken(v.authToken),
+			httpbinding.WithTimeout(httpTimeOut))
 	}
 
 	v.keyRetriever = keyRetriever
