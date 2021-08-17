@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/btcsuite/btcutil/base58"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	gojose "github.com/square/go-jose/v3"
@@ -313,7 +314,7 @@ func TestClient_RecoverDID(t *testing.T) {
 				JWK:  jwk.JWK{},
 			}))
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "unknown key type")
+		require.Contains(t, err.Error(), "public key must contain either a jwk or base58 key")
 	})
 
 	t.Run("test error from send request", func(t *testing.T) {
@@ -495,6 +496,34 @@ func TestClient_UpdateDID(t *testing.T) {
 		require.Contains(t, err.Error(), "key not supported")
 	})
 
+	t.Run("error from update patches", func(t *testing.T) {
+		v := sidetree.New()
+
+		pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		defaultOptions := []update.Option{
+			update.WithOperationCommitment("value"),
+			update.WithSigningKey(privKey),
+			update.WithNextUpdatePublicKey(pubKey),
+			update.WithSidetreeEndpoint(func() ([]string, error) {
+				return []string{"url"}, nil
+			}),
+		}
+
+		t.Run("public key error: no jwk in JsonWebKey2020 key", func(t *testing.T) {
+			err = v.UpdateDID("did:ex:123", append(defaultOptions,
+				update.WithAddPublicKey(&doc.PublicKey{
+					ID:     "key3",
+					Type:   doc.JWK2020Type,
+					B58Key: base58.Encode(pubKey),
+				}),
+			)...)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "no valid jwk in JsonWebKey2020 key")
+		})
+	})
+
 	t.Run("test error from unique suffix", func(t *testing.T) {
 		v := sidetree.New()
 
@@ -594,9 +623,9 @@ func TestClient_UpdateDID(t *testing.T) {
 			update.WithNextUpdatePublicKey(pubKey), update.WithRemoveService("svc1"),
 			update.WithRemoveService("svc1"), update.WithRemovePublicKey("k1"),
 			update.WithRemovePublicKey("k2"), update.WithAddPublicKey(&doc.PublicKey{
-				ID:   "key3",
-				Type: doc.Ed25519VerificationKey2018,
-				JWK:  jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
+				ID:     "key3",
+				Type:   doc.Ed25519VerificationKey2018,
+				B58Key: base58.Encode(pubKey),
 			}),
 			update.WithAddService(&did.Service{ID: "svc3"}))
 		require.NoError(t, err)

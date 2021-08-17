@@ -24,7 +24,8 @@ const (
 	jsonldRoutingKeys   = "routingKeys"
 	jsonldPriority      = "priority"
 
-	jsonldPublicKeyjwk = "publicKeyJwk"
+	jsonldPublicKeyJwk    = "publicKeyJwk"
+	jsonldPublicKeyBase58 = "publicKeyBase58"
 
 	// KeyPurposeAuthentication defines key purpose as authentication key.
 	KeyPurposeAuthentication = "authentication"
@@ -39,6 +40,9 @@ const (
 
 	// JWSVerificationKey2020 defines key type signature.
 	JWSVerificationKey2020 = "JwsVerificationKey2020"
+
+	// JWK2020Type defines key type for JWK public keys.
+	JWK2020Type = "JsonWebKey2020"
 
 	// Ed25519VerificationKey2018 define key type signature.
 	Ed25519VerificationKey2018 = "Ed25519VerificationKey2018"
@@ -61,6 +65,7 @@ type PublicKey struct {
 	Type     string
 	Purposes []string
 	JWK      jwk.JWK
+	B58Key   string
 }
 
 // JSONBytes converts document to json bytes.
@@ -106,16 +111,22 @@ func populateRawPublicKey(pk *PublicKey) (map[string]interface{}, error) {
 	rawPK[jsonldPurposes] = pk.Purposes
 
 	jwkBytes, err := pk.JWK.MarshalJSON()
-	if err != nil {
-		return nil, err
-	}
 
-	rawJWK := make(map[string]interface{})
-	if err := json.Unmarshal(jwkBytes, &rawJWK); err != nil {
-		return nil, err
-	}
+	switch {
+	case err == nil:
+		rawJWK := make(map[string]interface{})
+		if err := json.Unmarshal(jwkBytes, &rawJWK); err != nil {
+			return nil, err
+		}
 
-	rawPK[jsonldPublicKeyjwk] = rawJWK
+		rawPK[jsonldPublicKeyJwk] = rawJWK
+	case pk.Type == JWK2020Type:
+		return nil, fmt.Errorf("no valid jwk in JsonWebKey2020 key")
+	case pk.B58Key != "":
+		rawPK[jsonldPublicKeyBase58] = pk.B58Key
+	default:
+		return nil, fmt.Errorf("public key must contain either a jwk or base58 key")
+	}
 
 	return rawPK, nil
 }
