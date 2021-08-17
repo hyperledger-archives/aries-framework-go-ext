@@ -125,12 +125,16 @@ func TestVDRI_Create(t *testing.T) {
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
 		require.NoError(t, err)
 
+		vm2 := did.NewVerificationMethodFromBytes("id2", "", "", pk)
+
 		ver := did.NewReferencedVerification(vm, did.Authentication)
+		ver2 := did.NewReferencedVerification(vm2, did.AssertionMethod)
+
 		verAssertionMethod := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"}, did.AssertionMethod)
 		verKeyAgreement := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"}, did.KeyAgreement)
 		verCapabilityDelegation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"},
 			did.CapabilityDelegation)
-		verCapabilityInvocation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"},
+		verCapabilityInvocation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id2"},
 			did.CapabilityInvocation)
 
 		docResolution, err := v.Create(&did.Doc{
@@ -139,6 +143,7 @@ func TestVDRI_Create(t *testing.T) {
 			},
 			Authentication: []did.Verification{
 				*ver,
+				*ver2,
 				*verAssertionMethod,
 				*verKeyAgreement,
 				*verCapabilityDelegation,
@@ -478,7 +483,7 @@ func TestVDRI_Recover(t *testing.T) {
 			vdrapi.WithOption(RecoverOpt, true),
 			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "verificationMethod JSONWebKey is nil")
+		require.Contains(t, err.Error(), "verificationMethod needs either JSONWebKey or Base58 key")
 
 		verAuthentication.Relationship = did.VerificationRelationshipGeneral
 

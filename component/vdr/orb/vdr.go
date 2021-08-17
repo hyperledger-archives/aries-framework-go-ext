@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/btcsuite/btcutil/base58"
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
@@ -511,7 +512,7 @@ func (v *VDR) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 	return v.sidetreeClient.DeactivateDID(didID, deactivateOpt...)
 }
 
-func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error) {
+func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error) { // nolint:funlen,gocyclo
 	pksMap := make(map[string]*doc.PublicKey)
 
 	if len(didDoc.VerificationMethod) > 0 {
@@ -552,15 +553,23 @@ func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error
 			continue
 		}
 
-		if v.VerificationMethod.JSONWebKey() == nil {
-			return nil, fmt.Errorf("verificationMethod JSONWebKey is nil")
-		}
-
-		pksMap[v.VerificationMethod.ID] = &doc.PublicKey{
-			ID:       v.VerificationMethod.ID,
-			Type:     v.VerificationMethod.Type,
-			Purposes: []string{purpose},
-			JWK:      *v.VerificationMethod.JSONWebKey(),
+		switch {
+		case v.VerificationMethod.JSONWebKey() != nil:
+			pksMap[v.VerificationMethod.ID] = &doc.PublicKey{
+				ID:       v.VerificationMethod.ID,
+				Type:     v.VerificationMethod.Type,
+				Purposes: []string{purpose},
+				JWK:      *v.VerificationMethod.JSONWebKey(),
+			}
+		case v.VerificationMethod.Value != nil:
+			pksMap[v.VerificationMethod.ID] = &doc.PublicKey{
+				ID:       v.VerificationMethod.ID,
+				Type:     v.VerificationMethod.Type,
+				Purposes: []string{purpose},
+				B58Key:   base58.Encode(v.VerificationMethod.Value),
+			}
+		default:
+			return nil, fmt.Errorf("verificationMethod needs either JSONWebKey or Base58 key")
 		}
 	}
 
