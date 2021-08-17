@@ -116,7 +116,7 @@ func WithIndexCreationConflictTimeBetweenRetries(timeBetweenRetries time.Duratio
 	}
 }
 
-// Provider represents a CouchDB implementation of the storage.Provider interface.
+// Provider represents a MongoDB/DocumentDB implementation of the storage.Provider interface.
 type Provider struct {
 	connString                              string
 	openStores                              map[string]*store
