@@ -118,7 +118,7 @@ func WithIndexCreationConflictTimeBetweenRetries(timeBetweenRetries time.Duratio
 
 // Provider represents a MongoDB/DocumentDB implementation of the storage.Provider interface.
 type Provider struct {
-	connString                              string
+	client                                  *mongo.Client
 	openStores                              map[string]*store
 	dbPrefix                                string
 	lock                                    sync.RWMutex
@@ -135,12 +135,27 @@ type Provider struct {
 // are supported and will be captured correctly.
 // If using DocumentDB, the retryWrites option must be set to false in the connection string (retryWrites=false) in
 // order for it to work.
-func NewProvider(connString string, opts ...Option) *Provider {
-	p := &Provider{connString: connString, openStores: map[string]*store{}}
+func NewProvider(connString string, opts ...Option) (*Provider, error) {
+	p := &Provider{openStores: map[string]*store{}}
 
 	setOptions(opts, p)
 
-	return p
+	client, err := mongo.NewClient(mongooptions.Client().ApplyURI(connString))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create a new MongoDB client: %w", err)
+	}
+
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), p.timeout)
+	defer cancel()
+
+	err = client.Connect(ctxWithTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
+	}
+
+	p.client = client
+
+	return p, nil
 }
 
 // OpenStore opens a Store with the given name and returns a handle.
@@ -161,25 +176,11 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 		return openStore, nil
 	}
 
-	client, err := mongo.NewClient(mongooptions.Client().ApplyURI(p.connString))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create a new MongoDB client: %w", err)
-	}
-
-	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), p.timeout)
-	defer cancel()
-
-	err = client.Connect(ctxWithTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
-	}
-
 	newStore := &store{
-		client: client,
 		// The storage interface doesn't have the concept of a nested database, so we have no real use for the
 		// collection abstraction MongoDB uses. Since we have to use at least one collection, we keep the collection
 		// name as short as possible to avoid hitting the index size limit.
-		coll:    client.Database(name).Collection("c"),
+		coll:    p.client.Database(name).Collection("c"),
 		name:    name,
 		close:   p.removeStore,
 		timeout: p.timeout,
@@ -305,6 +306,18 @@ func (p *Provider) Close() error {
 		if err != nil {
 			return fmt.Errorf(`failed to close open store with name "%s": %w`, openStore.name, err)
 		}
+	}
+
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), p.timeout)
+	defer cancel()
+
+	err := p.client.Disconnect(ctxWithTimeout)
+	if err != nil {
+		if err.Error() == "client is disconnected" {
+			return nil
+		}
+
+		return fmt.Errorf("failed to disconnect from MongoDB: %w", err)
 	}
 
 	return nil
@@ -474,7 +487,6 @@ func (p *Provider) createIndexes(openStore *store, models []mongo.IndexModel) er
 
 type store struct {
 	name    string
-	client  *mongo.Client
 	coll    *mongo.Collection
 	close   closer
 	timeout time.Duration
@@ -713,21 +725,10 @@ func (s *store) Flush() error {
 	return nil
 }
 
-// Close closes this store's connection to the database.
+// Close removes this store from the parent Provider's list of open stores. It does not close this store's connection
+// to the database, since it's shared across stores. To close the connection you must call Provider.Close.
 func (s *store) Close() error {
 	s.close(s.name)
-
-	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
-	defer cancel()
-
-	err := s.client.Disconnect(ctxWithTimeout)
-	if err != nil {
-		if err.Error() == "client is disconnected" {
-			return nil
-		}
-
-		return fmt.Errorf("failed to disconnect from MongoDB: %w", err)
-	}
 
 	return nil
 }
