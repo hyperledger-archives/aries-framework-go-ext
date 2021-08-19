@@ -60,19 +60,18 @@ func TestMongoDB_V5_0_0(t *testing.T) {
 	startContainerAndDoAllTests(t, dockerMongoDBTagV500)
 }
 
-func TestProvider_OpenStore_Failure(t *testing.T) {
-	provider := mongodb.NewProvider("BadConnString")
-
-	store, err := provider.OpenStore("StoreName")
+func TestProvider_New_Failure(t *testing.T) {
+	provider, err := mongodb.NewProvider("BadConnString")
 	require.EqualError(t, err, `failed to create a new MongoDB client: error parsing uri: `+
 		`scheme must be "mongodb" or "mongodb+srv"`)
-	require.Nil(t, store)
+	require.Nil(t, provider)
 }
 
 func TestProvider_SetStoreConfig_Failure(t *testing.T) {
-	provider := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	require.NoError(t, err)
 
-	_, err := provider.OpenStore("StoreName")
+	_, err = provider.OpenStore("StoreName")
 	require.NoError(t, err)
 
 	err = provider.SetStoreConfig("StoreName", storage.StoreConfiguration{TagNames: []string{"tagName1"}})
@@ -81,9 +80,10 @@ func TestProvider_SetStoreConfig_Failure(t *testing.T) {
 }
 
 func TestProvider_GetStoreConfig_Failure(t *testing.T) {
-	provider := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	require.NoError(t, err)
 
-	_, err := provider.OpenStore("StoreName")
+	_, err = provider.OpenStore("StoreName")
 	require.NoError(t, err)
 
 	config, err := provider.GetStoreConfig("StoreName")
@@ -94,7 +94,8 @@ func TestProvider_GetStoreConfig_Failure(t *testing.T) {
 }
 
 func TestStore_Put_Failure(t *testing.T) {
-	provider := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	require.NoError(t, err)
 
 	store, err := provider.OpenStore("StoreName")
 	require.NoError(t, err)
@@ -105,7 +106,8 @@ func TestStore_Put_Failure(t *testing.T) {
 }
 
 func TestStore_Get_Failure(t *testing.T) {
-	provider := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	require.NoError(t, err)
 
 	store, err := provider.OpenStore("StoreName")
 	require.NoError(t, err)
@@ -117,7 +119,8 @@ func TestStore_Get_Failure(t *testing.T) {
 }
 
 func TestStore_GetTags_Failure(t *testing.T) {
-	provider := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	require.NoError(t, err)
 
 	store, err := provider.OpenStore("StoreName")
 	require.NoError(t, err)
@@ -130,7 +133,8 @@ func TestStore_GetTags_Failure(t *testing.T) {
 }
 
 func TestStore_GetBulk_Failure(t *testing.T) {
-	provider := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	require.NoError(t, err)
 
 	store, err := provider.OpenStore("StoreName")
 	require.NoError(t, err)
@@ -142,7 +146,8 @@ func TestStore_GetBulk_Failure(t *testing.T) {
 }
 
 func TestStore_Delete_Failure(t *testing.T) {
-	provider := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	require.NoError(t, err)
 
 	store, err := provider.OpenStore("StoreName")
 	require.NoError(t, err)
@@ -153,7 +158,8 @@ func TestStore_Delete_Failure(t *testing.T) {
 }
 
 func TestStore_Batch_Failure(t *testing.T) {
-	provider := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+	require.NoError(t, err)
 
 	store, err := provider.OpenStore("StoreName")
 	require.NoError(t, err)
@@ -178,13 +184,15 @@ func startContainerAndDoAllTests(t *testing.T, dockerMongoDBTag string) {
 func doAllTests(t *testing.T, connString string) {
 	t.Helper()
 
-	provider := mongodb.NewProvider(connString, mongodb.WithDBPrefix("dbPrefixTest_"),
+	provider, err := mongodb.NewProvider(connString, mongodb.WithDBPrefix("dbPrefixTest_"),
 		mongodb.WithLogger(&testLogger{
 			logger: log.New(os.Stdout, "MongoDB-Provider ", log.Ldate|log.Ltime|log.LUTC),
 		}))
-	require.NotNil(t, provider)
+	require.NoError(t, err)
 
 	commontest.TestAll(t, provider, commontest.WithIteratorTotalItemCountTests())
+	testCloseProviderTwice(t, connString)
+
 	testMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t, connString)
 }
 
@@ -198,10 +206,10 @@ func testMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t *testing.
 	openStores := make([]storage.Store, numberOfProviders)
 
 	for i := 0; i < numberOfProviders; i++ {
-		provider := mongodb.NewProvider(connString, mongodb.WithTimeout(time.Second*3),
+		provider, err := mongodb.NewProvider(connString, mongodb.WithTimeout(time.Second*3),
 			mongodb.WithMaxIndexCreationConflictRetries(10),
 			mongodb.WithIndexCreationConflictTimeBetweenRetries(time.Second))
-		require.NotNil(t, provider)
+		require.NoError(t, err)
 
 		providers[i] = provider
 	}
@@ -259,6 +267,22 @@ func testMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t *testing.
 	}
 
 	waitGroup.Wait()
+}
+
+func testCloseProviderTwice(t *testing.T, connString string) {
+	t.Helper()
+
+	provider, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	_, err = provider.OpenStore("TestStore1")
+	require.NoError(t, err)
+
+	_, err = provider.OpenStore("TestStore2")
+	require.NoError(t, err)
+
+	require.NoError(t, provider.Close())
+	require.NoError(t, provider.Close()) // Should succeed, even if called repeatedly.
 }
 
 func startMongoDBContainer(t *testing.T, dockerMongoDBTag string) (*dctest.Pool, *dctest.Resource) {
