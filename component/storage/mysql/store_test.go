@@ -7,6 +7,7 @@ package mysql_test
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -210,17 +211,6 @@ func TestSqlDBProvider_GetStoreConfig(t *testing.T) {
 }
 
 func TestSqlDBStore_Put(t *testing.T) {
-	t.Run("Fail to update tag map since the store configuration was never set", func(t *testing.T) {
-		provider, err := NewProvider(sqlStoreDBURL)
-		require.NoError(t, err)
-
-		testStore, err := provider.OpenStore(randomStoreName())
-		require.NoError(t, err)
-
-		err = testStore.Put("key", []byte("value"), storage.Tag{})
-		require.EqualError(t, err, "failed to update tag map: failed to get tag map: tag map not found. "+
-			"Was the store configuration set? error: failed to get DB entry: data not found")
-	})
 	t.Run("Fail to update tag map since the DB connection was closed", func(t *testing.T) {
 		provider, err := NewProvider(sqlStoreDBURL)
 		require.NoError(t, err)
@@ -232,7 +222,7 @@ func TestSqlDBStore_Put(t *testing.T) {
 		require.NoError(t, err)
 
 		err = testStore.Put("key", []byte("value"), storage.Tag{})
-		require.EqualError(t, err, "failed to update tag map: failed to get tag map: failed to get tag map: "+
+		require.EqualError(t, err, "failed to update tag map: failed to get tag map: failed to get data: "+
 			"failed to get DB entry: failure while querying row: sql: database is closed")
 	})
 	t.Run("Fail to unmarshal tag map bytes", func(t *testing.T) {
@@ -263,23 +253,8 @@ func TestSqlDBStore_Query(t *testing.T) {
 		require.NoError(t, err)
 
 		itr, err := testStore.Query("expression")
-		require.EqualError(t, err, "failed to get tag map: failed to get tag map: failed to get DB entry: "+
-			"failure while querying row: sql: database is closed")
-		require.Nil(t, itr)
-	})
-	t.Run("Fail to unmarshal tag map bytes", func(t *testing.T) {
-		provider, err := NewProvider(sqlStoreDBURL)
-		require.NoError(t, err)
-
-		testStore, err := provider.OpenStore(randomStoreName())
-		require.NoError(t, err)
-
-		err = testStore.Put("TagMap", []byte("Not a proper tag map"))
-		require.NoError(t, err)
-
-		itr, err := testStore.Query("expression")
-		require.EqualError(t, err, "failed to get tag map: failed to unmarshal tag map bytes: "+
-			"invalid character 'N' looking for beginning of value")
+		require.EqualError(t, err, "failed to get database keys matching query: failed to get tag map: "+
+			"failed to get data: failed to get DB entry: failure while querying row: sql: database is closed")
 		require.Nil(t, itr)
 	})
 	t.Run("Not supported options", func(t *testing.T) {
@@ -336,7 +311,7 @@ func TestSqlDBStore_Common(t *testing.T) {
 		commontest.TestProviderOpenStoreSetGetConfig(t, provider)
 		commontest.TestPutGet(t, provider)
 		commontest.TestStoreGetTags(t, provider)
-		commontest.TestStoreQuery(t, provider, commontest.WithIteratorTotalItemCountTests())
+		commontest.TestStoreQuery(t, provider)
 		commontest.TestStoreDelete(t, provider)
 		commontest.TestStoreClose(t, provider)
 		commontest.TestProviderClose(t, provider)
@@ -349,7 +324,7 @@ func TestSqlDBStore_Common(t *testing.T) {
 		commontest.TestProviderOpenStoreSetGetConfig(t, provider)
 		commontest.TestPutGet(t, provider)
 		commontest.TestStoreGetTags(t, provider)
-		commontest.TestStoreQuery(t, provider, commontest.WithIteratorTotalItemCountTests())
+		commontest.TestStoreQuery(t, provider)
 		commontest.TestStoreDelete(t, provider)
 		commontest.TestStoreClose(t, provider)
 		commontest.TestProviderClose(t, provider)
@@ -414,6 +389,46 @@ func TestSqlDBStore_Batch(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to update tag map")
 	})
+}
+
+func TestEnsureTagMapIsOnlyCreatedWhenNeeded(t *testing.T) {
+	provider, err := NewProvider(sqlStoreDBURL)
+	require.NoError(t, err)
+
+	// We defer creating the tag map entry until we actually have to. This saves on space if a client does not need
+	// to use tags + querying. The only thing that should cause the tag map entry to be created is if a Put is done
+	// with tags.
+
+	testStore, err := provider.OpenStore("TestStore")
+	require.NoError(t, err)
+
+	err = provider.SetStoreConfig("TestStore", storage.StoreConfiguration{TagNames: []string{"TagName1"}})
+	require.NoError(t, err)
+
+	value, err := testStore.Get("TagMap")
+	require.True(t, errors.Is(err, storage.ErrDataNotFound), "unexpected error or no error")
+	require.Nil(t, value)
+
+	err = testStore.Put("Key", []byte("value"))
+	require.NoError(t, err)
+
+	value, err = testStore.Get("TagMap")
+	require.True(t, errors.Is(err, storage.ErrDataNotFound))
+	require.Nil(t, value)
+
+	err = testStore.Delete("Key")
+	require.NoError(t, err)
+
+	value, err = testStore.Get("TagMap")
+	require.True(t, errors.Is(err, storage.ErrDataNotFound), "unexpected error or no error")
+	require.Nil(t, value)
+
+	err = testStore.Put("Key", []byte("value"), storage.Tag{Name: "TagName1"})
+	require.NoError(t, err)
+
+	value, err = testStore.Get("TagMap")
+	require.NoError(t, err)
+	require.Equal(t, `{"TagName1":{"Key":{}}}`, string(value))
 }
 
 func randomStoreName() string {

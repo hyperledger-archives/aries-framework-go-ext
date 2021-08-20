@@ -190,7 +190,7 @@ func doAllTests(t *testing.T, connString string) {
 		}))
 	require.NoError(t, err)
 
-	commontest.TestAll(t, provider, commontest.WithIteratorTotalItemCountTests())
+	commontest.TestAll(t, provider)
 	testCloseProviderTwice(t, connString)
 
 	testMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t, connString)
