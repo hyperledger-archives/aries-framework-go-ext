@@ -189,17 +189,6 @@ func (p *Provider) SetStoreConfig(name string, config storage.StoreConfiguration
 		return fmt.Errorf("failed to put store store configuration: %w", err)
 	}
 
-	// Create the tag map if it doesn't exist already.
-	_, err = openStore.Get(tagMapKey)
-	if errors.Is(err, storage.ErrDataNotFound) {
-		err = openStore.Put(tagMapKey, []byte("{}"))
-		if err != nil {
-			return fmt.Errorf(`failed to create tag map for "%s": %w`, name, err)
-		}
-	} else if err != nil {
-		return fmt.Errorf("unexpected failure while getting tag data bytes: %w", err)
-	}
-
 	return nil
 }
 
@@ -349,33 +338,28 @@ func (s *store) Query(expression string, options ...storage.QueryOption) (storag
 		return nil, fmt.Errorf(invalidQueryExpressionFormat, expression)
 	}
 
-	tagMap, err := s.getTagMap()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get tag map: %w", err)
-	}
-
 	expressionSplit := strings.Split(expression, ":")
+
+	var expressionTagName string
+
+	var expressionTagValue string
+
 	switch len(expressionSplit) {
 	case expressionTagNameOnlyLength:
-		expressionTagName := expressionSplit[0]
-
-		matchingDatabaseKeys := getDatabaseKeysMatchingTagName(tagMap, expressionTagName)
-
-		return &iterator{keys: matchingDatabaseKeys, store: s}, nil
+		expressionTagName = expressionSplit[0]
 	case expressionTagNameAndValueLength:
-		expressionTagName := expressionSplit[0]
-		expressionTagValue := expressionSplit[1]
-
-		matchingDatabaseKeys, err :=
-			s.getDatabaseKeysMatchingTagNameAndValue(tagMap, expressionTagName, expressionTagValue)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get database keys matching tag name and value: %w", err)
-		}
-
-		return &iterator{keys: matchingDatabaseKeys, store: s}, nil
+		expressionTagName = expressionSplit[0]
+		expressionTagValue = expressionSplit[1]
 	default:
 		return nil, fmt.Errorf(invalidQueryExpressionFormat, expression)
 	}
+
+	matchingDatabaseKeys, err := s.getDatabaseKeysMatchingQuery(expressionTagName, expressionTagValue)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database keys matching query: %w", err)
+	}
+
+	return &iterator{keys: matchingDatabaseKeys, store: s}, nil
 }
 
 // Delete will delete record with k key.
@@ -491,12 +475,11 @@ func (s *store) Close() error {
 	return nil
 }
 
-// TODO optimize tagMap: https://github.com/hyperledger/aries-framework-go-ext/issues/109
 func (s *store) updateTagMap(key string, tags []storage.Tag) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	tagMap, err := s.getTagMap()
+	tagMap, err := s.getTagMap(true)
 	if err != nil {
 		return fmt.Errorf("failed to get tag map: %w", err)
 	}
@@ -522,14 +505,20 @@ func (s *store) updateTagMap(key string, tags []storage.Tag) error {
 	return nil
 }
 
-func (s *store) getTagMap() (tagMapping, error) {
+func (s *store) getTagMap(createIfDoesNotExist bool) (tagMapping, error) {
 	tagMapBytes, err := s.Get(tagMapKey)
 	if err != nil {
-		if errors.Is(err, storage.ErrDataNotFound) {
-			return nil, fmt.Errorf("tag map not found. Was the store configuration set? error: %w", err)
-		}
+		if createIfDoesNotExist && errors.Is(err, storage.ErrDataNotFound) {
+			// Create the tag map if it has never been created before.
+			err = s.Put(tagMapKey, []byte("{}"))
+			if err != nil {
+				return nil, fmt.Errorf(`failed to create tag map for "%s": %w`, s.name, err)
+			}
 
-		return nil, fmt.Errorf("failed to get tag map: %w", err)
+			tagMapBytes = []byte("{}")
+		} else {
+			return nil, fmt.Errorf("failed to get data: %w", err)
+		}
 	}
 
 	var tagMap tagMapping
@@ -574,10 +563,10 @@ func (s *store) removeFromTagMap(keyToRemove string) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	tagMap, err := s.getTagMap()
+	tagMap, err := s.getTagMap(false)
 	if err != nil {
-		// If there's no tag map, then this means that no store configuration was set.
-		// Nothing needs to be done in this case, as it means that this store doesn't use tags.
+		// If there's no tag map, then this means that tags have never been used. This means that there's no tag map
+		// to update. This isn't a problem.
 		if errors.Is(err, storage.ErrDataNotFound) {
 			return nil
 		}
@@ -600,6 +589,29 @@ func (s *store) removeFromTagMap(keyToRemove string) error {
 	}
 
 	return nil
+}
+
+func (s *store) getDatabaseKeysMatchingQuery(expressionTagName, expressionTagValue string) ([]string, error) {
+	tagMap, err := s.getTagMap(false)
+	if err != nil {
+		// If there's no tag map, then this means that tags have never been used, and therefore no matching results.
+		if errors.Is(err, storage.ErrDataNotFound) {
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("failed to get tag map: %w", err)
+	}
+
+	if expressionTagValue == "" {
+		return getDatabaseKeysMatchingTagName(tagMap, expressionTagName), nil
+	}
+
+	matchingDatabaseKeys, err := s.getDatabaseKeysMatchingTagNameAndValue(tagMap, expressionTagName, expressionTagValue)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database keys matching tag name and value: %w", err)
+	}
+
+	return matchingDatabaseKeys, nil
 }
 
 func (s *store) getDatabaseKeysMatchingTagNameAndValue(tagMap tagMapping,

@@ -262,8 +262,9 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 }
 
 // SetStoreConfig sets the configuration on a store.
-// Indexes are created based on the tag names in config. This allows the store.Query method to operate faster, and is
-// required to
+// Indexes are created based on the tag names in config. This allows the store.Query method to operate faster with
+// large datasets. If you want to do queries with sorts, then you must ensure the tag you're sorting on is indexed,
+// otherwise the query will fail.
 // Existing tag names/indexes in the store that are not in the config passed in here will be removed.
 // The store must be created prior to calling this method.
 // If duplicate tags are provided, then CouchDB will ignore them.
@@ -695,9 +696,9 @@ func (s *store) GetBulk(keys ...string) ([][]byte, error) {
 // If TagValue is not provided, then all data associated with the TagName will be returned.
 // For now, expression can only be a single tag Name + Value pair.
 // If no options are provided, then defaults will be used.
-// For improved performance, ensure that the tag name you are querying is included in the store config, as this
-// will ensure that it's indexed in CouchDB.
-// TODO (#44) Should we make the store config mandatory?
+// If sorting is used, then the tag used for sorting must be indexed.
+// For improved performance with large datasets, ensure that the tag name you are querying is included in the store
+// config, as this will ensure that it's indexed in CouchDB.
 func (s *store) Query(expression string, options ...storage.QueryOption) (storage.Iterator, error) {
 	if expression == "" {
 		return &couchDBResultsIterator{}, errInvalidQueryExpressionFormat
