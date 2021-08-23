@@ -30,23 +30,23 @@ type indyPubkey struct {
 	txnTime time.Time
 }
 
-func (r *VDR) Read(did string, opts ...vdrapi.ResolveOpts) (*diddoc.Doc, error) {
+func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*diddoc.DocResolution, error) {
 	parsedDID, err := diddoc.Parse(did)
 	if err != nil {
 		return nil, fmt.Errorf("parsing did failed in indy resolver: (%w)", err)
 	}
 
-	if parsedDID.Method != r.MethodName {
+	if parsedDID.Method != v.MethodName {
 		return nil, fmt.Errorf("invalid indy method name: %s", parsedDID.MethodSpecificID)
 	}
 
-	resOpts := &vdrapi.ResolveDIDOpts{}
+	resOpts := &vdrapi.DIDMethodOpts{}
 
 	for _, opt := range opts {
 		opt(resOpts)
 	}
 
-	res, err := r.getPubKey(parsedDID)
+	res, err := v.getPubKey(parsedDID)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (r *VDR) Read(did string, opts ...vdrapi.ResolveOpts) (*diddoc.Doc, error) 
 
 	var svc []diddoc.Service
 
-	serviceEndpoint, err := r.getEndpoint(parsedDID.MethodSpecificID)
+	serviceEndpoint, err := v.getEndpoint(parsedDID.MethodSpecificID)
 	if err == nil {
 		s := diddoc.Service{
 			ID:              "#agent",
@@ -78,11 +78,11 @@ func (r *VDR) Read(did string, opts ...vdrapi.ResolveOpts) (*diddoc.Doc, error) 
 		Updated:            &res.txnTime,
 	}
 
-	return doc, nil
+	return &diddoc.DocResolution{DIDDocument: doc}, nil
 }
 
-func (r *VDR) getPubKey(did *diddoc.DID) (*indyPubkey, error) {
-	rply, err := r.Client.GetNym(did.MethodSpecificID)
+func (v *VDR) getPubKey(did *diddoc.DID) (*indyPubkey, error) {
+	rply, err := v.Client.GetNym(did.MethodSpecificID)
 	if err != nil {
 		return nil, err
 	}
@@ -121,8 +121,8 @@ func (r *VDR) getPubKey(did *diddoc.DID) (*indyPubkey, error) {
 	}, nil
 }
 
-func (r *VDR) getEndpoint(did string) (string, error) {
-	rply, err := r.Client.GetEndpoint(did)
+func (v *VDR) getEndpoint(did string) (string, error) {
+	rply, err := v.Client.GetEndpoint(did)
 	if err != nil || rply.Data == nil {
 		return "", errors.New("not found")
 	}
