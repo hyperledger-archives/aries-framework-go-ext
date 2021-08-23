@@ -180,7 +180,7 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 		// The storage interface doesn't have the concept of a nested database, so we have no real use for the
 		// collection abstraction MongoDB uses. Since we have to use at least one collection, we keep the collection
 		// name as short as possible to avoid hitting the index size limit.
-		coll:    p.client.Database(name).Collection("c"),
+		coll:    p.getCollectionHandle(name),
 		name:    name,
 		close:   p.removeStore,
 		timeout: p.timeout,
@@ -257,12 +257,20 @@ func (p *Provider) SetStoreConfig(storeName string, config storage.StoreConfigur
 func (p *Provider) GetStoreConfig(name string) (storage.StoreConfiguration, error) {
 	name = strings.ToLower(p.dbPrefix + name)
 
-	openStore, found := p.openStores[name]
-	if !found {
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), p.timeout)
+	defer cancel()
+
+	databaseNames, err := p.client.ListDatabaseNames(ctxWithTimeout, bson.D{{Key: "name", Value: name}})
+	if err != nil {
+		return storage.StoreConfiguration{}, fmt.Errorf("failed to determine if the underlying database "+
+			"exists for %s: %w", name, err)
+	}
+
+	if len(databaseNames) == 0 {
 		return storage.StoreConfiguration{}, storage.ErrStoreNotFound
 	}
 
-	existingIndexedTagNames, err := p.getExistingIndexedTagNames(openStore)
+	existingIndexedTagNames, err := p.getExistingIndexedTagNames(p.getCollectionHandle(name))
 	if err != nil {
 		return storage.StoreConfiguration{}, fmt.Errorf("failed to get existing indexed tag names: %w", err)
 	}
@@ -333,6 +341,10 @@ func (p *Provider) removeStore(name string) {
 	}
 }
 
+func (p *Provider) getCollectionHandle(name string) *mongo.Collection {
+	return p.client.Database(name).Collection("c")
+}
+
 func (p *Provider) setIndexes(openStore *store, config storage.StoreConfiguration) error {
 	tagNamesNeedIndexCreation, err := p.determineTagNamesNeedIndexCreation(openStore, config)
 	if err != nil {
@@ -363,7 +375,7 @@ func (p *Provider) setIndexes(openStore *store, config storage.StoreConfiguratio
 
 func (p *Provider) determineTagNamesNeedIndexCreation(openStore *store,
 	config storage.StoreConfiguration) ([]string, error) {
-	existingIndexedTagNames, err := p.getExistingIndexedTagNames(openStore)
+	existingIndexedTagNames, err := p.getExistingIndexedTagNames(openStore.coll)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get existing indexed tag names: %w", err)
 	}
@@ -412,8 +424,8 @@ func (p *Provider) determineTagNamesNeedIndexCreation(openStore *store,
 	return tagNamesNeedIndexCreation, nil
 }
 
-func (p *Provider) getExistingIndexedTagNames(openStore *store) ([]string, error) {
-	indexesCursor, err := p.getIndexesCursor(openStore)
+func (p *Provider) getExistingIndexedTagNames(collection *mongo.Collection) ([]string, error) {
+	indexesCursor, err := p.getIndexesCursor(collection)
 	if err != nil {
 		return nil, err
 	}
@@ -461,11 +473,11 @@ func (p *Provider) getExistingIndexedTagNames(openStore *store) ([]string, error
 	return existingIndexedTagNames, nil
 }
 
-func (p *Provider) getIndexesCursor(openStore *store) (*mongo.Cursor, error) {
+func (p *Provider) getIndexesCursor(collection *mongo.Collection) (*mongo.Cursor, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), p.timeout)
 	defer cancel()
 
-	indexesCursor, err := openStore.coll.Indexes().List(ctxWithTimeout)
+	indexesCursor, err := collection.Indexes().List(ctxWithTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get list of indexes from MongoDB: %w", err)
 	}

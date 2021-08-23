@@ -193,6 +193,7 @@ func (p *Provider) SetStoreConfig(name string, config storage.StoreConfiguration
 }
 
 // GetStoreConfig returns the store's configuration.
+// TODO (#167): Check for underlying database's existence instead of looking at in-memory stores.
 func (p *Provider) GetStoreConfig(name string) (storage.StoreConfiguration, error) {
 	name = strings.ToLower(name)
 

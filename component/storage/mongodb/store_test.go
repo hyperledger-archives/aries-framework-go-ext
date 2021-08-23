@@ -83,12 +83,12 @@ func TestProvider_GetStoreConfig_Failure(t *testing.T) {
 	provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
 	require.NoError(t, err)
 
-	_, err = provider.OpenStore("StoreName")
+	_, err = provider.OpenStore("TestStoreName")
 	require.NoError(t, err)
 
-	config, err := provider.GetStoreConfig("StoreName")
-	require.EqualError(t, err, "failed to get existing indexed tag names: failed to get list of indexes "+
-		"from MongoDB: server selection error: context deadline exceeded, current topology: { Type: Unknown, "+
+	config, err := provider.GetStoreConfig("TestStoreName")
+	require.EqualError(t, err, "failed to determine if the underlying database exists for teststorename: "+
+		"server selection error: context deadline exceeded, current topology: { Type: Unknown, "+
 		"Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }")
 	require.Empty(t, config)
 }
@@ -191,9 +191,88 @@ func doAllTests(t *testing.T, connString string) {
 	require.NoError(t, err)
 
 	commontest.TestAll(t, provider)
-	testCloseProviderTwice(t, connString)
-
+	testGetStoreConfigUnderlyingDatabaseCheck(t, connString)
 	testMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t, connString)
+	testCloseProviderTwice(t, connString)
+}
+
+func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) {
+	t.Helper()
+
+	provider, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	storeName := "UnderlyingDatabaseTestStore"
+
+	// The MongoDB database shouldn't exist yet.
+	config, err := provider.GetStoreConfig(storeName)
+	require.Equal(t, true, errors.Is(storage.ErrStoreNotFound, err),
+		"unexpected error or no error")
+	require.Empty(t, config)
+
+	_, err = provider.OpenStore(storeName)
+	require.NoError(t, err)
+
+	// MongoDB defers creating the database until data is put in it or indexes are created.
+	// The call above to OpenStore shouldn't have created the database yet.
+	config, err = provider.GetStoreConfig(storeName)
+	require.Equal(t, true, errors.Is(storage.ErrStoreNotFound, err),
+		"unexpected error or no error")
+	require.Empty(t, config)
+
+	// This will create the database.
+	err = provider.SetStoreConfig(storeName, storage.StoreConfiguration{TagNames: []string{"TagName1"}})
+	require.NoError(t, err)
+
+	// Now the underlying database should be found.
+	config, err = provider.GetStoreConfig(storeName)
+	require.NoError(t, err)
+	require.Equal(t, "TagName1", config.TagNames[0])
+
+	err = provider.Close()
+	require.NoError(t, err)
+
+	// Create a new Provider object.
+	provider, err = mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	// This method tells you how many store objects are open in this Provider.
+	// Since it's a new Provider, there shouldn't be any.
+	openStores := provider.GetOpenStores()
+	require.Len(t, openStores, 0)
+
+	// This will succeed since GetStoreConfig checks the underlying databases instead of the
+	// in-memory store objects.
+	config, err = provider.GetStoreConfig(storeName)
+	require.NoError(t, err)
+	require.Equal(t, "TagName1", config.TagNames[0])
+
+	// The call above should not have created a new store object.
+	openStores = provider.GetOpenStores()
+	require.Len(t, openStores, 0)
+
+	// As mentioned above, MongoDB defers creating databases until there is data put in or indexes are set.
+	// The code above triggered database creationg by creating indexes. Below we will do the same type of test, but this
+	// time we create the database by storing data.
+	storeName2 := "UnderlyingDatabaseTestStore2"
+
+	store, err := provider.OpenStore(storeName2)
+	require.NoError(t, err)
+
+	// Underlying database shouldn't exist yet.
+	config, err = provider.GetStoreConfig(storeName2)
+	require.Equal(t, true, errors.Is(storage.ErrStoreNotFound, err),
+		"unexpected error or no error")
+	require.Empty(t, config)
+
+	err = store.Put("key", []byte("value"))
+	require.NoError(t, err)
+
+	// Now the underlying database should be found.
+	// The config will be empty since it was never set
+	config, err = provider.GetStoreConfig(storeName2)
+	require.NoError(t, err)
+	require.Empty(t, config.TagNames)
 }
 
 func testMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t *testing.T, connString string) {
