@@ -57,16 +57,12 @@ func (d *defaultLogger) Infof(msg string, args ...interface{}) {
 
 type closer func(storeName string)
 
-type jsonDataWrapper struct {
-	Key   string                 `bson:"_id"`
-	Value map[string]interface{} `bson:"value,omitempty"`
-	Tags  map[string]interface{} `bson:"tags,omitempty"`
-}
-
-type binaryDataWrapper struct {
-	Key   string                 `bson:"_id"`
-	Value []byte                 `bson:"value,omitempty"`
-	Tags  map[string]interface{} `bson:"tags,omitempty"`
+type dataWrapper struct {
+	Key  string                 `bson:"_id"`
+	Doc  map[string]interface{} `bson:"doc,omitempty"`
+	Str  string                 `bson:"str,omitempty"`
+	Bin  []byte                 `bson:"bin,omitempty"`
+	Tags map[string]interface{} `bson:"tags,omitempty"`
 }
 
 // Option represents an option for a MongoDB Provider.
@@ -516,29 +512,46 @@ func (s *store) Put(key string, value []byte, tags ...storage.Tag) error {
 
 	tagsAsMap := convertTagSliceToMap(tags)
 
-	if isJSON(value) {
-		var unmarshalledValue map[string]interface{}
+	var unmarshalledValue map[string]interface{}
 
-		err = json.Unmarshal(value, &unmarshalledValue)
+	err = json.Unmarshal(value, &unmarshalledValue)
+	if err == nil {
+		ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
+		defer cancel()
+
+		_, err = s.coll.UpdateOne(ctxWithTimeout, bson.M{"_id": key},
+			bson.M{"$set": dataWrapper{Key: key, Doc: unmarshalledValue, Tags: tagsAsMap}},
+			opts.SetUpsert(true))
 		if err != nil {
-			return fmt.Errorf("failed to unmarshal JSON bytes into a map[string]interface{}: %w", err)
+			return fmt.Errorf("failed to run UpdateOne command in MongoDB: %w", err)
 		}
 
-		ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
-		defer cancel()
-
-		_, err = s.coll.UpdateOne(ctxWithTimeout, bson.M{"_id": key},
-			bson.M{"$set": jsonDataWrapper{Key: key, Value: unmarshalledValue, Tags: tagsAsMap}},
-			opts.SetUpsert(true))
-	} else {
-		ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
-		defer cancel()
-
-		_, err = s.coll.UpdateOne(ctxWithTimeout, bson.M{"_id": key},
-			bson.M{"$set": binaryDataWrapper{Key: key, Value: value, Tags: tagsAsMap}},
-			opts.SetUpsert(true))
+		return nil
 	}
 
+	var unmarshalledStringValue string
+
+	err = json.Unmarshal(value, &unmarshalledStringValue)
+	if err == nil {
+		ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
+		defer cancel()
+
+		_, err = s.coll.UpdateOne(ctxWithTimeout, bson.M{"_id": key},
+			bson.M{"$set": dataWrapper{Key: key, Str: unmarshalledStringValue, Tags: tagsAsMap}},
+			opts.SetUpsert(true))
+		if err != nil {
+			return fmt.Errorf("failed to run UpdateOne command in MongoDB: %w", err)
+		}
+
+		return nil
+	}
+
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
+	defer cancel()
+
+	_, err = s.coll.UpdateOne(ctxWithTimeout, bson.M{"_id": key},
+		bson.M{"$set": dataWrapper{Key: key, Bin: value, Tags: tagsAsMap}},
+		opts.SetUpsert(true))
 	if err != nil {
 		return fmt.Errorf("failed to run UpdateOne command in MongoDB: %w", err)
 	}
@@ -713,12 +726,7 @@ func (s *store) Batch(operations []storage.Operation) error {
 	models := make([]mongo.WriteModel, len(operations))
 
 	for i, operation := range operations {
-		model, err := generateModelForBulkWriteCall(operation)
-		if err != nil {
-			return fmt.Errorf("failed to generate model for bulk write call: %w", err)
-		}
-
-		models[i] = model
+		models[i] = generateModelForBulkWriteCall(operation)
 	}
 
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
@@ -910,12 +918,6 @@ func validatePutInput(key string, value []byte, tags []storage.Tag) error {
 	return nil
 }
 
-func isJSON(dataToCheck []byte) bool {
-	var js struct{}
-
-	return json.Unmarshal(dataToCheck, &js) == nil
-}
-
 func convertTagSliceToMap(tagSlice []storage.Tag) map[string]interface{} {
 	tagsMap := make(map[string]interface{})
 
@@ -953,63 +955,50 @@ type decoder interface {
 }
 
 func getKeyAndValueFromMongoDBResult(decoder decoder) (key string, value []byte, err error) {
-	jsonData, binaryData, errGetDataWrapper := getDataWrapperFromMongoDBResult(decoder)
+	data, errGetDataWrapper := getDataWrapperFromMongoDBResult(decoder)
 	if errGetDataWrapper != nil {
 		return "", nil, fmt.Errorf("failed to get data wrapper from MongoDB result: %w", errGetDataWrapper)
 	}
 
-	if jsonData != nil {
-		dataBytes, errMarshal := json.Marshal(jsonData.Value)
+	if data.Doc != nil {
+		dataBytes, errMarshal := json.Marshal(data.Doc)
 		if errMarshal != nil {
 			return "", nil, fmt.Errorf("failed to marshal value into bytes: %w", errMarshal)
 		}
 
-		return jsonData.Key, dataBytes, nil
+		return data.Key, dataBytes, nil
 	}
 
-	return binaryData.Key, binaryData.Value, nil
+	if data.Bin != nil {
+		return data.Key, data.Bin, nil
+	}
+
+	valueBytes, err := json.Marshal(data.Str)
+	if err != nil {
+		return "", nil, fmt.Errorf("marshal string value: %w", err)
+	}
+
+	return data.Key, valueBytes, nil
 }
 
 func getTagsFromMongoDBResult(decoder decoder) ([]storage.Tag, error) {
-	jsonData, binaryData, err := getDataWrapperFromMongoDBResult(decoder)
+	data, err := getDataWrapperFromMongoDBResult(decoder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get data wrapper from MongoDB result: %w", err)
 	}
 
-	var tagsToConvert map[string]interface{}
-
-	if jsonData == nil {
-		tagsToConvert = binaryData.Tags
-	} else {
-		tagsToConvert = jsonData.Tags
-	}
-
-	return convertTagMapToSlice(tagsToConvert), nil
+	return convertTagMapToSlice(data.Tags), nil
 }
 
-// The data wrapper from the MongoDB result may be a jsonDataWrapper or binaryDataWrapper.
-// If the data wrapper is a jsonDataWrapper, then that return value will be set and the *binaryDataWrapper return value
-// will be nil (and vice-versa).
-func getDataWrapperFromMongoDBResult(decoder decoder) (*jsonDataWrapper, *binaryDataWrapper, error) {
-	data := &jsonDataWrapper{}
+// getDataWrapperFromMongoDBResult unmarshals and returns a dataWrapper from the MongoDB result.
+func getDataWrapperFromMongoDBResult(decoder decoder) (*dataWrapper, error) {
+	data := &dataWrapper{}
 
-	err := decoder.Decode(data)
-	if err == nil {
-		return data, nil, nil
+	if err := decoder.Decode(data); err != nil {
+		return nil, fmt.Errorf("failed to decode data from MongoDB: %w", err)
 	}
 
-	if !strings.Contains(err.Error(), "cannot decode binary into a map[string]interface {}") {
-		return nil, nil, fmt.Errorf("failed to decode data from MongoDB into a JSON or binary data wrapper: %w", err)
-	}
-
-	binaryData := &binaryDataWrapper{}
-
-	err = decoder.Decode(binaryData)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode data from MongoDB into a JSON or binary data wrapper: %w", err)
-	}
-
-	return nil, binaryData, nil
+	return data, nil
 }
 
 func getQueryOptions(options []storage.QueryOption) storage.QueryOptions {
@@ -1026,35 +1015,34 @@ func getQueryOptions(options []storage.QueryOption) storage.QueryOptions {
 	return queryOptions
 }
 
-func generateModelForBulkWriteCall(operation storage.Operation) (mongo.WriteModel, error) {
+func generateModelForBulkWriteCall(operation storage.Operation) mongo.WriteModel {
 	if operation.Value == nil {
-		return mongo.NewDeleteOneModel().SetFilter(bson.M{"_id": operation.Key}), nil
+		return mongo.NewDeleteOneModel().SetFilter(bson.M{"_id": operation.Key})
 	}
 
-	tagsAsMap := convertTagSliceToMap(operation.Tags)
+	data := &dataWrapper{
+		Key:  operation.Key,
+		Tags: convertTagSliceToMap(operation.Tags),
+	}
 
-	if isJSON(operation.Value) {
-		var unmarshalledValue map[string]interface{}
+	var unmarshalledValue map[string]interface{}
 
-		err := json.Unmarshal(operation.Value, &unmarshalledValue)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal JSON bytes into a map[string]interface{}: %w", err)
+	err := json.Unmarshal(operation.Value, &unmarshalledValue)
+	if err == nil {
+		data.Doc = unmarshalledValue
+	} else {
+		var unmarshalledStringValue string
+
+		err = json.Unmarshal(operation.Value, &unmarshalledStringValue)
+		if err == nil {
+			data.Str = unmarshalledStringValue
+		} else {
+			data.Bin = operation.Value
 		}
-
-		return mongo.NewUpdateOneModel().
-			SetFilter(bson.M{"_id": operation.Key}).
-			SetUpdate(bson.M{"$set": jsonDataWrapper{
-				Key: operation.Key, Value: unmarshalledValue,
-				Tags: tagsAsMap,
-			}}).
-			SetUpsert(true), nil
 	}
 
 	return mongo.NewUpdateOneModel().
 		SetFilter(bson.M{"_id": operation.Key}).
-		SetUpdate(bson.M{"$set": binaryDataWrapper{
-			Key: operation.Key, Value: operation.Value,
-			Tags: tagsAsMap,
-		}}).
-		SetUpsert(true), nil
+		SetUpdate(bson.M{"$set": data}).
+		SetUpsert(true)
 }
