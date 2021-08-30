@@ -13,8 +13,8 @@ require (
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.0.0
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210817192417-e46e251f4caf
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210807121559-b41545a4f1e8
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210807121559-b41545a4f1e8
-	github.com/trustbloc/edge-core v0.1.7-0.20210816120552-ed93662ac716
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210820175050-dcc7a225178d
+	github.com/trustbloc/edge-core v0.1.7-0.20210819195944-a3500e365d5c
 )
 
 replace (

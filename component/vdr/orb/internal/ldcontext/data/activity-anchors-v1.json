@@ -1,0 +1,86 @@
+{
+  "url": "https://w3id.org/activityanchors/v1",
+  "content": {
+    "@context": {
+      "@version": 1.1,
+      "@protected": true,
+      "AnchorEvent": {
+        "@id": "https://w3id.org/activityanchors#AnchorEvent",
+        "@context": {
+          "@version": 1.1,
+          "@protected": true,
+          "id": "@id",
+          "type": "@type",
+          "aa": "https://w3id.org/activityanchors#",
+          "as": "https://www.w3.org/ns/activitystreams#",
+          "parent": "aa:parent"
+        }
+      },
+      "AnchorIndex": {
+        "@id": "https://w3id.org/activityanchors#AnchorIndex",
+        "@context": {
+          "@version": 1.1,
+          "@protected": true,
+          "id": "@id",
+          "type": "@type",
+          "aa": "https://w3id.org/activityanchors#",
+          "as": "https://www.w3.org/ns/activitystreams#",
+          "resources": {
+            "@id": "aa:resources",
+            "@type": "@json"
+          }
+        }
+      },
+      "AnchorResource": {
+        "@id": "https://w3id.org/activityanchors#AnchorResource",
+        "@context": {
+          "@version": 1.1,
+          "@protected": true,
+          "id": "@id",
+          "type": "@type",
+          "aa": "https://w3id.org/activityanchors#",
+          "as": "https://www.w3.org/ns/activitystreams#",
+          "previousAnchor": "aa:previousAnchor"
+        }
+      },
+      "AnchorCredential": {
+        "@id": "https://w3id.org/activityanchors#AnchorCredential",
+        "@context": {
+          "@version": 1.1,
+          "@protected": true,
+          "id": "@id",
+          "type": "@type"
+        }
+      },
+      "AnchorProof": {
+        "@id": "https://w3id.org/activityanchors#AnchorProof",
+        "@context": {
+          "@version": 1.1,
+          "@protected": true,
+          "id": "@id",
+          "type": "@type"
+        }
+      },
+      "AnchorCredentialReference": {
+        "@id": "https://w3id.org/activityanchors#AnchorCredentialReference",
+        "@context": {
+          "@version": 1.1,
+          "@protected": true,
+          "id": "@id",
+          "type": "@type"
+        }
+      },
+      "ContentAddressedStorage": {
+        "@id": "https://w3id.org/activityanchors#ContentAddressedStorage",
+        "@context": {
+          "@version": 1.1,
+          "@protected": true,
+          "id": "@id",
+          "type": "@type",
+          "aa": "https://w3id.org/activityanchors#",
+          "cid": "aa:contentIdentifier"
+        }
+      }
+    }
+  }
+}

@@ -10,7 +10,6 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -23,8 +22,8 @@ import (
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/piprate/json-gold/ld"
 	"github.com/stretchr/testify/require"
+	"github.com/trustbloc/orb/pkg/discovery/endpoint/client/models"
 
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/models"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/create"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/deactivate"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/recovery"
@@ -182,18 +181,6 @@ func TestVDRI_Create(t *testing.T) {
 			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "updatePublicKey opt is empty")
-	})
-
-	t.Run("test error from get sidetree config", func(t *testing.T) {
-		v, err := New(nil, WithAuthToken("tk1"), WithTLSConfig(
-			&tls.Config{MinVersion: tls.VersionTLS12}))
-		require.NoError(t, err)
-		v.configService = &mockConfigService{getSidetreeConfigFunc: func() (*models.SidetreeConfig, error) {
-			return nil, fmt.Errorf("failed to get config")
-		}}
-		_, err = v.Create(&did.Doc{}, vdrapi.WithOption(OperationEndpointsOpt, []string{"url"}))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to get config")
 	})
 
 	t.Run("test recovery public key opt is empty", func(t *testing.T) {
@@ -374,17 +361,6 @@ func TestVDRI_Update(t *testing.T) {
 		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to resolve did")
-	})
-
-	t.Run("test error from get sidetree config", func(t *testing.T) {
-		v, err := New(nil)
-		require.NoError(t, err)
-		v.configService = &mockConfigService{getSidetreeConfigFunc: func() (*models.SidetreeConfig, error) {
-			return nil, fmt.Errorf("failed to get config")
-		}}
-		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{"url"}))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to get config")
 	})
 
 	t.Run("test failed to get next update public key", func(t *testing.T) {
@@ -634,29 +610,11 @@ func TestVDRI_Read(t *testing.T) {
 		require.Nil(t, doc)
 	})
 
-	t.Run("test error domain is empty and did not ipfs or webcas", func(t *testing.T) {
-		v, err := New(nil)
-		require.NoError(t, err)
-
-		_, err = v.getHTTPVDR("")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "empty url")
-
-		v.getHTTPVDR = func(url string) (v vdr, err error) {
-			return nil, fmt.Errorf("get http vdri error")
-		}
-
-		doc, err := v.Read("did")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to get endpoints domain is empty and did not ipfs or webcas")
-		require.Nil(t, doc)
-	})
-
 	t.Run("test error from get endpoint from ipns", func(t *testing.T) {
 		v, err := New(nil)
 		require.NoError(t, err)
 
-		v.configService = &mockConfigService{getEndpointAnchorOriginFunc: func(did string) (*models.Endpoint, error) {
+		v.discoveryService = &mockDiscoveryService{getEndpointAnchorOriginFunc: func(did string) (*models.Endpoint, error) {
 			return nil, fmt.Errorf("failed to get endpoint ipns")
 		}}
 
@@ -690,7 +648,7 @@ func TestVDRI_Read(t *testing.T) {
 		require.NoError(t, err)
 
 		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)
-		v.configService = &mockConfigService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
 			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
 		}}
 
@@ -699,12 +657,31 @@ func TestVDRI_Read(t *testing.T) {
 		require.Equal(t, "did", doc.DIDDocument.ID)
 	})
 
+	t.Run("test failed to fetch endpoint without domain", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/json")
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer cServ.Close()
+
+		v, err := New(nil, WithIPFSEndpoint(cServ.URL))
+		require.NoError(t, err)
+
+		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)
+
+		_, err = v.Read("did:orb:hl:uEiDQ7jDgtU_HbF_CJWK79GFUylwRlS7AeaqwNiXXf3dVng:uoQ-BeEJpcGZzOi8vYmFma3JlaWdxNX" +
+			"l5b2Jua3B5NXdmN3FyZm1rNTdpeWt1empvYmRmam95YjQydm1id2V4bHg2NTJ2dHk:EiBRNTUwbxYTOHMKbt9oYtn71GZLKPQ1Co" +
+			"iw2_DgoTdooQ")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unable to parse verifiable credential")
+	})
+
 	t.Run("test success for fetch endpoint from webcas", func(t *testing.T) {
 		v, err := New(nil, WithDomain("d1"))
 		require.NoError(t, err)
 
 		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)
-		v.configService = &mockConfigService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
 			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
 		}}
 
@@ -718,7 +695,7 @@ func TestVDRI_Read(t *testing.T) {
 		require.NoError(t, err)
 
 		v.getHTTPVDR = httpVdrFunc(nil, fmt.Errorf("failed to resolve"))
-		v.configService = &mockConfigService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
 			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
 		}}
 
@@ -746,7 +723,7 @@ func TestVDRI_Read(t *testing.T) {
 			}, nil
 		}
 
-		v.configService = &mockConfigService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
 			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
 		}}
 
@@ -785,7 +762,7 @@ func TestVDRI_Read(t *testing.T) {
 			}, nil
 		}
 
-		v.configService = &mockConfigService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
 			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
 		}}
 
@@ -845,21 +822,12 @@ func (m *mockKeyRetriever) GetSigningKey(didID string, ot OperationType) (crypto
 	return nil, nil
 }
 
-type mockConfigService struct {
-	getSidetreeConfigFunc       func() (*models.SidetreeConfig, error)
+type mockDiscoveryService struct {
 	getEndpointFunc             func(domain string) (*models.Endpoint, error)
 	getEndpointAnchorOriginFunc func(did string) (*models.Endpoint, error)
 }
 
-func (m *mockConfigService) GetSidetreeConfig() (*models.SidetreeConfig, error) {
-	if m.getSidetreeConfigFunc != nil {
-		return m.getSidetreeConfigFunc()
-	}
-
-	return nil, nil
-}
-
-func (m *mockConfigService) GetEndpoint(domain string) (*models.Endpoint, error) {
+func (m *mockDiscoveryService) GetEndpoint(domain string) (*models.Endpoint, error) {
 	if m.getEndpointFunc != nil {
 		return m.getEndpointFunc(domain)
 	}
@@ -867,7 +835,7 @@ func (m *mockConfigService) GetEndpoint(domain string) (*models.Endpoint, error)
 	return nil, nil
 }
 
-func (m *mockConfigService) GetEndpointFromAnchorOrigin(didURI string) (*models.Endpoint, error) {
+func (m *mockDiscoveryService) GetEndpointFromAnchorOrigin(didURI string) (*models.Endpoint, error) {
 	if m.getEndpointAnchorOriginFunc != nil {
 		return m.getEndpointAnchorOriginFunc(didURI)
 	}

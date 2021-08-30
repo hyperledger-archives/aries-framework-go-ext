@@ -15,6 +15,7 @@ import (
 
 func TestMustGetALL(t *testing.T) {
 	res := ldcontext.MustGetAll()
-	require.Len(t, res, 1)
-	require.Equal(t, "https://trustbloc.github.io/did-method-orb/contexts/anchor/v1", res[0].URL)
+	require.Len(t, res, 2)
+	require.Equal(t, "https://w3id.org/activityanchors/v1", res[0].URL)
+	require.Equal(t, "https://www.w3.org/ns/activitystreams", res[1].URL)
 }
