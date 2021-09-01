@@ -9,10 +9,13 @@ package orb
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
@@ -27,10 +30,11 @@ import (
 	ldstore "github.com/hyperledger/aries-framework-go/pkg/store/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
 	jsonld "github.com/piprate/json-gold/ld"
+	"github.com/trustbloc/orb/pkg/discovery/endpoint/client"
+	"github.com/trustbloc/orb/pkg/discovery/endpoint/client/models"
+	"github.com/trustbloc/orb/pkg/hashlink"
 
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/config"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/internal/ldcontext"
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/models"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/create"
@@ -54,8 +58,10 @@ const (
 	RecoverOpt = "recover"
 	// AnchorOriginOpt anchor origin opt.
 	AnchorOriginOpt = "anchorOrigin"
-	didParts        = 5
-	httpTimeOut     = 5 * time.Second
+	httpTimeOut     = 20 * time.Second
+	sha2_256        = 18 // multihash
+	ipfsGlobal      = "https://ipfs.io"
+	ipfsPrefix      = "ipfs://"
 )
 
 var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
@@ -81,8 +87,7 @@ type vdr interface {
 	Read(id string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error)
 }
 
-type configService interface {
-	GetSidetreeConfig() (*models.SidetreeConfig, error)
+type discoveryService interface {
 	GetEndpoint(domain string) (*models.Endpoint, error)
 	GetEndpointFromAnchorOrigin(did string) (*models.Endpoint, error)
 }
@@ -96,8 +101,9 @@ type VDR struct {
 	disableProofCheck bool
 	sidetreeClient    sidetreeClient
 	keyRetriever      KeyRetriever
-	configService     configService
+	discoveryService  discoveryService
 	documentLoader    jsonld.DocumentLoader
+	ipfsEndpoint      string
 }
 
 // KeyRetriever key retriever.
@@ -136,10 +142,16 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 
 	var err error
 
-	v.configService, err = config.NewService(v.documentLoader, config.WithDisableProofCheck(v.disableProofCheck),
-		config.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{TLSClientConfig: v.tlsConfig},
-		}))
+	c := &http.Client{
+		Transport: &http.Transport{TLSClientConfig: v.tlsConfig},
+	}
+
+	v.discoveryService, err = client.New(v.documentLoader, &casReader{
+		httpClient:   c,
+		hl:           hashlink.New(),
+		ipfsEndpoint: v.ipfsEndpoint,
+	},
+		client.WithDisableProofCheck(v.disableProofCheck), client.WithHTTPClient(c))
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +212,7 @@ func (v *VDR) Close() error {
 }
 
 // Create did doc.
-// nolint: funlen,gocyclo
+// nolint: gocyclo
 func (v *VDR) Create(did *docdid.Doc,
 	opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
@@ -213,11 +225,6 @@ func (v *VDR) Create(did *docdid.Doc,
 	createOpt := make([]create.Option, 0)
 
 	getEndpoints := v.getSidetreeOperationEndpoints(didMethodOpts)
-
-	sidetreeConfig, err := v.configService.GetSidetreeConfig()
-	if err != nil {
-		return nil, err
-	}
 
 	// get keys
 	if didMethodOpts.Values[UpdatePublicKeyOpt] == nil {
@@ -263,7 +270,7 @@ func (v *VDR) Create(did *docdid.Doc,
 	}
 
 	createOpt = append(createOpt, create.WithSidetreeEndpoint(getEndpoints), create.WithAnchorOrigin(anchorOrigin),
-		create.WithMultiHashAlgorithm(sidetreeConfig.MultiHashAlgorithm), create.WithUpdatePublicKey(updatePublicKey),
+		create.WithMultiHashAlgorithm(sha2_256), create.WithUpdatePublicKey(updatePublicKey),
 		create.WithRecoveryPublicKey(recoveryPublicKey))
 
 	return v.sidetreeClient.CreateDID(createOpt...)
@@ -290,30 +297,16 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 
 	var err error
 
-	switch {
-	case v.domain != "":
-		endpoint, err = v.configService.GetEndpoint(v.domain)
+	if v.domain != "" {
+		endpoint, err = v.discoveryService.GetEndpoint(v.domain)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get endpoints: %w", err)
 		}
-	case strings.Contains(did, fmt.Sprintf("%s:ipfs", DIDMethod)):
-		endpoint, err = v.configService.GetEndpointFromAnchorOrigin(did)
+	} else {
+		endpoint, err = v.discoveryService.GetEndpointFromAnchorOrigin(did)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get endpoints: %w", err)
 		}
-	case strings.Contains(did, fmt.Sprintf("%s:webcas", DIDMethod)):
-		didSplit := strings.Split(did, ":")
-
-		if len(didSplit) < didParts {
-			return nil, fmt.Errorf("did format is wrong")
-		}
-
-		endpoint, err = v.configService.GetEndpoint(didSplit[3])
-		if err != nil {
-			return nil, fmt.Errorf("failed to get endpoints: %w", err)
-		}
-	default:
-		return nil, fmt.Errorf("failed to get endpoints domain is empty and did not ipfs or webcase")
 	}
 
 	var docResolution *docdid.DocResolution
@@ -373,11 +366,6 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 	updateOpt := make([]update.Option, 0)
 
-	sidetreeConfig, err := v.configService.GetSidetreeConfig()
-	if err != nil {
-		return err
-	}
-
 	docResolution, err := v.Read(didDoc.ID, opts...)
 	if err != nil {
 		return err
@@ -394,7 +382,7 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 			return fmt.Errorf("anchorOrigin is not string")
 		}
 
-		return v.recover(didDoc, sidetreeConfig, v.getSidetreeOperationEndpoints(didMethodOpts),
+		return v.recover(didDoc, v.getSidetreeOperationEndpoints(didMethodOpts),
 			docResolution.DocumentMetadata.Method.RecoveryCommitment, anchorOrigin)
 	}
 
@@ -431,15 +419,15 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 	updateOpt = append(updateOpt, update.WithSidetreeEndpoint(v.getSidetreeOperationEndpoints(didMethodOpts)),
 		update.WithNextUpdatePublicKey(nextUpdatePublicKey),
-		update.WithMultiHashAlgorithm(sidetreeConfig.MultiHashAlgorithm),
+		update.WithMultiHashAlgorithm(sha2_256),
 		update.WithSigningKey(updateSigningKey),
 		update.WithOperationCommitment(docResolution.DocumentMetadata.Method.UpdateCommitment))
 
 	return v.sidetreeClient.UpdateDID(didDoc.ID, updateOpt...)
 }
 
-func (v *VDR) recover(didDoc *docdid.Doc, sidetreeConfig *models.SidetreeConfig,
-	getEndpoints func() ([]string, error), recoveryCommitment, anchorOrigin string) error {
+func (v *VDR) recover(didDoc *docdid.Doc, getEndpoints func() ([]string, error),
+	recoveryCommitment, anchorOrigin string) error {
 	recoveryOpt := make([]recovery.Option, 0)
 
 	// get services
@@ -476,7 +464,7 @@ func (v *VDR) recover(didDoc *docdid.Doc, sidetreeConfig *models.SidetreeConfig,
 	recoveryOpt = append(recoveryOpt, recovery.WithSidetreeEndpoint(getEndpoints),
 		recovery.WithNextUpdatePublicKey(nextUpdatePublicKey),
 		recovery.WithNextRecoveryPublicKey(nextRecoveryPublicKey),
-		recovery.WithMultiHashAlgorithm(sidetreeConfig.MultiHashAlgorithm),
+		recovery.WithMultiHashAlgorithm(sha2_256),
 		recovery.WithSigningKey(updateSigningKey),
 		recovery.WithOperationCommitment(recoveryCommitment),
 		recovery.WithAnchorOrigin(anchorOrigin))
@@ -579,7 +567,7 @@ func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error
 func (v *VDR) getSidetreeOperationEndpoints(didMethodOpts *vdrapi.DIDMethodOpts) func() ([]string, error) {
 	if didMethodOpts.Values[OperationEndpointsOpt] == nil {
 		return func() ([]string, error) {
-			endpoint, err := v.configService.GetEndpoint(v.domain)
+			endpoint, err := v.discoveryService.GetEndpoint(v.domain)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get endpoints: %w", err)
 			}
@@ -724,5 +712,126 @@ func WithDisableProofCheck(disable bool) Option {
 func WithDocumentLoader(l jsonld.DocumentLoader) Option {
 	return func(opts *VDR) {
 		opts.documentLoader = l
+	}
+}
+
+// WithIPFSEndpoint overrides the global ipfs endpoint.
+func WithIPFSEndpoint(endpoint string) Option {
+	return func(opts *VDR) {
+		opts.ipfsEndpoint = endpoint
+	}
+}
+
+// casReader.
+type casReader struct {
+	httpClient   *http.Client
+	hl           *hashlink.HashLink
+	ipfsEndpoint string
+}
+
+func (c *casReader) Read(cidWithPossibleHint string) ([]byte, error) {
+	links, err := c.getResourceHashWithPossibleLinks(cidWithPossibleHint)
+	if err != nil {
+		return nil, err
+	}
+
+	ipfsLinks, err := separateLinks(links)
+	if err != nil {
+		return nil, err
+	}
+
+	cid := ipfsLinks[0][len(ipfsPrefix):]
+
+	if c.ipfsEndpoint != "" {
+		return send(c.httpClient, nil, http.MethodPost, fmt.Sprintf("%s/cat?arg=%s", c.ipfsEndpoint, cid))
+	}
+
+	return send(c.httpClient, nil, http.MethodGet, fmt.Sprintf("%s/%s/%s", ipfsGlobal, "ipfs", cid))
+}
+
+func separateLinks(links []string) ([]string, error) {
+	var ipfsLinks []string
+
+	for _, link := range links {
+		switch {
+		case strings.HasPrefix(link, ipfsPrefix):
+			ipfsLinks = append(ipfsLinks, link)
+		default:
+			return nil, fmt.Errorf("link '%s' not supported", link)
+		}
+	}
+
+	return ipfsLinks, nil
+}
+
+func (c *casReader) getResourceHashWithPossibleLinks(hashWithPossibleHint string) ([]string, error) {
+	var links []string
+
+	hashWithPossibleHintParts := strings.Split(hashWithPossibleHint, ":")
+	if len(hashWithPossibleHintParts) == 1 {
+		return nil, fmt.Errorf("hashWithPossibleHint size not supported")
+	}
+
+	switch hashWithPossibleHintParts[0] {
+	case "hl":
+		hlInfo, err := c.hl.ParseHashLink(hashWithPossibleHint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse hash link: %w", err)
+		}
+
+		links = hlInfo.Links
+
+	default:
+		return nil, fmt.Errorf("hint '%s' not supported", hashWithPossibleHintParts[0])
+	}
+
+	return links, nil
+}
+
+func send(httpClient *http.Client, req []byte, method, endpointURL string) ([]byte, error) {
+	var httpReq *http.Request
+
+	var err error
+
+	if len(req) == 0 {
+		httpReq, err = http.NewRequestWithContext(context.Background(),
+			method, endpointURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create http request: %w", err)
+		}
+	} else {
+		httpReq, err = http.NewRequestWithContext(context.Background(),
+			method, endpointURL, bytes.NewBuffer(req))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create http request: %w", err)
+		}
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+
+	defer closeResponseBody(resp.Body)
+
+	responseBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response : %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("got unexpected response from %s status '%d' body %s",
+			endpointURL, resp.StatusCode, responseBytes)
+	}
+
+	return responseBytes, nil
+}
+
+func closeResponseBody(respBody io.Closer) {
+	e := respBody.Close()
+	if e != nil {
+		logger.Errorf("Failed to close response body: %v", e)
 	}
 }

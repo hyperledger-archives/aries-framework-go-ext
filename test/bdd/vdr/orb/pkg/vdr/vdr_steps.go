@@ -42,7 +42,7 @@ const (
 	bls12381G2KeyType = "Bls12381G2"
 	// Ed25519KeyType ed25519 key type.
 	Ed25519KeyType = "Ed25519"
-	origin         = "https://orb2/services/orb"
+	origin         = "https://orb2"
 	jsonWebKey2020 = "JsonWebKey2020"
 )
 
@@ -68,7 +68,8 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 	}
 
 	vdrWithoutDomain, err := orb.New(keyRetriever, orb.WithTLSConfig(ctx.TLSConfig),
-		orb.WithAuthToken("ADMIN_TOKEN"), orb.WithDisableProofCheck(true))
+		orb.WithAuthToken("ADMIN_TOKEN"), orb.WithDisableProofCheck(true),
+		orb.WithIPFSEndpoint("http://127.0.0.1:5001/api/v0"))
 	if err != nil {
 		panic(err.Error())
 	}
@@ -247,7 +248,7 @@ func (e *Steps) createWithIPNS(keyType, signatureSuite string) error {
 }
 
 func (e *Steps) createWithHTTPS(keyType, signatureSuite string) error {
-	return e.createDID(keyType, signatureSuite, "https://testnet.orb.local/services/orb")
+	return e.createDID(keyType, signatureSuite, "https://testnet.orb.local")
 }
 
 func (e *Steps) createDID(keyType, signatureSuite, origin string) error {

@@ -68,7 +68,7 @@ func runBDDTests(tags, format string) int { //nolint: gocognit
 					composition = append(composition, newComposition)
 				}
 				fmt.Println("docker-compose up ... waiting for containers to start ...")
-				testSleep := 40
+				testSleep := 60
 				if os.Getenv("TEST_SLEEP") != "" {
 					var e error
 
