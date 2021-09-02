@@ -431,6 +431,18 @@ func TestEnsureTagMapIsOnlyCreatedWhenNeeded(t *testing.T) {
 	require.Equal(t, `{"TagName1":{"Key":{}}}`, string(value))
 }
 
+func TestStoreLargeData(t *testing.T) {
+	provider, err := NewProvider(sqlStoreDBURL)
+	require.NoError(t, err)
+
+	testStore, err := provider.OpenStore(randomStoreName())
+	require.NoError(t, err)
+
+	// Store 1 MiB worth of data.
+	err = testStore.Put("key", make([]byte, 1000000))
+	require.NoError(t, err)
+}
+
 func randomStoreName() string {
 	return "store-" + uuid.New().String()
 }
