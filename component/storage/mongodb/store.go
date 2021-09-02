@@ -884,11 +884,13 @@ func isIndexConflictErrorMessage(err error) bool {
 	documentDBPossibleErrMsg1 := "Non-unique"
 	documentDBPossibleErrMsg2 := "Existing index build in progress on the same collection. " +
 		"Collection is limited to a single index build at a time."
+	documentDBPossibleErrMsg3 := "EOF"
 	// MongoDB 5.0.0 may return this error message.
 	mongoDB500PossibleErrMsg := "incomplete read of message header"
 
 	if strings.Contains(err.Error(), documentDBPossibleErrMsg1) ||
 		strings.Contains(err.Error(), documentDBPossibleErrMsg2) ||
+		strings.Contains(err.Error(), documentDBPossibleErrMsg3) ||
 		strings.Contains(err.Error(), mongoDB500PossibleErrMsg) {
 		return true
 	}
