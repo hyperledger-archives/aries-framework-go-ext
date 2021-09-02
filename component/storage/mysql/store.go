@@ -130,9 +130,8 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 		return nil, fmt.Errorf(failureWhileCreatingDBErrMsg, name, err)
 	}
 
-	createTableStmt := fmt.Sprintf(
-		"CREATE Table IF NOT EXISTS `%s`.`%s` (`key` varchar(255) NOT NULL ,`value` BLOB, PRIMARY KEY (`key`))",
-		name, name)
+	createTableStmt := fmt.Sprintf("CREATE Table IF NOT EXISTS `%s`.`%s` (`key` varchar(255) NOT NULL ,"+
+		"`value` MEDIUMBLOB, PRIMARY KEY (`key`))", name, name)
 
 	// creating key-value table inside the database
 	_, err = p.db.Exec(createTableStmt)
