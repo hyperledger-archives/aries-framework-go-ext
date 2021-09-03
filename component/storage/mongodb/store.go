@@ -84,7 +84,7 @@ func WithLogger(logger logger) Option {
 	}
 }
 
-// WithTimeout is an option for specifying the timeout for all calls to the MongoDB instance..
+// WithTimeout is an option for specifying the timeout for all calls to MongoDB.
 // The timeout is 10 seconds by default.
 func WithTimeout(timeout time.Duration) Option {
 	return func(opts *Provider) {
@@ -92,36 +92,42 @@ func WithTimeout(timeout time.Duration) Option {
 	}
 }
 
-// WithMaxIndexCreationConflictRetries is an option for specifying how many retries are allowed when there's a conflict
-// while setting indexes via the SetStoreConfig method. This can happen if there are multiple MongoDB Provider objects
-// (in different servers, for instance) trying to set the store configuration at the same time.
+// WithMaxRetries is an option for specifying how many retries are allowed when there are certain transient errors
+// from MongoDB. These transient errors can happen in two situations:
+// 1. An index conflict error when setting indexes via the SetStoreConfig method from multiple MongoDB Provider
+//    objects that look at the same stores (which might happen if you have multiple running instances of a service).
+// 2. If you're using MongoDB 4.0.0 (or DocumentDB 4.0.0), a "dup key" type of error when calling store.Put or
+//    store.Batch from multiple MongoDB Provider objects that look at the same stores.
 // maxRetries must be > 0. If not set (or set to an invalid value), it will default to 3.
-func WithMaxIndexCreationConflictRetries(maxRetries uint64) Option {
+func WithMaxRetries(maxRetries uint64) Option {
 	return func(opts *Provider) {
-		opts.maxIndexCreationConflictRetries = maxRetries
+		opts.maxRetries = maxRetries
 	}
 }
 
-// WithIndexCreationConflictTimeBetweenRetries is an option for specifying how long to wait between retries when
-// there's a conflict while setting indexes via the SetStoreConfig method. This can happen if there are
-// multiple MongoDB Provider objects (in different servers, for instance) trying to set the store configuration at
-// the same time. Defaults to two seconds if not set.
-func WithIndexCreationConflictTimeBetweenRetries(timeBetweenRetries time.Duration) Option {
+// WithTimeBetweenRetries is an option for specifying how long to wait between retries when
+// there are certain transient errors from MongoDB. These transient errors can happen in two situations:
+// 1. An index conflict error when setting indexes via the SetStoreConfig method from multiple MongoDB Provider
+//    objects that look at the same stores (which might happen if you have multiple running instances of a service).
+// 2. If you're using MongoDB 4.0.0 (or DocumentDB 4.0.0), a "dup key" type of error when calling store.Put or
+//    store.Batch multiple times in parallel on the same key.
+// Defaults to two seconds if not set.
+func WithTimeBetweenRetries(timeBetweenRetries time.Duration) Option {
 	return func(opts *Provider) {
-		opts.indexCreationConflictTimeBetweenRetries = timeBetweenRetries
+		opts.timeBetweenRetries = timeBetweenRetries
 	}
 }
 
 // Provider represents a MongoDB/DocumentDB implementation of the storage.Provider interface.
 type Provider struct {
-	client                                  *mongo.Client
-	openStores                              map[string]*store
-	dbPrefix                                string
-	lock                                    sync.RWMutex
-	logger                                  logger
-	timeout                                 time.Duration
-	maxIndexCreationConflictRetries         uint64
-	indexCreationConflictTimeBetweenRetries time.Duration
+	client             *mongo.Client
+	openStores         map[string]*store
+	dbPrefix           string
+	lock               sync.RWMutex
+	logger             logger
+	timeout            time.Duration
+	maxRetries         uint64
+	timeBetweenRetries time.Duration
 }
 
 // NewProvider instantiates a new MongoDB Provider.
@@ -176,10 +182,13 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 		// The storage interface doesn't have the concept of a nested database, so we have no real use for the
 		// collection abstraction MongoDB uses. Since we have to use at least one collection, we keep the collection
 		// name as short as possible to avoid hitting the index size limit.
-		coll:    p.getCollectionHandle(name),
-		name:    name,
-		close:   p.removeStore,
-		timeout: p.timeout,
+		coll:               p.getCollectionHandle(name),
+		name:               name,
+		logger:             p.logger,
+		close:              p.removeStore,
+		timeout:            p.timeout,
+		maxRetries:         p.maxRetries,
+		timeBetweenRetries: p.timeBetweenRetries,
 	}
 
 	p.openStores[name] = newStore
@@ -198,9 +207,9 @@ func (p *Provider) SetStoreConfig(storeName string, config storage.StoreConfigur
 		}
 	}
 
-	storeNameWithPrefix := strings.ToLower(p.dbPrefix + storeName)
+	storeName = strings.ToLower(p.dbPrefix + storeName)
 
-	openStore, found := p.openStores[storeNameWithPrefix]
+	openStore, found := p.openStores[storeName]
 	if !found {
 		return storage.ErrStoreNotFound
 	}
@@ -221,8 +230,10 @@ func (p *Provider) SetStoreConfig(storeName string, config storage.StoreConfigur
 					"This can happen if multiple MongoDB providers set the store configuration at the "+
 					"same time. If there are remaining retries, this operation will be tried again after %s. "+
 					"Underlying error message: %s",
-					storeName, attemptsMade, p.indexCreationConflictTimeBetweenRetries.String(), err.Error())
+					storeName, attemptsMade, p.timeBetweenRetries.String(), err.Error())
 
+				// The error below isn't marked using backoff.Permanent, so it'll only be seen if the retry limit
+				// is reached.
 				return fmt.Errorf("failed to set indexes after %d attempts. This storage provider may "+
 					"need to be started with a higher max retry limit and/or higher time between retries. "+
 					"Underlying error message: %w", attemptsMade, err)
@@ -236,8 +247,7 @@ func (p *Provider) SetStoreConfig(storeName string, config storage.StoreConfigur
 			storeName, attemptsMade)
 
 		return nil
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(p.indexCreationConflictTimeBetweenRetries),
-		p.maxIndexCreationConflictRetries))
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(p.timeBetweenRetries), p.maxRetries))
 	if err != nil {
 		return err
 	}
@@ -494,13 +504,16 @@ func (p *Provider) createIndexes(openStore *store, models []mongo.IndexModel) er
 }
 
 type store struct {
-	name    string
-	coll    *mongo.Collection
-	close   closer
-	timeout time.Duration
+	name               string
+	logger             logger
+	coll               *mongo.Collection
+	close              closer
+	timeout            time.Duration
+	maxRetries         uint64
+	timeBetweenRetries time.Duration
 }
 
-// Put stores the key and the record.
+// Put stores the key + value pair along with the (optional) tags.
 // If tag values are valid int32 or int64, they will be stored as integers in MongoDB, so we can sort numerically later.
 func (s *store) Put(key string, value []byte, tags ...storage.Tag) error {
 	err := validatePutInput(key, value, tags)
@@ -508,55 +521,9 @@ func (s *store) Put(key string, value []byte, tags ...storage.Tag) error {
 		return err
 	}
 
-	opts := &mongooptions.UpdateOptions{}
+	data := generateDataWrapper(key, value, tags)
 
-	tagsAsMap := convertTagSliceToMap(tags)
-
-	var unmarshalledValue map[string]interface{}
-
-	err = json.Unmarshal(value, &unmarshalledValue)
-	if err == nil {
-		ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
-		defer cancel()
-
-		_, err = s.coll.UpdateOne(ctxWithTimeout, bson.M{"_id": key},
-			bson.M{"$set": dataWrapper{Key: key, Doc: unmarshalledValue, Tags: tagsAsMap}},
-			opts.SetUpsert(true))
-		if err != nil {
-			return fmt.Errorf("failed to run UpdateOne command in MongoDB: %w", err)
-		}
-
-		return nil
-	}
-
-	var unmarshalledStringValue string
-
-	err = json.Unmarshal(value, &unmarshalledStringValue)
-	if err == nil {
-		ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
-		defer cancel()
-
-		_, err = s.coll.UpdateOne(ctxWithTimeout, bson.M{"_id": key},
-			bson.M{"$set": dataWrapper{Key: key, Str: unmarshalledStringValue, Tags: tagsAsMap}},
-			opts.SetUpsert(true))
-		if err != nil {
-			return fmt.Errorf("failed to run UpdateOne command in MongoDB: %w", err)
-		}
-
-		return nil
-	}
-
-	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
-	defer cancel()
-
-	_, err = s.coll.UpdateOne(ctxWithTimeout, bson.M{"_id": key},
-		bson.M{"$set": dataWrapper{Key: key, Bin: value, Tags: tagsAsMap}},
-		opts.SetUpsert(true))
-	if err != nil {
-		return fmt.Errorf("failed to run UpdateOne command in MongoDB: %w", err)
-	}
-
-	return nil
+	return s.executeUpdateOneCommand(key, data)
 }
 
 func (s *store) Get(k string) ([]byte, error) {
@@ -729,15 +696,7 @@ func (s *store) Batch(operations []storage.Operation) error {
 		models[i] = generateModelForBulkWriteCall(operation)
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
-	defer cancel()
-
-	_, err := s.coll.BulkWrite(ctxWithTimeout, models)
-	if err != nil {
-		return fmt.Errorf("failed to run BulkWrite command in MongoDB: %w", err)
-	}
-
-	return nil
+	return s.executeBulkWriteCommand(models)
 }
 
 // Flush doesn't do anything since this store type doesn't queue values.
@@ -751,6 +710,44 @@ func (s *store) Close() error {
 	s.close(s.name)
 
 	return nil
+}
+
+func (s *store) executeUpdateOneCommand(key string, dataWrapperToStore dataWrapper) error {
+	opts := mongooptions.UpdateOptions{}
+	opts.SetUpsert(true)
+
+	var attemptsMade int
+
+	return backoff.Retry(func() error {
+		attemptsMade++
+
+		ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
+		defer cancel()
+
+		_, err := s.coll.UpdateOne(ctxWithTimeout, bson.M{"_id": key}, bson.M{"$set": dataWrapperToStore}, &opts)
+		if err != nil {
+			// If using MongoDB 4.0.0 (or DocumentDB 4.0.0), and this is called multiple times in parallel on the
+			// same key, then it's possible to get a transient error here. We need to retry in this case.
+			if strings.Contains(err.Error(), "duplicate key error collection") {
+				s.logger.Infof(`[Store name: %s] Attempt %d - error while storing data under key "%s". `+
+					"This can happen if there are multiple calls in parallel to store data under the same key. "+
+					"If there are remaining retries, this operation will be tried again after %s. "+
+					"Underlying error message: %s", s.name, attemptsMade, key, s.timeBetweenRetries.String(),
+					err.Error())
+
+				// The error below isn't marked using backoff.Permanent, so it'll only be seen if the retry limit
+				// is reached.
+				return fmt.Errorf("failed to store data after %d attempts. This storage provider may "+
+					"need to be started with a higher max retry limit and/or higher time between retries. "+
+					"Underlying error message: %w", attemptsMade, err)
+			}
+
+			// This is an unexpected error.
+			return backoff.Permanent(fmt.Errorf("failed to run UpdateOne command in MongoDB: %w", err))
+		}
+
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(s.timeBetweenRetries), s.maxRetries))
 }
 
 func (s *store) collectBulkGetResults(keys []string, cursor *mongo.Cursor) ([][]byte, error) {
@@ -775,6 +772,40 @@ func (s *store) collectBulkGetResults(keys []string, cursor *mongo.Cursor) ([][]
 	}
 
 	return allValues, nil
+}
+
+func (s *store) executeBulkWriteCommand(models []mongo.WriteModel) error {
+	var attemptsMade int
+
+	return backoff.Retry(func() error {
+		attemptsMade++
+
+		ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
+		defer cancel()
+
+		_, err := s.coll.BulkWrite(ctxWithTimeout, models)
+		if err != nil {
+			// If using MongoDB 4.0.0 (or DocumentDB 4.0.0), and this is called multiple times in parallel on the
+			// same key(s), then it's possible to get a transient error here. We need to retry in this case.
+			if strings.Contains(err.Error(), "duplicate key error collection") {
+				s.logger.Infof(`[Store name: %s] Attempt %d - error while performing batch operations. `+
+					"This can happen if there are multiple calls in parallel to do batch operations under the "+
+					"same key(s). If there are remaining retries, the batch operations will be tried again after %s. "+
+					"Underlying error message: %s", s.name, attemptsMade, s.timeBetweenRetries.String(), err.Error())
+
+				// The error below isn't marked using backoff.Permanent, so it'll only be seen if the retry limit
+				// is reached.
+				return fmt.Errorf("failed to perform batch operations after %d attempts. This storage provider "+
+					"may need to be started with a higher max retry limit and/or higher time between retries. "+
+					"Underlying error message: %w", attemptsMade, err)
+			}
+
+			// This is an unexpected error.
+			return backoff.Permanent(fmt.Errorf("failed to run BulkWrite command in MongoDB: %w", err))
+		}
+
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(s.timeBetweenRetries), s.maxRetries))
 }
 
 func (s *store) createMongoFindOptions(queryOptions storage.QueryOptions) *mongooptions.FindOptions {
@@ -874,8 +905,8 @@ func setOptions(opts []Option, p *Provider) {
 		p.timeout = defaultTimeout
 	}
 
-	if p.maxIndexCreationConflictRetries < 1 {
-		p.maxIndexCreationConflictRetries = defaultMaxIndexCreationConflictRetries
+	if p.maxRetries < 1 {
+		p.maxRetries = defaultMaxIndexCreationConflictRetries
 	}
 }
 
@@ -1022,29 +1053,37 @@ func generateModelForBulkWriteCall(operation storage.Operation) mongo.WriteModel
 		return mongo.NewDeleteOneModel().SetFilter(bson.M{"_id": operation.Key})
 	}
 
-	data := &dataWrapper{
-		Key:  operation.Key,
-		Tags: convertTagSliceToMap(operation.Tags),
-	}
-
-	var unmarshalledValue map[string]interface{}
-
-	err := json.Unmarshal(operation.Value, &unmarshalledValue)
-	if err == nil {
-		data.Doc = unmarshalledValue
-	} else {
-		var unmarshalledStringValue string
-
-		err = json.Unmarshal(operation.Value, &unmarshalledStringValue)
-		if err == nil {
-			data.Str = unmarshalledStringValue
-		} else {
-			data.Bin = operation.Value
-		}
-	}
+	data := generateDataWrapper(operation.Key, operation.Value, operation.Tags)
 
 	return mongo.NewUpdateOneModel().
 		SetFilter(bson.M{"_id": operation.Key}).
 		SetUpdate(bson.M{"$set": data}).
 		SetUpsert(true)
+}
+
+func generateDataWrapper(key string, value []byte, tags []storage.Tag) dataWrapper {
+	tagsAsMap := convertTagSliceToMap(tags)
+
+	data := dataWrapper{
+		Key:  key,
+		Tags: tagsAsMap,
+	}
+
+	var unmarshalledValue map[string]interface{}
+
+	err := json.Unmarshal(value, &unmarshalledValue)
+	if err == nil {
+		data.Doc = unmarshalledValue
+	} else {
+		var unmarshalledStringValue string
+
+		err = json.Unmarshal(value, &unmarshalledStringValue)
+		if err == nil {
+			data.Str = unmarshalledStringValue
+		} else {
+			data.Bin = value
+		}
+	}
+
+	return data
 }

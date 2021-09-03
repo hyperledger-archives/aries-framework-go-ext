@@ -8,6 +8,8 @@ package mongodb_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"reflect"
@@ -16,6 +18,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	commontest "github.com/hyperledger/aries-framework-go/test/component/storage"
 	dctest "github.com/ory/dockertest/v3"
@@ -193,6 +196,8 @@ func doAllTests(t *testing.T, connString string) {
 	commontest.TestAll(t, provider)
 	testGetStoreConfigUnderlyingDatabaseCheck(t, connString)
 	testMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t, connString)
+	testMultipleProvidersStoringSameDataAtTheSameTime(t, connString)
+	testMultipleProvidersStoringSameBulkDataAtTheSameTime(t, connString)
 	testCloseProviderTwice(t, connString)
 }
 
@@ -202,7 +207,11 @@ func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) 
 	provider, err := mongodb.NewProvider(connString)
 	require.NoError(t, err)
 
-	storeName := "UnderlyingDatabaseTestStore"
+	defer func() {
+		require.NoError(t, provider.Close())
+	}()
+
+	storeName := randomStoreName()
 
 	// The MongoDB database shouldn't exist yet.
 	config, err := provider.GetStoreConfig(storeName)
@@ -233,34 +242,38 @@ func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) 
 	require.NoError(t, err)
 
 	// Create a new Provider object.
-	provider, err = mongodb.NewProvider(connString)
+	provider2, err := mongodb.NewProvider(connString)
 	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, provider2.Close())
+	}()
 
 	// This method tells you how many store objects are open in this Provider.
 	// Since it's a new Provider, there shouldn't be any.
-	openStores := provider.GetOpenStores()
+	openStores := provider2.GetOpenStores()
 	require.Len(t, openStores, 0)
 
 	// This will succeed since GetStoreConfig checks the underlying databases instead of the
 	// in-memory store objects.
-	config, err = provider.GetStoreConfig(storeName)
+	config, err = provider2.GetStoreConfig(storeName)
 	require.NoError(t, err)
 	require.Equal(t, "TagName1", config.TagNames[0])
 
 	// The call above should not have created a new store object.
-	openStores = provider.GetOpenStores()
+	openStores = provider2.GetOpenStores()
 	require.Len(t, openStores, 0)
 
 	// As mentioned above, MongoDB defers creating databases until there is data put in or indexes are set.
 	// The code above triggered database creationg by creating indexes. Below we will do the same type of test, but this
 	// time we create the database by storing data.
-	storeName2 := "UnderlyingDatabaseTestStore2"
+	storeName2 := randomStoreName()
 
-	store, err := provider.OpenStore(storeName2)
+	store, err := provider2.OpenStore(storeName2)
 	require.NoError(t, err)
 
 	// Underlying database shouldn't exist yet.
-	config, err = provider.GetStoreConfig(storeName2)
+	config, err = provider2.GetStoreConfig(storeName2)
 	require.Equal(t, true, errors.Is(storage.ErrStoreNotFound, err),
 		"unexpected error or no error")
 	require.Empty(t, config)
@@ -270,7 +283,7 @@ func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) 
 
 	// Now the underlying database should be found.
 	// The config will be empty since it was never set
-	config, err = provider.GetStoreConfig(storeName2)
+	config, err = provider2.GetStoreConfig(storeName2)
 	require.NoError(t, err)
 	require.Empty(t, config.TagNames)
 }
@@ -280,28 +293,16 @@ func testMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t *testing.
 
 	const numberOfProviders = 100
 
+	storeName := randomStoreName()
+
 	providers := make([]*mongodb.Provider, numberOfProviders)
 
 	openStores := make([]storage.Store, numberOfProviders)
 
 	for i := 0; i < numberOfProviders; i++ {
-		provider, err := mongodb.NewProvider(connString, mongodb.WithTimeout(time.Second*3),
-			mongodb.WithMaxIndexCreationConflictRetries(10),
-			mongodb.WithIndexCreationConflictTimeBetweenRetries(time.Second))
-		require.NoError(t, err)
-
-		providers[i] = provider
-	}
-
-	for i := 0; i < numberOfProviders; i++ {
-		openStore, err := providers[i].OpenStore("MultipleProviderTest")
-		require.NoError(t, err)
-
-		openStores[i] = openStore
-	}
-
-	for i := 0; i < numberOfProviders; i++ {
-		openStore, err := providers[i].OpenStore("MultipleProviderTest")
+		provider, err := mongodb.NewProvider(connString, mongodb.WithTimeout(time.Second*5),
+			mongodb.WithMaxRetries(10),
+			mongodb.WithTimeBetweenRetries(time.Second))
 		require.NoError(t, err)
 
 		// If you see a warning in your IDE about having a defer statement in a loop, it can be ignored in this case.
@@ -309,8 +310,13 @@ func testMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t *testing.
 		// up resources for other tests, which may still pass. We don't want them to close at the end of this loop,
 		// so there's no issue having this here.
 		defer func() {
-			require.NoError(t, openStore.Close())
+			require.NoError(t, provider.Close())
 		}()
+
+		providers[i] = provider
+
+		openStore, err := providers[i].OpenStore(storeName)
+		require.NoError(t, err)
 
 		openStores[i] = openStore
 	}
@@ -325,7 +331,7 @@ func testMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t *testing.
 		setStoreConfig := func() {
 			defer waitGroup.Done()
 
-			errSetStoreConfig := providers[i].SetStoreConfig("MultipleProviderTest",
+			errSetStoreConfig := providers[i].SetStoreConfig(storeName,
 				storage.StoreConfiguration{TagNames: []string{
 					"TagName1", "TagName2", "TagName3", "TagName4",
 					"TagName5", "TagName6", "TagName7", "TagName8",
@@ -336,16 +342,229 @@ func testMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t *testing.
 					"TagName25", "TagName26", "TagName27", "TagName28",
 					"TagName29", "TagName30", "TagName31", "TagName32",
 				}})
+			require.NoError(t, errSetStoreConfig)
 
 			// Close the store as soon as possible in order to free up resources for other threads.
 			require.NoError(t, openStores[i].Close())
-
-			require.NoError(t, errSetStoreConfig)
 		}
 		go setStoreConfig()
 	}
 
 	waitGroup.Wait()
+
+	storeConfig, err := providers[0].GetStoreConfig(storeName)
+	require.NoError(t, err)
+
+	require.Len(t, storeConfig.TagNames, 32)
+
+	for i := 0; i < len(storeConfig.TagNames); i++ {
+		require.Equal(t, fmt.Sprintf("TagName%d", i+1), storeConfig.TagNames[i])
+	}
+}
+
+func testMultipleProvidersStoringSameDataAtTheSameTime(t *testing.T, connString string) {
+	t.Helper()
+
+	const numberOfProviders = 100
+
+	storeName := randomStoreName()
+
+	providers := make([]*mongodb.Provider, numberOfProviders)
+
+	openStores := make([]storage.Store, numberOfProviders)
+
+	for i := 0; i < numberOfProviders; i++ {
+		provider, err := mongodb.NewProvider(connString, mongodb.WithTimeout(time.Second*5),
+			mongodb.WithMaxRetries(10),
+			mongodb.WithTimeBetweenRetries(time.Second))
+		require.NoError(t, err)
+
+		// If you see a warning in your IDE about having a defer statement in a loop, it can be ignored in this case.
+		// The goal is to close all the stores as soon as there's a failure anywhere in this test in order to free
+		// up resources for other tests, which may still pass. We don't want them to close at the end of this loop,
+		// so there's no issue having this here.
+		defer func() {
+			require.NoError(t, provider.Close())
+		}()
+
+		providers[i] = provider
+
+		openStore, err := providers[i].OpenStore(storeName)
+		require.NoError(t, err)
+
+		openStores[i] = openStore
+	}
+
+	type sampleStruct struct {
+		Entry1 string `json:"entry1"`
+		Entry2 string `json:"entry2"`
+		Entry3 string `json:"entry3"`
+	}
+
+	sampleData := sampleStruct{
+		Entry1: "value1",
+		Entry2: "value2",
+		Entry3: "value3",
+	}
+
+	sampleDataBytes, err := json.Marshal(sampleData)
+	require.NoError(t, err)
+
+	var waitGroup sync.WaitGroup
+
+	for i := 0; i < numberOfProviders; i++ {
+		i := i
+
+		waitGroup.Add(1)
+
+		setStoreConfig := func() {
+			defer waitGroup.Done()
+
+			errPut := openStores[i].Put("key", sampleDataBytes)
+			require.NoError(t, errPut)
+		}
+		go setStoreConfig()
+	}
+
+	waitGroup.Wait()
+
+	value, err := openStores[0].Get("key")
+	require.NoError(t, err)
+
+	var retrievedData sampleStruct
+
+	err = json.Unmarshal(value, &retrievedData)
+	require.NoError(t, err)
+
+	require.Equal(t, sampleData.Entry1, retrievedData.Entry1)
+	require.Equal(t, sampleData.Entry2, retrievedData.Entry2)
+	require.Equal(t, sampleData.Entry3, retrievedData.Entry3)
+}
+
+func testMultipleProvidersStoringSameBulkDataAtTheSameTime(t *testing.T, connString string) {
+	t.Helper()
+
+	const numberOfProviders = 100
+
+	storeName := randomStoreName()
+
+	providers := make([]*mongodb.Provider, numberOfProviders)
+
+	openStores := make([]storage.Store, numberOfProviders)
+
+	for i := 0; i < numberOfProviders; i++ {
+		provider, err := mongodb.NewProvider(connString, mongodb.WithTimeout(time.Second*5),
+			mongodb.WithMaxRetries(10),
+			mongodb.WithTimeBetweenRetries(time.Second))
+		require.NoError(t, err)
+
+		// If you see a warning in your IDE about having a defer statement in a loop, it can be ignored in this case.
+		// The goal is to close all the stores as soon as there's a failure anywhere in this test in order to free
+		// up resources for other tests, which may still pass. We don't want them to close at the end of this loop,
+		// so there's no issue having this here.
+		defer func() {
+			require.NoError(t, provider.Close())
+		}()
+
+		providers[i] = provider
+
+		openStore, err := providers[i].OpenStore(storeName)
+		require.NoError(t, err)
+
+		openStores[i] = openStore
+	}
+
+	type sampleStruct struct {
+		Entry1 string `json:"entry1"`
+		Entry2 string `json:"entry2"`
+		Entry3 string `json:"entry3"`
+	}
+
+	sampleData1 := sampleStruct{
+		Entry1: "value1",
+		Entry2: "value2",
+		Entry3: "value3",
+	}
+
+	sampleData1Bytes, err := json.Marshal(sampleData1)
+	require.NoError(t, err)
+
+	sampleData2 := sampleStruct{
+		Entry1: "value4",
+		Entry2: "value5",
+		Entry3: "value6",
+	}
+
+	sampleData2Bytes, err := json.Marshal(sampleData2)
+	require.NoError(t, err)
+
+	sampleData3 := sampleStruct{
+		Entry1: "value7",
+		Entry2: "value8",
+		Entry3: "value9",
+	}
+
+	sampleData3Bytes, err := json.Marshal(sampleData3)
+	require.NoError(t, err)
+
+	operations := []storage.Operation{
+		{Key: "key1", Value: sampleData1Bytes},
+		{Key: "key2", Value: sampleData2Bytes},
+		{Key: "key3", Value: sampleData3Bytes},
+	}
+
+	var waitGroup sync.WaitGroup
+
+	for i := 0; i < numberOfProviders; i++ {
+		i := i
+
+		waitGroup.Add(1)
+
+		setStoreConfig := func() {
+			defer waitGroup.Done()
+
+			errBatch := openStores[i].Batch(operations)
+			require.NoError(t, errBatch)
+
+			// Close the store as soon as possible in order to free up resources for other threads.
+			require.NoError(t, openStores[i].Close())
+		}
+		go setStoreConfig()
+	}
+
+	waitGroup.Wait()
+
+	values, err := openStores[0].GetBulk("key1", "key2", "key3")
+	require.NoError(t, err)
+
+	require.Len(t, values, 3)
+
+	var retrievedData1 sampleStruct
+
+	err = json.Unmarshal(values[0], &retrievedData1)
+	require.NoError(t, err)
+
+	require.Equal(t, sampleData1.Entry1, retrievedData1.Entry1)
+	require.Equal(t, sampleData1.Entry2, retrievedData1.Entry2)
+	require.Equal(t, sampleData1.Entry3, retrievedData1.Entry3)
+
+	var retrievedData2 sampleStruct
+
+	err = json.Unmarshal(values[1], &retrievedData2)
+	require.NoError(t, err)
+
+	require.Equal(t, sampleData2.Entry1, retrievedData2.Entry1)
+	require.Equal(t, sampleData2.Entry2, retrievedData2.Entry2)
+	require.Equal(t, sampleData2.Entry3, retrievedData2.Entry3)
+
+	var retrievedData3 sampleStruct
+
+	err = json.Unmarshal(values[2], &retrievedData3)
+	require.NoError(t, err)
+
+	require.Equal(t, sampleData3.Entry1, retrievedData3.Entry1)
+	require.Equal(t, sampleData3.Entry2, retrievedData3.Entry2)
+	require.Equal(t, sampleData3.Entry3, retrievedData3.Entry3)
 }
 
 func testCloseProviderTwice(t *testing.T, connString string) {
@@ -411,4 +630,8 @@ func pingMongoDB() error {
 	defer cancel()
 
 	return db.Client().Ping(ctx, nil)
+}
+
+func randomStoreName() string {
+	return "store-" + uuid.New().String()
 }
