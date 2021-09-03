@@ -64,8 +64,8 @@ github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510/go.mod h1:pupxD2MaaD3
 github.com/google/uuid v1.1.2 h1:EVhdT+1Kseyi1/pUmXKaFxYsDNy9RQYkMWRH68J/W7Y=
 github.com/google/uuid v1.1.2/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/hyperledger/aries-framework-go/spi v0.0.0-20210820153043-8b6f36d10ab9/go.mod h1:dBYKKD8U8U9o0g5BdNFFaRtjt9KTkiAYfQt+TTp+w1o=
-github.com/hyperledger/aries-framework-go/spi v0.0.0-20210820204349-ab3143ab760b h1:Y1CYskAOTp1UuPUtz8g+RZ88bO8JzY4m6YJ5K3+lb/4=
-github.com/hyperledger/aries-framework-go/spi v0.0.0-20210820204349-ab3143ab760b/go.mod h1:dBYKKD8U8U9o0g5BdNFFaRtjt9KTkiAYfQt+TTp+w1o=
+github.com/hyperledger/aries-framework-go/spi v0.0.0-20210902194940-97c6f2cded6c h1:XSQhXi4t0Pu5moPT9TdSRlKPO69RA4k1Ky18jM25mCs=
+github.com/hyperledger/aries-framework-go/spi v0.0.0-20210902194940-97c6f2cded6c/go.mod h1:dBYKKD8U8U9o0g5BdNFFaRtjt9KTkiAYfQt+TTp+w1o=
 github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210820204349-ab3143ab760b h1:sGKuQ/2fZhfXMIuO2JZXnDmZ1LG62dkZfvpHSdM8N+Y=
 github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210820204349-ab3143ab760b/go.mod h1:qVBfLn+oRVIidRYw/HxZmj2COETUZR5lFPfiYH4AMr0=
 github.com/imdario/mergo v0.3.12 h1:b6R2BslTbIEToALKP7LxUvijTsNI9TAe80pLWN2g/HU=
