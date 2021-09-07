@@ -8,6 +8,7 @@
 @orb
 Feature: Test orb vdr
 
+  @orb_ipfs
   @orb_did_ops
   Scenario Outline:
     Then Execute shell script "./create_follow_activity.sh"
@@ -26,7 +27,7 @@ Feature: Test orb vdr
       | P256       |  JsonWebKey2020             |
       | P384       |  JsonWebKey2020             |
 
-
+  @orb_ipfs
   @orb_did_anchor_origin
   Scenario:
     Then Execute shell script "./create_follow_activity.sh"
@@ -34,3 +35,10 @@ Feature: Test orb vdr
     Then Resolve created DID through anchor origin
     Then Orb DID is created with key type "Ed25519" with signature suite "JsonWebKey2020" with anchor origin https
     Then Resolve created DID through anchor origin
+
+  @orb_cas
+  @orb_did_local_cas
+  Scenario:
+    Then Execute shell script "./create_follow_activity.sh"
+    Then Orb DID is created with key type "Ed25519" with signature suite "JsonWebKey2020"
+    Then Resolve created DID through https hint

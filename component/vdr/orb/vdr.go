@@ -62,6 +62,7 @@ const (
 	sha2_256        = 18 // multihash
 	ipfsGlobal      = "https://ipfs.io"
 	ipfsPrefix      = "ipfs://"
+	httpsProtocol   = "https"
 )
 
 var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
@@ -297,12 +298,28 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 
 	var err error
 
-	if v.domain != "" {
+	switch {
+	case strings.HasPrefix(did, fmt.Sprintf("did:%s:%s", DIDMethod, httpsProtocol)):
+		hintDomain := strings.Split(did, ":")[3]
+
+		endpoint, err = v.discoveryService.GetEndpoint(fmt.Sprintf("%s://%s", httpsProtocol, hintDomain))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get endpoints: %w", err)
+		}
+
+		for _, e := range endpoint.ResolutionEndpoints {
+			if strings.Contains(e, hintDomain) {
+				return v.sidetreeResolve(e, did, opts...)
+			}
+		}
+
+		return nil, fmt.Errorf("discovery did not return hint domain")
+	case v.domain != "":
 		endpoint, err = v.discoveryService.GetEndpoint(v.domain)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get endpoints: %w", err)
 		}
-	} else {
+	default:
 		endpoint, err = v.discoveryService.GetEndpointFromAnchorOrigin(did)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get endpoints: %w", err)

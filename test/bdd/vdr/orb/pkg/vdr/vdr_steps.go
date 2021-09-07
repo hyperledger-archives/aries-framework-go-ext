@@ -42,7 +42,7 @@ const (
 	bls12381G2KeyType = "Bls12381G2"
 	// Ed25519KeyType ed25519 key type.
 	Ed25519KeyType = "Ed25519"
-	origin         = "https://orb2"
+	origin         = "https://testnet.orb.local"
 	jsonWebKey2020 = "JsonWebKey2020"
 )
 
@@ -50,6 +50,7 @@ const (
 type Steps struct {
 	bddContext       *context.BDDContext
 	createdDID       string
+	createdDIDMeta   *ariesdid.DocumentMetadata
 	kid              string
 	httpClient       *http.Client
 	vdr              *orb.VDR
@@ -97,6 +98,8 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 		e.resolveCreatedDID)
 	s.Step(`^Resolve created DID through anchor origin`,
 		e.resolveCreatedDIDThroughAnchorOrigin)
+	s.Step(`^Resolve created DID through https hint`,
+		e.resolveDIDWithHTTPSHint)
 	s.Step(`^Resolve updated DID$`,
 		e.resolveUpdatedDID)
 	s.Step(`^Resolve recovered DID$`,
@@ -292,7 +295,22 @@ func (e *Steps) createDID(keyType, signatureSuite, origin string) error {
 
 	e.createdDID = createdDocResolution.DIDDocument.ID
 
+	e.createdDIDMeta = createdDocResolution.DocumentMetadata
+
 	e.kid = kid
+
+	return nil
+}
+
+func (e *Steps) resolveDIDWithHTTPSHint() error {
+	docResolution, err := e.vdrWithoutDomain.Read(e.createdDIDMeta.EquivalentID[0])
+	if err != nil {
+		return err
+	}
+
+	if docResolution.DocumentMetadata.Method.Published {
+		return fmt.Errorf("doc is already published")
+	}
 
 	return nil
 }
@@ -306,11 +324,19 @@ func (e *Steps) resolveDIDWithoutDomain(did string) (*ariesdid.DocResolution, er
 		var err error
 		docResolution, err = e.vdrWithoutDomain.Read(did)
 
-		if err == nil {
-			return docResolution, nil
+		if err == nil && docResolution.DocumentMetadata.Method.Published {
+			break
 		}
 
-		if !strings.Contains(err.Error(), "DID does not exist") || i == maxRetry {
+		if err != nil && !strings.Contains(err.Error(), "DID does not exist") {
+			return nil, err
+		}
+
+		if i == maxRetry {
+			if err == nil {
+				return nil, fmt.Errorf("did is not published")
+			}
+
 			return nil, err
 		}
 
@@ -329,11 +355,19 @@ func (e *Steps) resolveDID(did string) (*ariesdid.DocResolution, error) {
 		var err error
 		docResolution, err = e.vdr.Read(did)
 
-		if err == nil {
-			return docResolution, nil
+		if err == nil && docResolution.DocumentMetadata.Method.Published {
+			break
 		}
 
-		if !strings.Contains(err.Error(), "DID does not exist") || i == maxRetry {
+		if err != nil && !strings.Contains(err.Error(), "DID does not exist") {
+			return nil, err
+		}
+
+		if i == maxRetry {
+			if err == nil {
+				return nil, fmt.Errorf("did is not published")
+			}
+
 			return nil, err
 		}
 
