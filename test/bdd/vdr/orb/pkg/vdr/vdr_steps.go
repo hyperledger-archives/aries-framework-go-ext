@@ -51,7 +51,7 @@ type Steps struct {
 	bddContext       *context.BDDContext
 	createdDID       string
 	createdDIDMeta   *ariesdid.DocumentMetadata
-	kid              string
+	vm               *ariesdid.VerificationMethod
 	httpClient       *http.Client
 	vdr              *orb.VDR
 	vdrWithoutDomain *orb.VDR
@@ -215,6 +215,7 @@ func (e *Steps) updateDID(keyType, signatureSuite string) error {
 	didDoc := &ariesdid.Doc{ID: e.createdDID}
 
 	didDoc.Authentication = append(didDoc.Authentication, *ariesdid.NewReferencedVerification(vm,
+		ariesdid.Authentication), *ariesdid.NewReferencedVerification(e.vm,
 		ariesdid.Authentication))
 
 	didDoc.CapabilityInvocation = append(didDoc.CapabilityInvocation, *ariesdid.NewReferencedVerification(vm,
@@ -297,7 +298,7 @@ func (e *Steps) createDID(keyType, signatureSuite, origin string) error {
 
 	e.createdDIDMeta = createdDocResolution.DocumentMetadata
 
-	e.kid = kid
+	e.vm = vm
 
 	return nil
 }
@@ -435,8 +436,8 @@ func (e *Steps) resolveUpdatedDID() error {
 		return fmt.Errorf("resolved updated did service count is not equal to %d", 2)
 	}
 
-	if len(docResolution.DIDDocument.Authentication) != 1 {
-		return fmt.Errorf("resolved updated did authentication count is not equal to %d", 1)
+	if len(docResolution.DIDDocument.Authentication) != 2 { //nolint:gomnd
+		return fmt.Errorf("resolved updated did authentication count is not equal to %d", 2)
 	}
 
 	if len(docResolution.DIDDocument.CapabilityInvocation) != 1 {
@@ -529,9 +530,9 @@ func (e *Steps) validatePublicKey(didDoc *ariesdid.Doc, keyType, signatureSuite 
 }
 
 func (e *Steps) verifyPublicKeyAndType(didDoc *ariesdid.Doc, signatureSuite string) error {
-	if didDoc.VerificationMethod[0].ID != didDoc.ID+"#"+e.kid {
+	if didDoc.VerificationMethod[0].ID != didDoc.ID+"#"+e.vm.ID {
 		return fmt.Errorf("resolved did public key ID %s not equal to %s",
-			didDoc.VerificationMethod[0].ID, didDoc.ID+"#"+e.kid)
+			didDoc.VerificationMethod[0].ID, didDoc.ID+"#"+e.vm.ID)
 	}
 
 	if didDoc.VerificationMethod[0].Type != signatureSuite {

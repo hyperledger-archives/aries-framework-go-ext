@@ -267,7 +267,7 @@ func (v *VDR) Create(did *docdid.Doc,
 	}
 
 	for k := range pks {
-		createOpt = append(createOpt, create.WithPublicKey(pks[k]))
+		createOpt = append(createOpt, create.WithPublicKey(pks[k].publicKey))
 	}
 
 	createOpt = append(createOpt, create.WithSidetreeEndpoint(getEndpoints), create.WithAnchorOrigin(anchorOrigin),
@@ -373,7 +373,7 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 }
 
 // Update did doc.
-func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error { //nolint:funlen,gocyclo
+func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error { //nolint:funlen
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
 
 	// Apply options
@@ -410,16 +410,6 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 	updateOpt = append(updateOpt, getRemovedSvcKeysID(docResolution.DIDDocument.Service, didDoc.Service)...)
 
-	// get verification method
-	pks, err := getSidetreePublicKeys(didDoc)
-	if err != nil {
-		return err
-	}
-
-	for k := range pks {
-		updateOpt = append(updateOpt, update.WithAddPublicKey(pks[k]))
-	}
-
 	// get keys
 	nextUpdatePublicKey, err := v.keyRetriever.GetNextUpdatePublicKey(didDoc.ID)
 	if err != nil {
@@ -431,8 +421,12 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 		return err
 	}
 
-	updateOpt = append(updateOpt, getRemovedPKKeysID(docResolution.DIDDocument.VerificationMethod,
-		didDoc.VerificationMethod)...)
+	updatedPKKeysID, err := getUpdatedPKKeysID(docResolution.DIDDocument, didDoc)
+	if err != nil {
+		return err
+	}
+
+	updateOpt = append(updateOpt, updatedPKKeysID...)
 
 	updateOpt = append(updateOpt, update.WithSidetreeEndpoint(v.getSidetreeOperationEndpoints(didMethodOpts)),
 		update.WithNextUpdatePublicKey(nextUpdatePublicKey),
@@ -459,7 +453,7 @@ func (v *VDR) recover(didDoc *docdid.Doc, getEndpoints func() ([]string, error),
 	}
 
 	for k := range pks {
-		recoveryOpt = append(recoveryOpt, recovery.WithPublicKey(pks[k]))
+		recoveryOpt = append(recoveryOpt, recovery.WithPublicKey(pks[k].publicKey))
 	}
 
 	// get keys
@@ -517,13 +511,13 @@ func (v *VDR) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 	return v.sidetreeClient.DeactivateDID(didID, deactivateOpt...)
 }
 
-func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error) { // nolint:funlen,gocyclo
-	pksMap := make(map[string]*doc.PublicKey)
+type pk struct {
+	value     []byte
+	publicKey *doc.PublicKey
+}
 
-	if len(didDoc.VerificationMethod) > 0 {
-		return nil,
-			fmt.Errorf("verificationMethod not supported use other verificationMethod like Authentication")
-	}
+func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*pk, error) { // nolint:funlen
+	pksMap := make(map[string]*pk)
 
 	ver := make([]docdid.Verification, 0)
 
@@ -553,25 +547,31 @@ func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*doc.PublicKey, error
 
 		value, ok := pksMap[v.VerificationMethod.ID]
 		if ok {
-			value.Purposes = append(value.Purposes, purpose)
+			value.publicKey.Purposes = append(value.publicKey.Purposes, purpose)
 
 			continue
 		}
 
 		switch {
 		case v.VerificationMethod.JSONWebKey() != nil:
-			pksMap[v.VerificationMethod.ID] = &doc.PublicKey{
-				ID:       v.VerificationMethod.ID,
-				Type:     v.VerificationMethod.Type,
-				Purposes: []string{purpose},
-				JWK:      *v.VerificationMethod.JSONWebKey(),
+			pksMap[v.VerificationMethod.ID] = &pk{
+				publicKey: &doc.PublicKey{
+					ID:       v.VerificationMethod.ID,
+					Type:     v.VerificationMethod.Type,
+					Purposes: []string{purpose},
+					JWK:      *v.VerificationMethod.JSONWebKey(),
+				},
+				value: v.VerificationMethod.Value,
 			}
 		case v.VerificationMethod.Value != nil:
-			pksMap[v.VerificationMethod.ID] = &doc.PublicKey{
-				ID:       v.VerificationMethod.ID,
-				Type:     v.VerificationMethod.Type,
-				Purposes: []string{purpose},
-				B58Key:   base58.Encode(v.VerificationMethod.Value),
+			pksMap[v.VerificationMethod.ID] = &pk{
+				publicKey: &doc.PublicKey{
+					ID:       v.VerificationMethod.ID,
+					Type:     v.VerificationMethod.Type,
+					Purposes: []string{purpose},
+					B58Key:   base58.Encode(v.VerificationMethod.Value),
+				},
+				value: v.VerificationMethod.Value,
 			}
 		default:
 			return nil, fmt.Errorf("verificationMethod needs either JSONWebKey or Base58 key")
@@ -610,7 +610,7 @@ func getRemovedSvcKeysID(currentService, updatedService []docdid.Service) []upda
 		exist := false
 
 		for u := range updatedService {
-			if currentService[i].ID == updatedService[u].ID {
+			if strings.Contains(currentService[i].ID, updatedService[u].ID) {
 				exist = true
 
 				break
@@ -632,14 +632,41 @@ func getRemovedSvcKeysID(currentService, updatedService []docdid.Service) []upda
 	return updateOpt
 }
 
-func getRemovedPKKeysID(currentVM, updatedVM []docdid.VerificationMethod) []update.Option {
+func getUpdatedPKKeysID(currentDID, updatedDID *docdid.Doc) ([]update.Option, error) { //nolint:gocognit,gocyclo
 	var updateOpt []update.Option
 
-	for _, curr := range currentVM {
+	existKeys := make(map[string]struct{})
+
+	currentPKS, err := getSidetreePublicKeys(currentDID)
+	if err != nil {
+		return nil, err
+	}
+
+	updatedPKS, err := getSidetreePublicKeys(updatedDID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, currPK := range currentPKS {
 		exist := false
 
-		for _, updated := range updatedVM {
-			if curr.ID == updated.ID {
+		for _, updatedPK := range updatedPKS {
+			if strings.Contains(currPK.publicKey.ID, updatedPK.publicKey.ID) {
+				if len(currPK.publicKey.Purposes) == len(updatedPK.publicKey.Purposes) {
+					currPKPurposesMap := make(map[string]struct{})
+					for _, v := range currPK.publicKey.Purposes {
+						currPKPurposesMap[v] = struct{}{}
+					}
+
+					for _, v := range updatedPK.publicKey.Purposes {
+						delete(currPKPurposesMap, v)
+					}
+
+					if bytes.Equal(currPK.value, updatedPK.value) && len(currPKPurposesMap) == 0 {
+						existKeys[updatedPK.publicKey.ID] = struct{}{}
+					}
+				}
+
 				exist = true
 
 				break
@@ -647,7 +674,7 @@ func getRemovedPKKeysID(currentVM, updatedVM []docdid.VerificationMethod) []upda
 		}
 
 		if !exist {
-			s := strings.Split(curr.ID, "#")
+			s := strings.Split(currPK.publicKey.ID, "#")
 
 			id := s[0]
 			if len(s) > 1 {
@@ -658,7 +685,13 @@ func getRemovedPKKeysID(currentVM, updatedVM []docdid.VerificationMethod) []upda
 		}
 	}
 
-	return updateOpt
+	for k := range updatedPKS {
+		if _, ok := existKeys[k]; !ok {
+			updateOpt = append(updateOpt, update.WithAddPublicKey(updatedPKS[k].publicKey))
+		}
+	}
+
+	return updateOpt, nil
 }
 
 func (v *VDR) sidetreeResolve(url, did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {

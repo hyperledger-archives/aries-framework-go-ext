@@ -336,13 +336,18 @@ func TestVDRI_Update(t *testing.T) {
 		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
 		require.NoError(t, err)
 
+		vm1, err := did.NewVerificationMethodFromJWK("did:example:123456789abcdefghi#keys-1", "k1", "", jwk)
+		require.NoError(t, err)
+
 		ver := did.NewReferencedVerification(vm, did.Authentication)
+
+		ver1 := did.NewReferencedVerification(vm1, did.Authentication)
 
 		err = v.Update(&did.Doc{
 			Service: []did.Service{
 				{ID: "svc"},
 			},
-			Authentication: []did.Verification{*ver},
+			Authentication: []did.Verification{*ver, *ver1},
 		}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
 		require.NoError(t, err)
 	})
@@ -472,20 +477,6 @@ func TestVDRI_Recover(t *testing.T) {
 			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "vm relationship 0 not supported")
-
-		err = v.Update(&did.Doc{
-			Service: []did.Service{
-				{ID: "svc"},
-			},
-			VerificationMethod: []did.VerificationMethod{
-				{ID: "id"},
-			},
-		},
-			vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
-			vdrapi.WithOption(RecoverOpt, true),
-			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "verificationMethod not supported")
 	})
 
 	t.Run("test anchor origin is empty", func(t *testing.T) {
