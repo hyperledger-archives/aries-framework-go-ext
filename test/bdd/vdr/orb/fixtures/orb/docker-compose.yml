@@ -20,10 +20,9 @@ services:
       - ORB_TLS_CERTIFICATE=/etc/orb/tls/ec-pubCert.pem
       - ORB_TLS_KEY=/etc/orb/tls/ec-key.pem
       - DID_NAMESPACE=did:orb
-      - DID_ALIASES=did:orb:testnet.orb.local
       - ALLOWED_ORIGINS=https://testnet.orb.local,https://orb2,ipns://k51qzi5uqu5dgkmm1afrkmex5mzpu5r774jstpxjmro6mdsaullur27nfxle1q
-      - BATCH_WRITER_TIMEOUT=200
-      - CAS_TYPE=ipfs
+      - BATCH_WRITER_TIMEOUT=${BATCH_TIMEOUT}
+      - CAS_TYPE=${CAS_TYPE}
       - IPFS_URL=ipfs:5001
       - ANCHOR_CREDENTIAL_ISSUER=https://testnet.orb.local
       - ANCHOR_CREDENTIAL_URL=https://testnet.orb.local/vc
@@ -38,6 +37,7 @@ services:
       - ORB_AUTH_TOKENS_DEF=/services/orb/outbox||admin,/services/orb/inbox||admin,/sidetree/.*/operations||admin
       - ORB_AUTH_TOKENS=admin=ADMIN_TOKEN
       - HTTP_SIGNATURES_ENABLED=true
+      - CREATE_DOCUMENT_STORE_ENABLED=true
     ports:
       - 443:443
     command: start
@@ -62,10 +62,9 @@ services:
       - ORB_TLS_CERTIFICATE=/etc/orb/tls/ec-pubCert.pem
       - ORB_TLS_KEY=/etc/orb/tls/ec-key.pem
       - DID_NAMESPACE=did:orb
-      - DID_ALIASES=did:orb:testnet.orb.local
       - ALLOWED_ORIGINS=https://testnet.orb.local,ipns://k51qzi5uqu5dgkmm1afrkmex5mzpu5r774jstpxjmro6mdsaullur27nfxle1q
-      - BATCH_WRITER_TIMEOUT=200
-      - CAS_TYPE=ipfs
+      - BATCH_WRITER_TIMEOUT=${BATCH_TIMEOUT}
+      - CAS_TYPE=${CAS_TYPE}
       - IPFS_URL=ipfs:5001
       - ANCHOR_CREDENTIAL_ISSUER=https://orb2
       - ANCHOR_CREDENTIAL_URL=https://orb2/vc
@@ -80,6 +79,7 @@ services:
       - ORB_AUTH_TOKENS_DEF=/services/orb/outbox||admin,/services/orb/inbox||admin,/sidetree/.*/operations||admin
       - ORB_AUTH_TOKENS=admin=ADMIN_TOKEN,read=READ_TOKEN
       - HTTP_SIGNATURES_ENABLED=true
+      - CREATE_DOCUMENT_STORE_ENABLED=true
     ports:
       - 8009:443
     command: start

@@ -14,7 +14,8 @@ vdr-trustbloc-bdd-test: generate-vdr-trustbloc-test-keys
 
 .PHONY: vdr-orb-bdd-test
 vdr-orb-bdd-test: generate-vdr-orb-test-keys
-	  @cd ./test/bdd/vdr/orb/;go test -count=1 -v -cover . -p 1 -timeout=20m
+	  @cd ./test/bdd/vdr/orb/;go test -count=1 -run orb_ipfs -v -cover . -p 1 -timeout=20m
+	  @cd ./test/bdd/vdr/orb/;BATCH_TIMEOUT=50000 CAS_TYPE=local go test -count=1 -run orb_cas -v -cover . -p 1 -timeout=20m
 
 .PHONY: checks
 checks: license lint

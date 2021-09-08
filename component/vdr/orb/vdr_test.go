@@ -690,6 +690,20 @@ func TestVDRI_Read(t *testing.T) {
 		require.Equal(t, "did", doc.DIDDocument.ID)
 	})
 
+	t.Run("test success for fetch endpoint from https hint", func(t *testing.T) {
+		v, err := New(nil, WithDomain("d1"))
+		require.NoError(t, err)
+
+		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)
+		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+			return &models.Endpoint{ResolutionEndpoints: []string{"example.com", "url2"}, MinResolvers: 2}, nil
+		}}
+
+		doc, err := v.Read("did:orb:https:example.com:uAAA:EiA329wd6Aj36YRmp7NGkeB5ADnVt8ARdMZMPzfXsjwTJA")
+		require.NoError(t, err)
+		require.Equal(t, "did", doc.DIDDocument.ID)
+	})
+
 	t.Run("test error from fetch endpoint from domain", func(t *testing.T) {
 		v, err := New(nil, WithDomain("d1"))
 		require.NoError(t, err)
