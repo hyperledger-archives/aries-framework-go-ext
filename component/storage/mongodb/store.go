@@ -10,6 +10,7 @@ SPDX-License-Identifier: Apache-2.0
 package mongodb
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1071,7 +1072,10 @@ func generateDataWrapper(key string, value []byte, tags []storage.Tag) dataWrapp
 
 	var unmarshalledValue map[string]interface{}
 
-	err := json.Unmarshal(value, &unmarshalledValue)
+	jsonDecoder := json.NewDecoder(bytes.NewReader(value))
+	jsonDecoder.UseNumber()
+
+	err := jsonDecoder.Decode(&unmarshalledValue)
 	if err == nil {
 		data.Doc = unmarshalledValue
 	} else {
