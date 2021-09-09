@@ -35,11 +35,11 @@ github.com/google/uuid v1.1.2/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+
 github.com/google/uuid v1.2.0 h1:qJYtXnJRWmpe7m/3XlyhrsLrEURqHRM2kxzoxXqyUDs=
 github.com/google/uuid v1.2.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
-github.com/hyperledger/aries-framework-go/spi v0.0.0-20210818133831-4e22573c126d/go.mod h1:dBYKKD8U8U9o0g5BdNFFaRtjt9KTkiAYfQt+TTp+w1o=
-github.com/hyperledger/aries-framework-go/spi v0.0.0-20210820175050-dcc7a225178d h1:0JfPT4ORTdFMQknng3TiA2G/YY80+AMmty/47K7z4Rw=
-github.com/hyperledger/aries-framework-go/spi v0.0.0-20210820175050-dcc7a225178d/go.mod h1:dBYKKD8U8U9o0g5BdNFFaRtjt9KTkiAYfQt+TTp+w1o=
-github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210820175050-dcc7a225178d h1:6n55F8lsCR2OGGZ+3RB2ppXkdmtVaoTV7MoTvpFRyTg=
-github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210820175050-dcc7a225178d/go.mod h1:7jEZdg455syX4f+ozLgwhYfIuiEQ/TgdIoOyALMwPG0=
+github.com/hyperledger/aries-framework-go/spi v0.0.0-20210902194940-97c6f2cded6c/go.mod h1:dBYKKD8U8U9o0g5BdNFFaRtjt9KTkiAYfQt+TTp+w1o=
+github.com/hyperledger/aries-framework-go/spi v0.0.0-20210909135806-a1c268dfb633 h1:MADf+mpDk0Fo7loUG11vqq0tOB9kuyZH1FoHdNfFei0=
+github.com/hyperledger/aries-framework-go/spi v0.0.0-20210909135806-a1c268dfb633/go.mod h1:dBYKKD8U8U9o0g5BdNFFaRtjt9KTkiAYfQt+TTp+w1o=
+github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210909135806-a1c268dfb633 h1:DnwZhies44xoa071vLSciwA9LHbEb18qJaNIOXt7xDE=
+github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210909135806-a1c268dfb633/go.mod h1:XtAqwhIKA5tWOiWX/wZEFeANNGnRyQL6CNIIeE3lAVc=
 github.com/inconshreveable/mousetrap v1.0.0/go.mod h1:PxqpIevigyE2G7u3NXJIT2ANytuPF1OarO4DADm73n8=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.2/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=

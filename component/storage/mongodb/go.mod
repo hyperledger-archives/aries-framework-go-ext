@@ -9,7 +9,7 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.1.1
 	github.com/google/uuid v1.1.2
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210902194940-97c6f2cded6c
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210909135806-a1c268dfb633
 	github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210909135806-a1c268dfb633
 	github.com/ory/dockertest/v3 v3.7.0
 	github.com/pkg/errors v0.9.1
