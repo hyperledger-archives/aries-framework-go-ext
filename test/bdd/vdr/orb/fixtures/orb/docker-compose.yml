@@ -38,6 +38,7 @@ services:
       - ORB_AUTH_TOKENS=admin=ADMIN_TOKEN
       - HTTP_SIGNATURES_ENABLED=true
       - CREATE_DOCUMENT_STORE_ENABLED=true
+      - UPDATE_DOCUMENT_STORE_ENABLED=true
     ports:
       - 443:443
     command: start
@@ -80,6 +81,7 @@ services:
       - ORB_AUTH_TOKENS=admin=ADMIN_TOKEN,read=READ_TOKEN
       - HTTP_SIGNATURES_ENABLED=true
       - CREATE_DOCUMENT_STORE_ENABLED=true
+      - UPDATE_DOCUMENT_STORE_ENABLED=true
     ports:
       - 8009:443
     command: start

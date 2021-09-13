@@ -373,7 +373,7 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 }
 
 // Update did doc.
-func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error { //nolint:funlen
+func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error { //nolint:funlen,gocyclo
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
 
 	// Apply options
@@ -386,6 +386,10 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 	docResolution, err := v.Read(didDoc.ID, opts...)
 	if err != nil {
 		return err
+	}
+
+	if !docResolution.DocumentMetadata.Method.Published {
+		return fmt.Errorf("did is not published can't update")
 	}
 
 	// check recover option
@@ -428,7 +432,15 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 	updateOpt = append(updateOpt, updatedPKKeysID...)
 
-	updateOpt = append(updateOpt, update.WithSidetreeEndpoint(v.getSidetreeOperationEndpoints(didMethodOpts)),
+	updateOpt = append(updateOpt, update.WithSidetreeEndpoint(func() ([]string, error) {
+		// TODO make sure it's latest anchor origin
+		endpoint, err := v.discoveryService.GetEndpoint(docResolution.DocumentMetadata.Method.AnchorOrigin)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get endpoints: %w", err)
+		}
+
+		return endpoint.OperationEndpoints, nil
+	}),
 		update.WithNextUpdatePublicKey(nextUpdatePublicKey),
 		update.WithMultiHashAlgorithm(sha2_256),
 		update.WithSigningKey(updateSigningKey),

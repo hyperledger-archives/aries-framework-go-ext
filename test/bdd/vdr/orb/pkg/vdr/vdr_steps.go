@@ -100,6 +100,8 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 		e.resolveCreatedDIDThroughAnchorOrigin)
 	s.Step(`^Resolve created DID through https hint`,
 		e.resolveDIDWithHTTPSHint)
+	s.Step(`^Resolve update DID through cache`,
+		e.resolveUpdatedDIDFromCache)
 	s.Step(`^Resolve updated DID$`,
 		e.resolveUpdatedDID)
 	s.Step(`^Resolve recovered DID$`,
@@ -313,7 +315,12 @@ func (e *Steps) resolveDIDWithHTTPSHint() error {
 		return fmt.Errorf("doc is already published")
 	}
 
-	return nil
+	docResolution, err = e.resolveDID(e.createdDID)
+
+	e.createdDID = docResolution.DocumentMetadata.CanonicalID
+	e.createdDIDMeta = docResolution.DocumentMetadata
+
+	return err
 }
 
 func (e *Steps) resolveDIDWithoutDomain(did string) (*ariesdid.DocResolution, error) {
@@ -423,6 +430,32 @@ func (e *Steps) resolveRecoveredDID() error {
 
 func (e *Steps) resolveUpdatedDID() error {
 	docResolution, err := e.resolveDID(e.createdDID)
+	if err != nil {
+		return err
+	}
+
+	if docResolution.DIDDocument.ID != e.createdDID {
+		return fmt.Errorf("resolved did %s not equal to created did %s",
+			docResolution.DIDDocument.ID, e.createdDID)
+	}
+
+	if len(docResolution.DIDDocument.Service) != 2 { //nolint:gomnd
+		return fmt.Errorf("resolved updated did service count is not equal to %d", 2)
+	}
+
+	if len(docResolution.DIDDocument.Authentication) != 2 { //nolint:gomnd
+		return fmt.Errorf("resolved updated did authentication count is not equal to %d", 2)
+	}
+
+	if len(docResolution.DIDDocument.CapabilityInvocation) != 1 {
+		return fmt.Errorf("resolved updated did capabilityInvocation count is not equal to %d", 1)
+	}
+
+	return nil
+}
+
+func (e *Steps) resolveUpdatedDIDFromCache() error {
+	docResolution, err := e.vdr.Read(e.createdDID)
 	if err != nil {
 		return err
 	}

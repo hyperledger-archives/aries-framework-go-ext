@@ -42,3 +42,5 @@ Feature: Test orb vdr
     Then Execute shell script "./create_follow_activity.sh"
     Then Orb DID is created with key type "Ed25519" with signature suite "JsonWebKey2020"
     Then Resolve created DID through https hint
+    Then Orb DID is updated with key type "Ed25519" with signature suite "JsonWebKey2020"
+    Then Resolve update DID through cache
