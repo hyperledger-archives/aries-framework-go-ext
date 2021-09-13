@@ -45,6 +45,21 @@ const validDocResolution = `
 }
 `
 
+const validDocResolutionNotPublished = `
+{
+   "@context":"https://w3id.org/did-resolution/v1",
+   "didDocument": ` + validDoc + `,
+   "didDocumentMetadata":{
+      "canonicalId":"did:ex:123333",
+      "method":{
+         "published":false,
+         "recoveryCommitment":"EiB1u5HnTYKVHrmemOpZtrGlc6BoaWWHwNAd-k7CrLKHOg",
+         "updateCommitment":"EiAiTB0QR_Skh3i-fzDSeFgjVoMEDsXYoVIsA56-GUsKjg"
+      }
+   }
+}
+`
+
 //nolint:lll
 const validDoc = `{
   "@context": ["https://w3id.org/did/v1"],
@@ -383,6 +398,22 @@ func TestVDRI_Update(t *testing.T) {
 		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get next update public key")
+	})
+
+	t.Run("test did not published", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolutionNotPublished)
+		}))
+		defer cServ.Close()
+
+		v, err := New(nil)
+		require.NoError(t, err)
+
+		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "did is not published can't update")
 	})
 
 	t.Run("test failed to get signing key", func(t *testing.T) {
