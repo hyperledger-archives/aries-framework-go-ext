@@ -10,7 +10,6 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +19,6 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
-	"github.com/piprate/json-gold/ld"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/orb/pkg/discovery/endpoint/client/models"
 
@@ -665,20 +663,6 @@ func TestVDRI_Read(t *testing.T) {
 		require.Equal(t, "did", doc.DIDDocument.ID)
 	})
 
-	t.Run("test success for fetch endpoint from domain", func(t *testing.T) {
-		v, err := New(nil, WithDomain("d1"))
-		require.NoError(t, err)
-
-		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)
-		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
-			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
-		}}
-
-		doc, err := v.Read("did:ex:domain:1234")
-		require.NoError(t, err)
-		require.Equal(t, "did", doc.DIDDocument.ID)
-	})
-
 	t.Run("test failed to fetch endpoint without domain", func(t *testing.T) {
 		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-type", "application/json")
@@ -696,20 +680,6 @@ func TestVDRI_Read(t *testing.T) {
 			"iw2_DgoTdooQ")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unable to parse verifiable credential")
-	})
-
-	t.Run("test success for fetch endpoint from webcas", func(t *testing.T) {
-		v, err := New(nil, WithDomain("d1"))
-		require.NoError(t, err)
-
-		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)
-		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
-			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
-		}}
-
-		doc, err := v.Read("did:orb:webcas:domain:1234")
-		require.NoError(t, err)
-		require.Equal(t, "did", doc.DIDDocument.ID)
 	})
 
 	t.Run("test success for fetch endpoint from https hint", func(t *testing.T) {
@@ -732,40 +702,12 @@ func TestVDRI_Read(t *testing.T) {
 
 		v.getHTTPVDR = httpVdrFunc(nil, fmt.Errorf("failed to resolve"))
 		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
-			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
+			return &models.Endpoint{ResolutionEndpoints: []string{"url1"}, MinResolvers: 1}, nil
 		}}
 
 		_, err = v.Read("did:ex:domain:1234")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to resolve")
-	})
-
-	t.Run("test error different doc returned", func(t *testing.T) {
-		v, err := New(nil, WithDomain("d1"))
-		require.NoError(t, err)
-
-		c := 1
-
-		v.getHTTPVDR = func(url string) (v vdr, e error) {
-			return &mockvdr.MockVDR{
-				ReadFunc: func(didID string, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
-					c++
-					if c == 2 {
-						return &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil
-					}
-
-					return did.ParseDocumentResolution([]byte(validDocResolution))
-				},
-			}, nil
-		}
-
-		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
-			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
-		}}
-
-		_, err = v.Read("did:ex:domain:1234")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to fetch correct did from min resolvers")
 	})
 
 	t.Run("test fetch endpoints from did not not supported", func(t *testing.T) {
@@ -774,7 +716,7 @@ func TestVDRI_Read(t *testing.T) {
 
 		_, err = v.Read("did:orb:domain:123")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to get endpoints: getting endpoint from cache")
+		require.Contains(t, err.Error(), "failed to get endpoints: failed to get key[d1] from endpoints cache")
 	})
 
 	t.Run("test wrong type OperationEndpointsOpt", func(t *testing.T) {
@@ -784,27 +726,6 @@ func TestVDRI_Read(t *testing.T) {
 		_, err = v.Read("did", vdrapi.WithOption(ResolutionEndpointsOpt, "url"))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "resolutionEndpointsOpt not array of string")
-	})
-
-	t.Run("cannot load jsonld context", func(t *testing.T) {
-		v, err := New(nil, WithDomain("d1"), WithDocumentLoader(&mockDocLoader{}))
-		require.NoError(t, err)
-
-		v.getHTTPVDR = func(url string) (v vdr, e error) {
-			return &mockvdr.MockVDR{
-				ReadFunc: func(didID string, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
-					return did.ParseDocumentResolution([]byte(validDocResolution))
-				},
-			}, nil
-		}
-
-		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
-			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
-		}}
-
-		_, err = v.Read("did:ex:domain:1234")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "loading remote context failed")
 	})
 }
 
@@ -877,10 +798,4 @@ func (m *mockDiscoveryService) GetEndpointFromAnchorOrigin(didURI string) (*mode
 	}
 
 	return nil, nil
-}
-
-type mockDocLoader struct{}
-
-func (m *mockDocLoader) LoadDocument(string) (*ld.RemoteDocument, error) {
-	return nil, errors.New("not found")
 }
