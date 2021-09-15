@@ -176,13 +176,13 @@ func (e *Steps) recoverDID(keyType, signatureSuite string) error {
 
 	didDoc := &ariesdid.Doc{ID: e.createdDID}
 
-	vm, err := e.createVerificationMethod(keyType, pubKey, kid, signatureSuite)
+	verificationMethod, err := e.createVerificationMethod(keyType, pubKey, kid, signatureSuite)
 	if err != nil {
 		return err
 	}
 
-	didDoc.CapabilityInvocation = append(didDoc.CapabilityInvocation, *ariesdid.NewReferencedVerification(vm,
-		ariesdid.CapabilityDelegation))
+	didDoc.CapabilityInvocation = append(didDoc.CapabilityInvocation,
+		*ariesdid.NewReferencedVerification(verificationMethod, ariesdid.CapabilityDelegation))
 
 	didDoc.Service = []ariesdid.Service{{ID: serviceID, Type: "type", ServiceEndpoint: "http://www.example.com/"}}
 
