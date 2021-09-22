@@ -107,9 +107,9 @@ type VDR struct {
 
 // KeyRetriever key retriever.
 type KeyRetriever interface {
-	GetNextRecoveryPublicKey(didID string) (crypto.PublicKey, error)
-	GetNextUpdatePublicKey(didID string) (crypto.PublicKey, error)
-	GetSigningKey(didID string, ot OperationType) (crypto.PrivateKey, error)
+	GetNextRecoveryPublicKey(didID, commitment string) (crypto.PublicKey, error)
+	GetNextUpdatePublicKey(didID, commitment string) (crypto.PublicKey, error)
+	GetSigningKey(didID string, ot OperationType, commitment string) (crypto.PrivateKey, error)
 }
 
 // New creates new orb VDR.
@@ -396,12 +396,14 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 	updateOpt = append(updateOpt, getRemovedSvcKeysID(docResolution.DIDDocument.Service, didDoc.Service)...)
 
 	// get keys
-	nextUpdatePublicKey, err := v.keyRetriever.GetNextUpdatePublicKey(didDoc.ID)
+	nextUpdatePublicKey, err := v.keyRetriever.GetNextUpdatePublicKey(didDoc.ID,
+		docResolution.DocumentMetadata.Method.UpdateCommitment)
 	if err != nil {
 		return err
 	}
 
-	updateSigningKey, err := v.keyRetriever.GetSigningKey(didDoc.ID, Update)
+	updateSigningKey, err := v.keyRetriever.GetSigningKey(didDoc.ID, Update,
+		docResolution.DocumentMetadata.Method.UpdateCommitment)
 	if err != nil {
 		return err
 	}
@@ -450,17 +452,17 @@ func (v *VDR) recover(didDoc *docdid.Doc, getEndpoints func() ([]string, error),
 	}
 
 	// get keys
-	nextUpdatePublicKey, err := v.keyRetriever.GetNextUpdatePublicKey(didDoc.ID)
+	nextUpdatePublicKey, err := v.keyRetriever.GetNextUpdatePublicKey(didDoc.ID, recoveryCommitment)
 	if err != nil {
 		return err
 	}
 
-	nextRecoveryPublicKey, err := v.keyRetriever.GetNextRecoveryPublicKey(didDoc.ID)
+	nextRecoveryPublicKey, err := v.keyRetriever.GetNextRecoveryPublicKey(didDoc.ID, recoveryCommitment)
 	if err != nil {
 		return err
 	}
 
-	updateSigningKey, err := v.keyRetriever.GetSigningKey(didDoc.ID, Recover)
+	updateSigningKey, err := v.keyRetriever.GetSigningKey(didDoc.ID, Recover, recoveryCommitment)
 	if err != nil {
 		return err
 	}
@@ -492,7 +494,8 @@ func (v *VDR) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 		return err
 	}
 
-	signingKey, err := v.keyRetriever.GetSigningKey(didID, Recover)
+	signingKey, err := v.keyRetriever.GetSigningKey(didID, Recover,
+		docResolution.DocumentMetadata.Method.RecoveryCommitment)
 	if err != nil {
 		return err
 	}
