@@ -13,10 +13,10 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net/http"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/cucumber/godog"
@@ -336,7 +336,7 @@ func (e *Steps) resolveDIDWithoutDomain(did string) (*ariesdid.DocResolution, er
 			break
 		}
 
-		if err != nil && !strings.Contains(err.Error(), "DID does not exist") {
+		if err != nil && !errors.Is(err, vdrapi.ErrNotFound) {
 			return nil, err
 		}
 
@@ -367,7 +367,7 @@ func (e *Steps) resolveDID(did string) (*ariesdid.DocResolution, error) {
 			break
 		}
 
-		if err != nil && !strings.Contains(err.Error(), "DID does not exist") {
+		if err != nil && !errors.Is(err, vdrapi.ErrNotFound) {
 			return nil, err
 		}
 
