@@ -389,7 +389,8 @@ func TestVDRI_Update(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{getNextUpdatePublicKey: func(didID string) (crypto.PublicKey, error) {
+		v, err := New(&mockKeyRetriever{getNextUpdatePublicKey: func(didID,
+			commitment string) (crypto.PublicKey, error) {
 			return nil, fmt.Errorf("failed to get next update public key")
 		}})
 		require.NoError(t, err)
@@ -422,7 +423,8 @@ func TestVDRI_Update(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{getSigningKey: func(didID string, ot OperationType) (crypto.PrivateKey, error) {
+		v, err := New(&mockKeyRetriever{getSigningKey: func(didID string, ot OperationType,
+			commitment string) (crypto.PrivateKey, error) {
 			return nil, fmt.Errorf("failed to get signing key")
 		}})
 		require.NoError(t, err)
@@ -551,7 +553,8 @@ func TestVDRI_Recover(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{getNextUpdatePublicKey: func(didID string) (crypto.PublicKey, error) {
+		v, err := New(&mockKeyRetriever{getNextUpdatePublicKey: func(didID string,
+			commitment string) (crypto.PublicKey, error) {
 			return nil, fmt.Errorf("failed to get next update public key")
 		}})
 		require.NoError(t, err)
@@ -570,7 +573,8 @@ func TestVDRI_Recover(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{getNextRecoveryPublicKeyFunc: func(didID string) (crypto.PublicKey, error) {
+		v, err := New(&mockKeyRetriever{getNextRecoveryPublicKeyFunc: func(didID,
+			commitment string) (crypto.PublicKey, error) {
 			return nil, fmt.Errorf("failed to get next recovery public key")
 		}})
 		require.NoError(t, err)
@@ -589,7 +593,8 @@ func TestVDRI_Recover(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{getSigningKey: func(didID string, ot OperationType) (crypto.PrivateKey, error) {
+		v, err := New(&mockKeyRetriever{getSigningKey: func(didID string, ot OperationType,
+			commitment string) (crypto.PrivateKey, error) {
 			return nil, fmt.Errorf("failed to get signing key")
 		}})
 		require.NoError(t, err)
@@ -750,30 +755,30 @@ func (m *mockSidetreeClient) DeactivateDID(didID string, opts ...deactivate.Opti
 }
 
 type mockKeyRetriever struct {
-	getNextRecoveryPublicKeyFunc func(didID string) (crypto.PublicKey, error)
-	getNextUpdatePublicKey       func(didID string) (crypto.PublicKey, error)
-	getSigningKey                func(didID string, ot OperationType) (crypto.PrivateKey, error)
+	getNextRecoveryPublicKeyFunc func(didID, commitment string) (crypto.PublicKey, error)
+	getNextUpdatePublicKey       func(didID, commitment string) (crypto.PublicKey, error)
+	getSigningKey                func(didID string, ot OperationType, commitment string) (crypto.PrivateKey, error)
 }
 
-func (m *mockKeyRetriever) GetNextRecoveryPublicKey(didID string) (crypto.PublicKey, error) {
+func (m *mockKeyRetriever) GetNextRecoveryPublicKey(didID, commitment string) (crypto.PublicKey, error) {
 	if m.getNextRecoveryPublicKeyFunc != nil {
-		return m.getNextRecoveryPublicKeyFunc(didID)
+		return m.getNextRecoveryPublicKeyFunc(didID, commitment)
 	}
 
 	return nil, nil
 }
 
-func (m *mockKeyRetriever) GetNextUpdatePublicKey(didID string) (crypto.PublicKey, error) {
+func (m *mockKeyRetriever) GetNextUpdatePublicKey(didID, commitment string) (crypto.PublicKey, error) {
 	if m.getNextUpdatePublicKey != nil {
-		return m.getNextUpdatePublicKey(didID)
+		return m.getNextUpdatePublicKey(didID, commitment)
 	}
 
 	return nil, nil
 }
 
-func (m *mockKeyRetriever) GetSigningKey(didID string, ot OperationType) (crypto.PrivateKey, error) {
+func (m *mockKeyRetriever) GetSigningKey(didID string, ot OperationType, commitment string) (crypto.PrivateKey, error) {
 	if m.getSigningKey != nil {
-		return m.getSigningKey(didID, ot)
+		return m.getSigningKey(didID, ot, commitment)
 	}
 
 	return nil, nil

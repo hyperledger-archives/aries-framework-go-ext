@@ -592,15 +592,15 @@ type keyRetriever struct {
 	recoverKey            crypto.PrivateKey
 }
 
-func (k *keyRetriever) GetNextRecoveryPublicKey(didID string) (crypto.PublicKey, error) {
+func (k *keyRetriever) GetNextRecoveryPublicKey(didID, commitment string) (crypto.PublicKey, error) {
 	return k.nextRecoveryPublicKey, nil
 }
 
-func (k *keyRetriever) GetNextUpdatePublicKey(didID string) (crypto.PublicKey, error) {
+func (k *keyRetriever) GetNextUpdatePublicKey(didID, commitment string) (crypto.PublicKey, error) {
 	return k.nextUpdatePublicKey, nil
 }
 
-func (k *keyRetriever) GetSigningKey(didID string, ot orb.OperationType) (crypto.PrivateKey, error) {
+func (k *keyRetriever) GetSigningKey(didID string, ot orb.OperationType, commitment string) (crypto.PrivateKey, error) {
 	if ot == orb.Update {
 		return k.updateKey, nil
 	}
