@@ -12,9 +12,9 @@ Feature: Test orb vdr
   @orb_did_ops
   Scenario Outline:
     Then Execute shell script "./create_follow_activity.sh"
-    Then Orb DID is created with key type "<keyType>" with signature suite "<signatureSuite>"
+    Then Orb DID is created with key type "<keyType>" with signature suite "<signatureSuite>" with resolve DID "true"
     Then Resolve created DID and validate key type "<keyType>", signature suite "<signatureSuite>"
-    Then Orb DID is updated with key type "<keyType>" with signature suite "<signatureSuite>"
+    Then Orb DID is updated with key type "<keyType>" with signature suite "<signatureSuite>" with resolve DID "true"
     Then Resolve updated DID
     Then Orb DID is recovered with key type "<keyType>" with signature suite "<signatureSuite>"
     Then Resolve recovered DID
@@ -40,7 +40,7 @@ Feature: Test orb vdr
   @orb_did_local_cas
   Scenario:
     Then Execute shell script "./create_follow_activity.sh"
-    Then Orb DID is created with key type "Ed25519" with signature suite "JsonWebKey2020"
+    Then Orb DID is created with key type "Ed25519" with signature suite "JsonWebKey2020" with resolve DID "false"
     Then Resolve created DID through https hint
-    Then Orb DID is updated with key type "Ed25519" with signature suite "JsonWebKey2020"
+    Then Orb DID is updated with key type "Ed25519" with signature suite "JsonWebKey2020" with resolve DID "false"
     Then Resolve update DID through cache

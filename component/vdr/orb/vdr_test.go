@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
@@ -126,6 +127,11 @@ func TestVDRI_Create(t *testing.T) {
 		v, err := New(&mockKeyRetriever{})
 		require.NoError(t, err)
 
+		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{
+			DIDDocument:      &did.Doc{ID: "did"},
+			DocumentMetadata: &did.DocumentMetadata{Method: &did.MethodMetadata{Published: true}},
+		}, nil)
+
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
 
 		_, pk, err := ed25519.GenerateKey(rand.Reader)
@@ -149,6 +155,8 @@ func TestVDRI_Create(t *testing.T) {
 		verCapabilityInvocation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id2"},
 			did.CapabilityInvocation)
 
+		sleepTime := 1 * time.Second
+
 		docResolution, err := v.Create(&did.Doc{
 			Service: []did.Service{
 				{ID: "svc"},
@@ -163,9 +171,118 @@ func TestVDRI_Create(t *testing.T) {
 			},
 		}, vdrapi.WithOption(UpdatePublicKeyOpt, []byte{}),
 			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}),
-			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
+			vdrapi.WithOption(AnchorOriginOpt, "origin.com"),
+			vdrapi.WithOption(CheckDIDAnchored, &ResolveDIDRetry{MaxNumber: 2, SleepTime: &sleepTime}),
+			vdrapi.WithOption(ResolutionEndpointsOpt, []string{"url"}))
 		require.NoError(t, err)
 		require.Equal(t, "did", docResolution.DIDDocument.ID)
+	})
+
+	t.Run("test create did and did not published", func(t *testing.T) {
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
+
+		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{
+			DIDDocument:      &did.Doc{ID: "did"},
+			DocumentMetadata: &did.DocumentMetadata{Method: &did.MethodMetadata{Published: false}},
+		}, nil)
+
+		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
+
+		_, pk, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		jwk, err := jwksupport.JWKFromKey(pk)
+		require.NoError(t, err)
+
+		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
+		require.NoError(t, err)
+
+		vm2 := did.NewVerificationMethodFromBytes("id2", "", "", pk)
+
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+		ver2 := did.NewReferencedVerification(vm2, did.AssertionMethod)
+
+		verAssertionMethod := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"}, did.AssertionMethod)
+		verKeyAgreement := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"}, did.KeyAgreement)
+		verCapabilityDelegation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"},
+			did.CapabilityDelegation)
+		verCapabilityInvocation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id2"},
+			did.CapabilityInvocation)
+
+		sleepTime := 1 * time.Second
+
+		_, err = v.Create(&did.Doc{
+			Service: []did.Service{
+				{ID: "svc"},
+			},
+			Authentication: []did.Verification{
+				*ver,
+				*ver2,
+				*verAssertionMethod,
+				*verKeyAgreement,
+				*verCapabilityDelegation,
+				*verCapabilityInvocation,
+			},
+		}, vdrapi.WithOption(UpdatePublicKeyOpt, []byte{}),
+			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}),
+			vdrapi.WithOption(AnchorOriginOpt, "origin.com"),
+			vdrapi.WithOption(CheckDIDAnchored, &ResolveDIDRetry{MaxNumber: 2, SleepTime: &sleepTime}),
+			vdrapi.WithOption(ResolutionEndpointsOpt, []string{"url"}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "did is not published")
+	})
+
+	t.Run("test create did and resolve return error", func(t *testing.T) {
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
+
+		v.getHTTPVDR = httpVdrFunc(nil, fmt.Errorf("failed to resolve"))
+
+		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
+
+		_, pk, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		jwk, err := jwksupport.JWKFromKey(pk)
+		require.NoError(t, err)
+
+		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
+		require.NoError(t, err)
+
+		vm2 := did.NewVerificationMethodFromBytes("id2", "", "", pk)
+
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+		ver2 := did.NewReferencedVerification(vm2, did.AssertionMethod)
+
+		verAssertionMethod := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"}, did.AssertionMethod)
+		verKeyAgreement := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"}, did.KeyAgreement)
+		verCapabilityDelegation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"},
+			did.CapabilityDelegation)
+		verCapabilityInvocation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id2"},
+			did.CapabilityInvocation)
+
+		sleepTime := 1 * time.Second
+
+		_, err = v.Create(&did.Doc{
+			Service: []did.Service{
+				{ID: "svc"},
+			},
+			Authentication: []did.Verification{
+				*ver,
+				*ver2,
+				*verAssertionMethod,
+				*verKeyAgreement,
+				*verCapabilityDelegation,
+				*verCapabilityInvocation,
+			},
+		}, vdrapi.WithOption(UpdatePublicKeyOpt, []byte{}),
+			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}),
+			vdrapi.WithOption(AnchorOriginOpt, "origin.com"),
+			vdrapi.WithOption(CheckDIDAnchored, &ResolveDIDRetry{MaxNumber: 2, SleepTime: &sleepTime}),
+			vdrapi.WithOption(ResolutionEndpointsOpt, []string{"url"}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to resolve did")
 	})
 
 	t.Run("test update public key opt is empty", func(t *testing.T) {
@@ -328,6 +445,183 @@ func TestVDRI_Close(t *testing.T) {
 
 func TestVDRI_Update(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(&mockKeyRetriever{})
+		require.NoError(t, err)
+
+		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
+
+		_, pk, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		jwk, err := jwksupport.JWKFromKey(pk)
+		require.NoError(t, err)
+
+		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
+		require.NoError(t, err)
+
+		vm1, err := did.NewVerificationMethodFromJWK("did:example:123456789abcdefghi#keys-1", "k1", "", jwk)
+		require.NoError(t, err)
+
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+
+		ver1 := did.NewReferencedVerification(vm1, did.Authentication)
+
+		err = v.Update(&did.Doc{
+			Service: []did.Service{
+				{ID: "svc"},
+			},
+			Authentication: []did.Verification{*ver, *ver1},
+		}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
+		require.NoError(t, err)
+	})
+
+	t.Run("test update and max retry number is zero", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(&mockKeyRetriever{getNextUpdatePublicKey: func(didID, commitment string) (crypto.PublicKey, error) {
+			pk, _, err := ed25519.GenerateKey(rand.Reader)
+
+			return pk, err
+		}})
+		require.NoError(t, err)
+
+		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
+
+		_, pk, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		jwk, err := jwksupport.JWKFromKey(pk)
+		require.NoError(t, err)
+
+		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
+		require.NoError(t, err)
+
+		vm1, err := did.NewVerificationMethodFromJWK("did:example:123456789abcdefghi#keys-1", "k1", "", jwk)
+		require.NoError(t, err)
+
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+
+		ver1 := did.NewReferencedVerification(vm1, did.Authentication)
+
+		err = v.Update(&did.Doc{
+			Service: []did.Service{
+				{ID: "svc"},
+			},
+			Authentication: []did.Verification{*ver, *ver1},
+		}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
+			vdrapi.WithOption(CheckDIDUpdated, &ResolveDIDRetry{MaxNumber: 0}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "resolve did retry max number is less than one")
+	})
+
+	t.Run("test update and resolve sleep time is nil", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(&mockKeyRetriever{getNextUpdatePublicKey: func(didID, commitment string) (crypto.PublicKey, error) {
+			pk, _, err := ed25519.GenerateKey(rand.Reader)
+
+			return pk, err
+		}})
+		require.NoError(t, err)
+
+		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
+
+		_, pk, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		jwk, err := jwksupport.JWKFromKey(pk)
+		require.NoError(t, err)
+
+		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
+		require.NoError(t, err)
+
+		vm1, err := did.NewVerificationMethodFromJWK("did:example:123456789abcdefghi#keys-1", "k1", "", jwk)
+		require.NoError(t, err)
+
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+
+		ver1 := did.NewReferencedVerification(vm1, did.Authentication)
+
+		err = v.Update(&did.Doc{
+			Service: []did.Service{
+				{ID: "svc"},
+			},
+			Authentication: []did.Verification{*ver, *ver1},
+		}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
+			vdrapi.WithOption(CheckDIDUpdated, &ResolveDIDRetry{MaxNumber: 1}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "resolve did retry sleep time is nil")
+	})
+
+	t.Run("test update and resolve check did not updated", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(&mockKeyRetriever{getNextUpdatePublicKey: func(didID, commitment string) (crypto.PublicKey, error) {
+			pk, _, err := ed25519.GenerateKey(rand.Reader)
+
+			return pk, err
+		}})
+		require.NoError(t, err)
+
+		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{
+			DIDDocument:      &did.Doc{ID: "did"},
+			DocumentMetadata: &did.DocumentMetadata{Method: &did.MethodMetadata{Published: true}},
+		}, nil)
+
+		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
+
+		_, pk, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		jwk, err := jwksupport.JWKFromKey(pk)
+		require.NoError(t, err)
+
+		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
+		require.NoError(t, err)
+
+		vm1, err := did.NewVerificationMethodFromJWK("did:example:123456789abcdefghi#keys-1", "k1", "", jwk)
+		require.NoError(t, err)
+
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+
+		ver1 := did.NewReferencedVerification(vm1, did.Authentication)
+
+		sleepTime := 1 * time.Second
+
+		err = v.Update(&did.Doc{
+			Service: []did.Service{
+				{ID: "svc"},
+			},
+			Authentication: []did.Verification{*ver, *ver1},
+		}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
+			vdrapi.WithOption(CheckDIDUpdated, &ResolveDIDRetry{MaxNumber: 1, SleepTime: &sleepTime}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "did is not updated")
+	})
+
+	t.Run("test update and resolve max retry is zero", func(t *testing.T) {
 		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-type", "application/did+ld+json")
 			w.WriteHeader(http.StatusOK)

@@ -49,8 +49,7 @@ const (
 // Steps is steps for VC BDD tests.
 type Steps struct {
 	bddContext       *context.BDDContext
-	createdDID       string
-	createdDIDMeta   *ariesdid.DocumentMetadata
+	createdDoc       *ariesdid.DocResolution
 	vm               *ariesdid.VerificationMethod
 	httpClient       *http.Client
 	vdr              *orb.VDR
@@ -86,7 +85,7 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 
 // RegisterSteps registers agent steps.
 func (e *Steps) RegisterSteps(s *godog.Suite) {
-	s.Step(`^Orb DID is created with key type "([^"]*)" with signature suite "([^"]*)"$`,
+	s.Step(`^Orb DID is created with key type "([^"]*)" with signature suite "([^"]*)" with resolve DID "([^"]*)"$`,
 		e.create)
 	s.Step(`^Orb DID is created with key type "([^"]*)" with signature suite "([^"]*)" with anchor origin ipns$`,
 		e.createWithIPNS)
@@ -108,7 +107,7 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 		e.resolveRecoveredDID)
 	s.Step(`^Resolve deactivated DID$`,
 		e.resolveDeactivatedDID)
-	s.Step(`^Orb DID is updated with key type "([^"]*)" with signature suite "([^"]*)"$`,
+	s.Step(`^Orb DID is updated with key type "([^"]*)" with signature suite "([^"]*)" with resolve DID "([^"]*)"$`,
 		e.updateDID)
 	s.Step(`^Orb DID is recovered with key type "([^"]*)" with signature suite "([^"]*)"$`,
 		e.recoverDID)
@@ -117,7 +116,7 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 }
 
 func (e *Steps) deactivateDID() error {
-	return e.vdr.Deactivate(e.createdDID)
+	return e.vdr.Deactivate(e.createdDoc.DIDDocument.ID)
 }
 
 func (e *Steps) createVerificationMethod(keyType string, pubKey []byte, kid,
@@ -174,7 +173,7 @@ func (e *Steps) recoverDID(keyType, signatureSuite string) error {
 
 	e.keyRetriever.nextRecoveryPublicKey = recoveryKey
 
-	didDoc := &ariesdid.Doc{ID: e.createdDID}
+	didDoc := &ariesdid.Doc{ID: e.createdDoc.DIDDocument.ID}
 
 	verificationMethod, err := e.createVerificationMethod(keyType, pubKey, kid, signatureSuite)
 	if err != nil {
@@ -196,7 +195,7 @@ func (e *Steps) recoverDID(keyType, signatureSuite string) error {
 	return nil
 }
 
-func (e *Steps) updateDID(keyType, signatureSuite string) error {
+func (e *Steps) updateDID(keyType, signatureSuite, resolveDID string) error {
 	kid, pubKey, err := e.getPublicKey(keyType)
 	if err != nil {
 		return err
@@ -214,7 +213,7 @@ func (e *Steps) updateDID(keyType, signatureSuite string) error {
 		return err
 	}
 
-	didDoc := &ariesdid.Doc{ID: e.createdDID}
+	didDoc := &ariesdid.Doc{ID: e.createdDoc.DIDDocument.ID}
 
 	didDoc.Authentication = append(didDoc.Authentication, *ariesdid.NewReferencedVerification(vm,
 		ariesdid.Authentication), *ariesdid.NewReferencedVerification(e.vm,
@@ -236,7 +235,16 @@ func (e *Steps) updateDID(keyType, signatureSuite string) error {
 		},
 	}
 
-	if err := e.vdr.Update(didDoc); err != nil {
+	sleepTime := time.Second * 1
+
+	var opts []vdrapi.DIDMethodOption
+
+	if resolveDID == "true" {
+		opts = append(opts, vdrapi.WithOption(orb.CheckDIDUpdated,
+			&orb.ResolveDIDRetry{MaxNumber: maxRetry, SleepTime: &sleepTime}))
+	}
+
+	if err := e.vdr.Update(didDoc, opts...); err != nil {
 		return err
 	}
 
@@ -245,19 +253,31 @@ func (e *Steps) updateDID(keyType, signatureSuite string) error {
 	return nil
 }
 
-func (e *Steps) create(keyType, signatureSuite string) error {
-	return e.createDID(keyType, signatureSuite, origin)
+func (e *Steps) create(keyType, signatureSuite, resolveDID string) error {
+	sleepTime := time.Second * 1
+
+	retry := &orb.ResolveDIDRetry{MaxNumber: maxRetry, SleepTime: &sleepTime}
+	if resolveDID != "true" {
+		retry = nil
+	}
+
+	if err := e.createDID(keyType, signatureSuite, origin, retry); err != nil {
+		return err
+	}
+
+	return e.resolveCreatedDID(keyType, signatureSuite)
 }
 
 func (e *Steps) createWithIPNS(keyType, signatureSuite string) error {
-	return e.createDID(keyType, signatureSuite, "ipns://k51qzi5uqu5dgkmm1afrkmex5mzpu5r774jstpxjmro6mdsaullur27nfxle1q")
+	return e.createDID(keyType, signatureSuite,
+		"ipns://k51qzi5uqu5dgkmm1afrkmex5mzpu5r774jstpxjmro6mdsaullur27nfxle1q", nil)
 }
 
 func (e *Steps) createWithHTTPS(keyType, signatureSuite string) error {
-	return e.createDID(keyType, signatureSuite, "https://testnet.orb.local")
+	return e.createDID(keyType, signatureSuite, "https://testnet.orb.local", nil)
 }
 
-func (e *Steps) createDID(keyType, signatureSuite, origin string) error {
+func (e *Steps) createDID(keyType, signatureSuite, origin string, retry *orb.ResolveDIDRetry) error {
 	kid, pubKey, err := e.getPublicKey(keyType)
 	if err != nil {
 		return err
@@ -285,10 +305,16 @@ func (e *Steps) createDID(keyType, signatureSuite, origin string) error {
 
 	didDoc.Service = []ariesdid.Service{{ID: serviceID, Type: "type", ServiceEndpoint: "http://www.example.com/"}}
 
-	createdDocResolution, err := e.vdr.Create(didDoc,
-		vdrapi.WithOption(orb.RecoveryPublicKeyOpt, recoveryKey),
+	var opts []vdrapi.DIDMethodOption
+	if retry != nil {
+		opts = append(opts, vdrapi.WithOption(orb.CheckDIDAnchored, retry))
+	}
+
+	opts = append(opts, vdrapi.WithOption(orb.RecoveryPublicKeyOpt, recoveryKey),
 		vdrapi.WithOption(orb.UpdatePublicKeyOpt, updateKey),
 		vdrapi.WithOption(orb.AnchorOriginOpt, origin))
+
+	createdDocResolution, err := e.vdr.Create(didDoc, opts...)
 	if err != nil {
 		return err
 	}
@@ -296,17 +322,14 @@ func (e *Steps) createDID(keyType, signatureSuite, origin string) error {
 	e.keyRetriever.recoverKey = recoveryKeyPrivateKey
 	e.keyRetriever.updateKey = updateKeyPrivateKey
 
-	e.createdDID = createdDocResolution.DIDDocument.ID
-
-	e.createdDIDMeta = createdDocResolution.DocumentMetadata
-
+	e.createdDoc = createdDocResolution
 	e.vm = vm
 
 	return nil
 }
 
 func (e *Steps) resolveDIDWithHTTPSHint() error {
-	docResolution, err := e.vdrWithoutDomain.Read(e.createdDIDMeta.EquivalentID[0])
+	docResolution, err := e.vdrWithoutDomain.Read(e.createdDoc.DocumentMetadata.EquivalentID[0])
 	if err != nil {
 		return err
 	}
@@ -315,12 +338,14 @@ func (e *Steps) resolveDIDWithHTTPSHint() error {
 		return fmt.Errorf("doc is already published")
 	}
 
-	docResolution, err = e.resolveDID(e.createdDID)
+	docResolution, err = e.resolveDID(e.createdDoc.DIDDocument.ID)
+	if err != nil {
+		return err
+	}
 
-	e.createdDID = docResolution.DocumentMetadata.CanonicalID
-	e.createdDIDMeta = docResolution.DocumentMetadata
+	e.createdDoc = docResolution
 
-	return err
+	return nil
 }
 
 func (e *Steps) resolveDIDWithoutDomain(did string) (*ariesdid.DocResolution, error) {
@@ -386,7 +411,7 @@ func (e *Steps) resolveDID(did string) (*ariesdid.DocResolution, error) {
 }
 
 func (e *Steps) resolveDeactivatedDID() error {
-	docResolution, err := e.resolveDID(e.createdDID)
+	docResolution, err := e.resolveDID(e.createdDoc.DIDDocument.ID)
 	if err != nil {
 		return err
 	}
@@ -399,14 +424,14 @@ func (e *Steps) resolveDeactivatedDID() error {
 }
 
 func (e *Steps) resolveRecoveredDID() error {
-	docResolution, err := e.resolveDID(e.createdDID)
+	docResolution, err := e.resolveDID(e.createdDoc.DIDDocument.ID)
 	if err != nil {
 		return err
 	}
 
-	if docResolution.DIDDocument.ID != e.createdDID {
+	if docResolution.DIDDocument.ID != e.createdDoc.DIDDocument.ID {
 		return fmt.Errorf("resolved did %s not equal to created did %s",
-			docResolution.DIDDocument.ID, e.createdDID)
+			e.createdDoc.DIDDocument.ID, e.createdDoc.DIDDocument.ID)
 	}
 
 	if len(docResolution.DIDDocument.Service) != 1 {
@@ -429,14 +454,14 @@ func (e *Steps) resolveRecoveredDID() error {
 }
 
 func (e *Steps) resolveUpdatedDID() error {
-	docResolution, err := e.resolveDID(e.createdDID)
+	docResolution, err := e.vdr.Read(e.createdDoc.DIDDocument.ID)
 	if err != nil {
 		return err
 	}
 
-	if docResolution.DIDDocument.ID != e.createdDID {
+	if docResolution.DIDDocument.ID != e.createdDoc.DIDDocument.ID {
 		return fmt.Errorf("resolved did %s not equal to created did %s",
-			docResolution.DIDDocument.ID, e.createdDID)
+			docResolution.DIDDocument.ID, e.createdDoc.DIDDocument.ID)
 	}
 
 	if len(docResolution.DIDDocument.Service) != 2 { //nolint:gomnd
@@ -455,14 +480,14 @@ func (e *Steps) resolveUpdatedDID() error {
 }
 
 func (e *Steps) resolveUpdatedDIDFromCache() error {
-	docResolution, err := e.vdr.Read(e.createdDID)
+	docResolution, err := e.vdr.Read(e.createdDoc.DIDDocument.ID)
 	if err != nil {
 		return err
 	}
 
-	if docResolution.DIDDocument.ID != e.createdDID {
+	if docResolution.DIDDocument.ID != e.createdDoc.DIDDocument.ID {
 		return fmt.Errorf("resolved did %s not equal to created did %s",
-			docResolution.DIDDocument.ID, e.createdDID)
+			docResolution.DIDDocument.ID, e.createdDoc.DIDDocument.ID)
 	}
 
 	if len(docResolution.DIDDocument.Service) != 2 { //nolint:gomnd
@@ -481,7 +506,7 @@ func (e *Steps) resolveUpdatedDIDFromCache() error {
 }
 
 func (e *Steps) resolveCreatedDIDThroughAnchorOrigin() error {
-	docResolution, err := e.resolveDID(e.createdDID)
+	docResolution, err := e.resolveDID(e.createdDoc.DIDDocument.ID)
 	if err != nil {
 		return err
 	}
@@ -495,14 +520,14 @@ func (e *Steps) resolveCreatedDIDThroughAnchorOrigin() error {
 }
 
 func (e *Steps) resolveCreatedDID(keyType, signatureSuite string) error {
-	docResolution, err := e.resolveDID(e.createdDID)
+	docResolution, err := e.vdr.Read(e.createdDoc.DIDDocument.ID)
 	if err != nil {
 		return err
 	}
 
-	if docResolution.DIDDocument.ID != e.createdDID {
+	if docResolution.DIDDocument.ID != e.createdDoc.DIDDocument.ID {
 		return fmt.Errorf("resolved did %s not equal to created did %s",
-			docResolution.DIDDocument.ID, e.createdDID)
+			docResolution.DIDDocument.ID, e.createdDoc.DIDDocument.ID)
 	}
 
 	if docResolution.DIDDocument.Service[0].ID != docResolution.DIDDocument.ID+"#"+serviceID {
