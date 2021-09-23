@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -31,6 +32,8 @@ import (
 	"github.com/trustbloc/orb/pkg/discovery/endpoint/client"
 	"github.com/trustbloc/orb/pkg/discovery/endpoint/client/models"
 	"github.com/trustbloc/orb/pkg/hashlink"
+	"github.com/trustbloc/sidetree-core-go/pkg/commitment"
+	"github.com/trustbloc/sidetree-core-go/pkg/util/pubkey"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/internal/ldcontext"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
@@ -56,6 +59,10 @@ const (
 	RecoverOpt = "recover"
 	// AnchorOriginOpt anchor origin opt.
 	AnchorOriginOpt = "anchorOrigin"
+	// CheckDIDAnchored check did is anchored.
+	CheckDIDAnchored = "checkDIDAnchored"
+	// CheckDIDUpdated check did is updated.
+	CheckDIDUpdated = "checkDIDUpdated"
 	httpTimeOut     = 20 * time.Second
 	sha2_256        = 18 // multihash
 	ipfsGlobal      = "https://ipfs.io"
@@ -74,6 +81,12 @@ const (
 	// Recover operation.
 	Recover
 )
+
+// ResolveDIDRetry resolve did retry.
+type ResolveDIDRetry struct {
+	MaxNumber int
+	SleepTime *time.Duration
+}
 
 type sidetreeClient interface {
 	CreateDID(opts ...create.Option) (*docdid.DocResolution, error)
@@ -211,7 +224,7 @@ func (v *VDR) Close() error {
 }
 
 // Create did doc.
-// nolint: gocyclo
+// nolint: gocyclo,funlen
 func (v *VDR) Create(did *docdid.Doc,
 	opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
@@ -272,7 +285,21 @@ func (v *VDR) Create(did *docdid.Doc,
 		create.WithMultiHashAlgorithm(sha2_256), create.WithUpdatePublicKey(updatePublicKey),
 		create.WithRecoveryPublicKey(recoveryPublicKey))
 
-	return v.sidetreeClient.CreateDID(createOpt...)
+	createdDID, err := v.sidetreeClient.CreateDID(createOpt...)
+	if err != nil {
+		return nil, err
+	}
+
+	if didMethodOpts.Values[CheckDIDAnchored] == nil {
+		return createdDID, nil
+	}
+
+	resolveDIDRetry, ok := didMethodOpts.Values[CheckDIDAnchored].(*ResolveDIDRetry)
+	if !ok {
+		return nil, fmt.Errorf("resolveDIDRetry is not ResolveDIDRetry struct")
+	}
+
+	return v.checkDID(createdDID.DIDDocument.ID, resolveDIDRetry, "", true, opts...)
 }
 
 func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) { //nolint: funlen,gocyclo
@@ -416,8 +443,10 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 	updateOpt = append(updateOpt, updatedPKKeysID...)
 
 	updateOpt = append(updateOpt, update.WithSidetreeEndpoint(func() ([]string, error) {
+		var endpoint *models.Endpoint
+
 		// TODO make sure it's latest anchor origin
-		endpoint, err := v.discoveryService.GetEndpoint(docResolution.DocumentMetadata.Method.AnchorOrigin)
+		endpoint, err = v.discoveryService.GetEndpoint(docResolution.DocumentMetadata.Method.AnchorOrigin)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get endpoints: %w", err)
 		}
@@ -429,7 +458,32 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 		update.WithSigningKey(updateSigningKey),
 		update.WithOperationCommitment(docResolution.DocumentMetadata.Method.UpdateCommitment))
 
-	return v.sidetreeClient.UpdateDID(didDoc.ID, updateOpt...)
+	if errUpdateDID := v.sidetreeClient.UpdateDID(didDoc.ID, updateOpt...); errUpdateDID != nil {
+		return errUpdateDID
+	}
+
+	if didMethodOpts.Values[CheckDIDUpdated] == nil {
+		return nil
+	}
+
+	resolveDIDRetry, ok := didMethodOpts.Values[CheckDIDUpdated].(*ResolveDIDRetry)
+	if !ok {
+		return fmt.Errorf("resolveDIDRetry is not ResolveDIDRetry struct")
+	}
+
+	nextUpdateKey, err := pubkey.GetPublicKeyJWK(nextUpdatePublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to get next update key : %w", err)
+	}
+
+	nextUpdateCommitment, err := commitment.GetCommitment(nextUpdateKey, sha2_256)
+	if err != nil {
+		return err
+	}
+
+	_, err = v.checkDID(didDoc.ID, resolveDIDRetry, nextUpdateCommitment, false, opts...)
+
+	return err
 }
 
 func (v *VDR) recover(didDoc *docdid.Doc, getEndpoints func() ([]string, error),
@@ -699,6 +753,53 @@ func (v *VDR) sidetreeResolve(url, did string, opts ...vdrapi.DIDMethodOption) (
 	docResolution, err := resolver.Read(did, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve did: %w", err)
+	}
+
+	return docResolution, nil
+}
+
+// nolint: gocyclo
+func (v *VDR) checkDID(did string, resolveDIDRetry *ResolveDIDRetry, updateCommitment string,
+	checkAnchored bool, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
+	if resolveDIDRetry.MaxNumber < 1 {
+		return nil, fmt.Errorf("resolve did retry max number is less than one")
+	}
+
+	if resolveDIDRetry.SleepTime == nil {
+		return nil, fmt.Errorf("resolve did retry sleep time is nil")
+	}
+
+	var docResolution *docdid.DocResolution
+
+	for i := 1; i <= resolveDIDRetry.MaxNumber; i++ {
+		var err error
+		docResolution, err = v.Read(did, opts...)
+
+		if checkAnchored && err == nil && docResolution.DocumentMetadata.Method.Published {
+			break
+		}
+
+		if !checkAnchored && err == nil && docResolution.DocumentMetadata.Method.UpdateCommitment == updateCommitment {
+			break
+		}
+
+		if err != nil && !errors.Is(err, vdrapi.ErrNotFound) {
+			return nil, err
+		}
+
+		if i == resolveDIDRetry.MaxNumber {
+			if err == nil {
+				if checkAnchored {
+					return nil, fmt.Errorf("did is not published")
+				}
+
+				return nil, fmt.Errorf("did is not updated")
+			}
+
+			return nil, err
+		}
+
+		time.Sleep(*resolveDIDRetry.SleepTime)
 	}
 
 	return docResolution, nil
