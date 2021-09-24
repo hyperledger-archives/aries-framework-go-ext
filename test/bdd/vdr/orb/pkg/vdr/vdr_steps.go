@@ -161,11 +161,6 @@ func (e *Steps) createVerificationMethod(keyType string, pubKey []byte, kid,
 }
 
 func (e *Steps) recoverDID(keyType, signatureSuite string) error {
-	kid, pubKey, err := e.getPublicKey(keyType)
-	if err != nil {
-		return err
-	}
-
 	recoveryKey, recoveryKeyPrivateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return err
@@ -173,17 +168,7 @@ func (e *Steps) recoverDID(keyType, signatureSuite string) error {
 
 	e.keyRetriever.nextRecoveryPublicKey = recoveryKey
 
-	didDoc := &ariesdid.Doc{ID: e.createdDoc.DIDDocument.ID}
-
-	verificationMethod, err := e.createVerificationMethod(keyType, pubKey, kid, signatureSuite)
-	if err != nil {
-		return err
-	}
-
-	didDoc.CapabilityInvocation = append(didDoc.CapabilityInvocation,
-		*ariesdid.NewReferencedVerification(verificationMethod, ariesdid.CapabilityDelegation))
-
-	didDoc.Service = []ariesdid.Service{{ID: serviceID, Type: "type", ServiceEndpoint: "http://www.example.com/"}}
+	didDoc := e.createdDoc.DIDDocument
 
 	if err := e.vdr.Update(didDoc,
 		vdrapi.WithOption(orb.RecoverOpt, true), vdrapi.WithOption(orb.AnchorOriginOpt, origin)); err != nil {
@@ -213,27 +198,20 @@ func (e *Steps) updateDID(keyType, signatureSuite, resolveDID string) error {
 		return err
 	}
 
-	didDoc := &ariesdid.Doc{ID: e.createdDoc.DIDDocument.ID}
+	didDoc := *e.createdDoc.DIDDocument
 
 	didDoc.Authentication = append(didDoc.Authentication, *ariesdid.NewReferencedVerification(vm,
-		ariesdid.Authentication), *ariesdid.NewReferencedVerification(e.vm,
 		ariesdid.Authentication))
 
 	didDoc.CapabilityInvocation = append(didDoc.CapabilityInvocation, *ariesdid.NewReferencedVerification(vm,
 		ariesdid.CapabilityInvocation))
 
-	didDoc.Service = []ariesdid.Service{
-		{
-			ID:              serviceID,
-			Type:            "typeUpdated",
-			ServiceEndpoint: "http://www.example.com/",
-		},
-		{
-			ID:              service2ID,
-			Type:            "type",
-			ServiceEndpoint: "http://www.example.com/",
-		},
-	}
+	didDoc.Service[0].Type = "typeUpdated"
+	didDoc.Service = append(didDoc.Service, ariesdid.Service{
+		ID:              service2ID,
+		Type:            "type",
+		ServiceEndpoint: "http://www.example.com/",
+	})
 
 	sleepTime := time.Second * 1
 
@@ -244,7 +222,7 @@ func (e *Steps) updateDID(keyType, signatureSuite, resolveDID string) error {
 			&orb.ResolveDIDRetry{MaxNumber: maxRetry, SleepTime: &sleepTime}))
 	}
 
-	if err := e.vdr.Update(didDoc, opts...); err != nil {
+	if err := e.vdr.Update(&didDoc, opts...); err != nil {
 		return err
 	}
 
@@ -438,7 +416,7 @@ func (e *Steps) resolveRecoveredDID() error {
 		return fmt.Errorf("resolved recovered did service count is not equal to %d", 1)
 	}
 
-	if len(docResolution.DIDDocument.Authentication) != 0 {
+	if len(docResolution.DIDDocument.Authentication) != 1 {
 		return fmt.Errorf("resolved recovered did authentication count is not equal to %d", 0)
 	}
 
@@ -446,7 +424,7 @@ func (e *Steps) resolveRecoveredDID() error {
 		return fmt.Errorf("resolved recovered did capabilityInvocation count is not equal to %d", 0)
 	}
 
-	if len(docResolution.DIDDocument.CapabilityDelegation) != 1 {
+	if len(docResolution.DIDDocument.CapabilityDelegation) != 0 {
 		return fmt.Errorf("resolved recovered did capabilityInvocation count is not equal to %d", 1)
 	}
 

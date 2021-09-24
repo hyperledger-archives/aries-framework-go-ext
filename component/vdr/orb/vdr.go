@@ -417,7 +417,18 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 	// get services
 	for i := range didDoc.Service {
-		updateOpt = append(updateOpt, update.WithAddService(&didDoc.Service[i]))
+		svc := &didDoc.Service[i]
+
+		s := strings.Split(svc.ID, "#")
+
+		id := s[0]
+		if len(s) > 1 {
+			id = s[1]
+		}
+
+		svc.ID = id
+
+		updateOpt = append(updateOpt, update.WithAddService(svc))
 	}
 
 	updateOpt = append(updateOpt, getRemovedSvcKeysID(docResolution.DIDDocument.Service, didDoc.Service)...)
@@ -492,7 +503,18 @@ func (v *VDR) recover(didDoc *docdid.Doc, getEndpoints func() ([]string, error),
 
 	// get services
 	for i := range didDoc.Service {
-		recoveryOpt = append(recoveryOpt, recovery.WithService(&didDoc.Service[i]))
+		svc := &didDoc.Service[i]
+
+		s := strings.Split(svc.ID, "#")
+
+		id := s[0]
+		if len(s) > 1 {
+			id = s[1]
+		}
+
+		svc.ID = id
+
+		recoveryOpt = append(recoveryOpt, recovery.WithService(svc))
 	}
 
 	// get verification method
@@ -566,7 +588,7 @@ type pk struct {
 	publicKey *doc.PublicKey
 }
 
-func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*pk, error) { // nolint:funlen
+func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*pk, error) { // nolint:funlen,gocyclo
 	pksMap := make(map[string]*pk)
 
 	ver := make([]docdid.Verification, 0)
@@ -595,7 +617,14 @@ func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*pk, error) { // noli
 			return nil, fmt.Errorf("vm relationship %d not supported", v.Relationship)
 		}
 
-		value, ok := pksMap[v.VerificationMethod.ID]
+		s := strings.Split(v.VerificationMethod.ID, "#")
+
+		id := s[0]
+		if len(s) > 1 {
+			id = s[1]
+		}
+
+		value, ok := pksMap[id]
 		if ok {
 			value.publicKey.Purposes = append(value.publicKey.Purposes, purpose)
 
@@ -604,9 +633,9 @@ func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*pk, error) { // noli
 
 		switch {
 		case v.VerificationMethod.JSONWebKey() != nil:
-			pksMap[v.VerificationMethod.ID] = &pk{
+			pksMap[id] = &pk{
 				publicKey: &doc.PublicKey{
-					ID:       v.VerificationMethod.ID,
+					ID:       id,
 					Type:     v.VerificationMethod.Type,
 					Purposes: []string{purpose},
 					JWK:      *v.VerificationMethod.JSONWebKey(),
@@ -614,9 +643,9 @@ func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*pk, error) { // noli
 				value: v.VerificationMethod.Value,
 			}
 		case v.VerificationMethod.Value != nil:
-			pksMap[v.VerificationMethod.ID] = &pk{
+			pksMap[id] = &pk{
 				publicKey: &doc.PublicKey{
-					ID:       v.VerificationMethod.ID,
+					ID:       id,
 					Type:     v.VerificationMethod.Type,
 					Purposes: []string{purpose},
 					B58Key:   base58.Encode(v.VerificationMethod.Value),
