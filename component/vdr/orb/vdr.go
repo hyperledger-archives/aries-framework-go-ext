@@ -68,6 +68,7 @@ const (
 	ipfsGlobal      = "https://ipfs.io"
 	ipfsPrefix      = "ipfs://"
 	httpsProtocol   = "https"
+	httpProtocol    = "http"
 )
 
 var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
@@ -162,6 +163,7 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 		httpClient:   c,
 		hl:           hashlink.New(),
 		ipfsEndpoint: v.ipfsEndpoint,
+		authToken:    v.authToken,
 	},
 		client.WithDisableProofCheck(v.disableProofCheck), client.WithHTTPClient(c))
 	if err != nil {
@@ -884,6 +886,7 @@ type casReader struct {
 	httpClient   *http.Client
 	hl           *hashlink.HashLink
 	ipfsEndpoint string
+	authToken    string
 }
 
 func (c *casReader) Read(cidWithPossibleHint string) ([]byte, error) {
@@ -892,33 +895,53 @@ func (c *casReader) Read(cidWithPossibleHint string) ([]byte, error) {
 		return nil, err
 	}
 
-	ipfsLinks, err := separateLinks(links)
+	webcasLinks, ipfsLinks, err := separateLinks(links)
 	if err != nil {
 		return nil, err
 	}
 
-	cid := ipfsLinks[0][len(ipfsPrefix):]
+	if len(webcasLinks) == 0 {
+		cid := ipfsLinks[0][len(ipfsPrefix):]
 
-	if c.ipfsEndpoint != "" {
-		return send(c.httpClient, nil, http.MethodPost, fmt.Sprintf("%s/cat?arg=%s", c.ipfsEndpoint, cid))
+		if c.ipfsEndpoint != "" {
+			return send(c.httpClient, nil,
+				http.MethodPost, fmt.Sprintf("%s/cat?arg=%s", c.ipfsEndpoint, cid), "")
+		}
+
+		return send(c.httpClient, nil, http.MethodGet, fmt.Sprintf("%s/%s/%s", ipfsGlobal, "ipfs", cid), "")
 	}
 
-	return send(c.httpClient, nil, http.MethodGet, fmt.Sprintf("%s/%s/%s", ipfsGlobal, "ipfs", cid))
+	var errMsgs []string
+
+	for _, webCASEndpoint := range webcasLinks {
+		data, err := send(c.httpClient, nil, http.MethodGet, webCASEndpoint, c.authToken)
+		if err != nil {
+			errMsg := fmt.Sprintf("endpoint[%s]: %s", webCASEndpoint, err.Error())
+
+			errMsgs = append(errMsgs, errMsg)
+
+			continue
+		}
+
+		return data, nil
+	}
+
+	return nil, fmt.Errorf("%s", errMsgs)
 }
 
-func separateLinks(links []string) ([]string, error) {
-	var ipfsLinks []string
-
+func separateLinks(links []string) (webcasLinks, ipfsLinks []string, err error) {
 	for _, link := range links {
 		switch {
+		case strings.HasPrefix(link, httpsProtocol) || strings.HasPrefix(link, httpProtocol):
+			webcasLinks = append(webcasLinks, link)
 		case strings.HasPrefix(link, ipfsPrefix):
 			ipfsLinks = append(ipfsLinks, link)
 		default:
-			return nil, fmt.Errorf("link '%s' not supported", link)
+			return nil, nil, fmt.Errorf("link '%s' not supported", link)
 		}
 	}
 
-	return ipfsLinks, nil
+	return webcasLinks, ipfsLinks, nil
 }
 
 func (c *casReader) getResourceHashWithPossibleLinks(hashWithPossibleHint string) ([]string, error) {
@@ -945,7 +968,7 @@ func (c *casReader) getResourceHashWithPossibleLinks(hashWithPossibleHint string
 	return links, nil
 }
 
-func send(httpClient *http.Client, req []byte, method, endpointURL string) ([]byte, error) {
+func send(httpClient *http.Client, req []byte, method, endpointURL, authToken string) ([]byte, error) {
 	var httpReq *http.Request
 
 	var err error
@@ -965,6 +988,10 @@ func send(httpClient *http.Client, req []byte, method, endpointURL string) ([]by
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+
+	if authToken != "" {
+		httpReq.Header.Add("Authorization", "Bearer "+authToken)
+	}
 
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
