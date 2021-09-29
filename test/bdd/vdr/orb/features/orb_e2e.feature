@@ -44,3 +44,5 @@ Feature: Test orb vdr
     Then Resolve created DID through https hint
     Then Orb DID is updated with key type "Ed25519" with signature suite "JsonWebKey2020" with resolve DID "false"
     Then Resolve update DID through cache
+    Then Orb DID is created with key type "Ed25519" with signature suite "JsonWebKey2020" with anchor origin https
+    Then Resolve created DID through anchor origin
