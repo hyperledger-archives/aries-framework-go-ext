@@ -39,10 +39,12 @@ const (
 
 	expressionTagNameOnlyLength     = 1
 	expressionTagNameAndValueLength = 2
+	andExpressionLength
 )
 
 var errInvalidQueryExpressionFormat = errors.New("invalid expression format. " +
-	"it must be in the following format: TagName:TagValue")
+	"It must be in the following format: " +
+	"TagName:TagValue or TagName1:TagValue1&&TagName2:TagValue2. Tag values are optional")
 
 type logger interface {
 	Infof(msg string, args ...interface{})
@@ -603,63 +605,55 @@ func (s *store) GetBulk(keys ...string) ([][]byte, error) {
 }
 
 // Query does a query for data as defined by the documentation in storage.Store (the interface).
+// This implementation also supports querying for data tagged with two tag name + value pairs (using AND logic).
+// To do this, separate the tag name + value pairs using &&. You can still omit one or both of the tag values
+// in order to indicate that you want any data tagged with the tag name, regardless of tag value.
+// For example, TagName1:TagValue1&&TagName2:TagValue2 will return only data that has been tagged with both pairs.
+// See testQueryWithMultipleTags in store_test.go for more examples of querying using multiple tags.
 // It's recommended to set up an index using the Provider.SetStoreConfig method in order to speed up queries.
-// TODO (#146) Investigate compound indexes and see if they may be useful for queries with sorts.
+// TODO (#146) Investigate compound indexes and see if they may be useful for queries with sorts and/or for queries
+//             with multiple tags.
 func (s *store) Query(expression string, options ...storage.QueryOption) (storage.Iterator, error) {
 	if expression == "" {
 		return &iterator{}, errInvalidQueryExpressionFormat
 	}
 
-	expressionSplit := strings.Split(expression, ":")
+	expressionSplitByANDOperator := strings.Split(expression, "&&")
 
-	var filterValue interface{}
+	var filter bson.D
 
-	switch len(expressionSplit) {
-	case expressionTagNameOnlyLength:
-		filterValue = bson.D{
-			{Key: "$exists", Value: true},
+	var err error
+
+	switch len(expressionSplitByANDOperator) {
+	case 1:
+		filter, err = prepareSimpleFilter(expression)
+		if err != nil {
+			return nil, err
 		}
-	case expressionTagNameAndValueLength:
-		filterValue = expressionSplit[1]
+	case andExpressionLength:
+		filter, err = prepareANDFilter(expressionSplitByANDOperator)
+		if err != nil {
+			return nil, err
+		}
 	default:
-		return &iterator{}, errInvalidQueryExpressionFormat
+		return nil, errInvalidQueryExpressionFormat
 	}
 
-	queryOptions := getQueryOptions(options)
-
-	findOptions := s.createMongoFindOptions(queryOptions)
-
-	if queryOptions.SortOptions != nil {
-		mongoDBSortOrder := 1
-		if queryOptions.SortOptions.Order == storage.SortDescending {
-			mongoDBSortOrder = -1
-		}
-
-		findOptions.SetSort(bson.D{{
-			Key:   fmt.Sprintf("tags.%s", queryOptions.SortOptions.TagName),
-			Value: mongoDBSortOrder,
-		}})
-	}
-
-	filterKey := fmt.Sprintf("tags.%s", expressionSplit[0])
+	findOptions := s.createMongoDBFindOptions(options)
 
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
 	defer cancel()
 
-	cursor, err := s.coll.Find(ctxWithTimeout, bson.D{{
-		Key:   filterKey,
-		Value: filterValue,
-	}}, findOptions)
+	cursor, err := s.coll.Find(ctxWithTimeout, filter, findOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to run Find command in MongoDB: %w", err)
 	}
 
 	return &iterator{
-		cursor:      cursor,
-		coll:        s.coll,
-		filterKey:   filterKey,
-		filterValue: filterValue,
-		timeout:     s.timeout,
+		cursor:  cursor,
+		coll:    s.coll,
+		filter:  filter,
+		timeout: s.timeout,
 	}, nil
 }
 
@@ -809,7 +803,9 @@ func (s *store) executeBulkWriteCommand(models []mongo.WriteModel) error {
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(s.timeBetweenRetries), s.maxRetries))
 }
 
-func (s *store) createMongoFindOptions(queryOptions storage.QueryOptions) *mongooptions.FindOptions {
+func (s *store) createMongoDBFindOptions(options []storage.QueryOption) *mongooptions.FindOptions {
+	queryOptions := getQueryOptions(options)
+
 	findOptions := mongooptions.Find()
 
 	if queryOptions.PageSize > 0 || queryOptions.InitialPageNum > 0 {
@@ -822,15 +818,26 @@ func (s *store) createMongoFindOptions(queryOptions storage.QueryOptions) *mongo
 		}
 	}
 
+	if queryOptions.SortOptions != nil {
+		mongoDBSortOrder := 1
+		if queryOptions.SortOptions.Order == storage.SortDescending {
+			mongoDBSortOrder = -1
+		}
+
+		findOptions.SetSort(bson.D{{
+			Key:   fmt.Sprintf("tags.%s", queryOptions.SortOptions.TagName),
+			Value: mongoDBSortOrder,
+		}})
+	}
+
 	return findOptions
 }
 
 type iterator struct {
-	cursor      *mongo.Cursor
-	coll        *mongo.Collection
-	filterKey   string
-	filterValue interface{}
-	timeout     time.Duration
+	cursor  *mongo.Cursor
+	coll    *mongo.Collection
+	filter  bson.D
+	timeout time.Duration
 }
 
 func (i *iterator) Next() (bool, error) {
@@ -873,10 +880,7 @@ func (i *iterator) TotalItems() (int, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), i.timeout)
 	defer cancel()
 
-	totalItems, err := i.coll.CountDocuments(ctxWithTimeout, bson.D{{
-		Key:   i.filterKey,
-		Value: i.filterValue,
-	}})
+	totalItems, err := i.coll.CountDocuments(ctxWithTimeout, i.filter)
 	if err != nil {
 		return -1, fmt.Errorf("failed to get document count from MongoDB: %w", err)
 	}
@@ -956,15 +960,21 @@ func convertTagSliceToMap(tagSlice []storage.Tag) map[string]interface{} {
 	tagsMap := make(map[string]interface{})
 
 	for _, tag := range tagSlice {
-		tagValueAsInt, err := strconv.Atoi(tag.Value)
-		if err != nil {
-			tagsMap[tag.Name] = tag.Value
-		} else {
-			tagsMap[tag.Name] = tagValueAsInt
-		}
+		tagsMap[tag.Name] = convertToIntIfPossible(tag.Value)
 	}
 
 	return tagsMap
+}
+
+// If possible, converts value to an int and returns it.
+// Otherwise, it returns value as a string, untouched.
+func convertToIntIfPossible(value string) interface{} {
+	valueAsInt, err := strconv.Atoi(value)
+	if err != nil {
+		return value
+	}
+
+	return valueAsInt
 }
 
 func convertTagMapToSlice(tagMap map[string]interface{}) []storage.Tag {
@@ -1039,7 +1049,9 @@ func getQueryOptions(options []storage.QueryOption) storage.QueryOptions {
 	var queryOptions storage.QueryOptions
 
 	for _, option := range options {
-		option(&queryOptions)
+		if option != nil {
+			option(&queryOptions)
+		}
 	}
 
 	if queryOptions.InitialPageNum < 0 {
@@ -1047,6 +1059,55 @@ func getQueryOptions(options []storage.QueryOption) storage.QueryOptions {
 	}
 
 	return queryOptions
+}
+
+func prepareSimpleFilter(expression string) (bson.D, error) {
+	operand, err := prepareSingleOperand(expression)
+	if err != nil {
+		return nil, err
+	}
+
+	return bson.D{operand}, nil
+}
+
+func prepareANDFilter(expressionSplitByANDOperator []string) (bson.D, error) {
+	operand1, err := prepareSingleOperand(expressionSplitByANDOperator[0])
+	if err != nil {
+		return nil, err
+	}
+
+	operand2, err := prepareSingleOperand(expressionSplitByANDOperator[1])
+	if err != nil {
+		return nil, err
+	}
+
+	// When the bson.D below gets serialized, it'll be comma separated.
+	// MongoDB treats a comma separated list of expression as an implicit AND operation.
+	return bson.D{operand1, operand2}, nil
+}
+
+func prepareSingleOperand(expression string) (bson.E, error) {
+	expressionSplitByColon := strings.Split(expression, ":")
+
+	var filterValue interface{}
+
+	switch len(expressionSplitByColon) {
+	case expressionTagNameOnlyLength:
+		filterValue = bson.D{
+			{Key: "$exists", Value: true},
+		}
+	case expressionTagNameAndValueLength:
+		filterValue = convertToIntIfPossible(expressionSplitByColon[1])
+	default:
+		return bson.E{}, errInvalidQueryExpressionFormat
+	}
+
+	operand := bson.E{
+		Key:   fmt.Sprintf("tags.%s", expressionSplitByColon[0]),
+		Value: filterValue,
+	}
+
+	return operand, nil
 }
 
 func generateModelForBulkWriteCall(operation storage.Operation) mongo.WriteModel {

@@ -199,6 +199,7 @@ func doAllTests(t *testing.T, connString string) {
 	testMultipleProvidersStoringSameDataAtTheSameTime(t, connString)
 	testMultipleProvidersStoringSameBulkDataAtTheSameTime(t, connString)
 	testCloseProviderTwice(t, connString)
+	testQueryWithMultipleTags(t, connString)
 }
 
 func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) {
@@ -581,6 +582,394 @@ func testCloseProviderTwice(t *testing.T, connString string) {
 
 	require.NoError(t, provider.Close())
 	require.NoError(t, provider.Close()) // Should succeed, even if called repeatedly.
+}
+
+func testQueryWithMultipleTags(t *testing.T, connString string) { //nolint: gocyclo // test file
+	t.Helper()
+
+	provider, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, provider.Close())
+	}()
+
+	keysToPut, valuesToPut, tagsToPut := getTestData()
+
+	storeName := randomStoreName()
+
+	store, err := provider.OpenStore(storeName)
+	require.NoError(t, err)
+
+	err = provider.SetStoreConfig(storeName,
+		storage.StoreConfiguration{TagNames: []string{
+			tagsToPut[0][0].Name,
+			tagsToPut[0][1].Name,
+			tagsToPut[0][2].Name,
+			tagsToPut[0][3].Name,
+			tagsToPut[0][4].Name,
+		}})
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, store.Close())
+	}()
+
+	putData(t, store, keysToPut, valuesToPut, tagsToPut)
+
+	t.Run("Both pairs are tag names + values - 3 values found", func(t *testing.T) {
+		queryExpressionsToTest := []string{
+			"Breed:GoldenRetriever&&NumLegs:4",
+			"NumLegs:4&&Breed:GoldenRetriever", // Should be equivalent to the above expression
+		}
+
+		expectedKeys := []string{keysToPut[0], keysToPut[3], keysToPut[4]}
+		expectedValues := [][]byte{valuesToPut[0], valuesToPut[3], valuesToPut[4]}
+		expectedTags := [][]storage.Tag{tagsToPut[0], tagsToPut[3], tagsToPut[4]}
+		expectedTotalItemsCount := 3
+
+		queryOptionsToTest := []storage.QueryOption{
+			nil,
+			storage.WithPageSize(2),
+			storage.WithPageSize(1),
+			storage.WithPageSize(100),
+		}
+
+		for _, queryExpressionToTest := range queryExpressionsToTest {
+			for _, queryOptionToTest := range queryOptionsToTest {
+				iterator, err := store.Query(queryExpressionToTest, queryOptionToTest)
+				require.NoError(t, err)
+
+				verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+			}
+		}
+	})
+	t.Run("Both pairs are tag names + values - 2 values found", func(t *testing.T) {
+		queryExpressionsToTest := []string{
+			"Breed:GoldenRetriever&&Personality:Calm",
+			"Personality:Calm&&Breed:GoldenRetriever", // Should be equivalent to the above expression
+		}
+
+		expectedKeys := []string{keysToPut[3], keysToPut[4]}
+		expectedValues := [][]byte{valuesToPut[3], valuesToPut[4]}
+		expectedTags := [][]storage.Tag{tagsToPut[3], tagsToPut[4]}
+		expectedTotalItemsCount := 2
+
+		queryOptionsToTest := []storage.QueryOption{
+			nil,
+			storage.WithPageSize(2),
+			storage.WithPageSize(1),
+			storage.WithPageSize(100),
+		}
+
+		for _, queryExpressionToTest := range queryExpressionsToTest {
+			for _, queryOptionToTest := range queryOptionsToTest {
+				iterator, err := store.Query(queryExpressionToTest, queryOptionToTest)
+				require.NoError(t, err)
+
+				verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+			}
+		}
+	})
+	t.Run("Both pairs are tag names + values - 1 value found", func(t *testing.T) {
+		queryExpressionsToTest := []string{
+			"Personality:Shy&&EarType:Pointy",
+			"EarType:Pointy&&Personality:Shy", // Should be equivalent to the above expression
+		}
+
+		expectedKeys := []string{keysToPut[1]}
+		expectedValues := [][]byte{valuesToPut[1]}
+		expectedTags := [][]storage.Tag{tagsToPut[1]}
+		expectedTotalItemsCount := 1
+
+		queryOptionsToTest := []storage.QueryOption{
+			nil,
+			storage.WithPageSize(2),
+			storage.WithPageSize(1),
+			storage.WithPageSize(100),
+		}
+
+		for _, queryExpressionToTest := range queryExpressionsToTest {
+			for _, queryOptionToTest := range queryOptionsToTest {
+				iterator, err := store.Query(queryExpressionToTest, queryOptionToTest)
+				require.NoError(t, err)
+
+				verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+			}
+		}
+	})
+	t.Run("Both pairs are tag names + values - 0 values found", func(t *testing.T) {
+		queryExpressionsToTest := []string{
+			"Personality:Crazy&&EarType:Pointy",
+			"EarType:Pointy&&Personality:Crazy", // Should be equivalent to the above expression
+		}
+
+		expectedTotalItemsCount := 0
+
+		queryOptionsToTest := []storage.QueryOption{
+			nil,
+			storage.WithPageSize(2),
+			storage.WithPageSize(1),
+			storage.WithPageSize(100),
+		}
+
+		for _, queryExpressionToTest := range queryExpressionsToTest {
+			for _, queryOptionToTest := range queryOptionsToTest {
+				iterator, err := store.Query(queryExpressionToTest, queryOptionToTest)
+				require.NoError(t, err)
+
+				verifyExpectedIterator(t, iterator, nil, nil, nil, expectedTotalItemsCount)
+			}
+		}
+	})
+	t.Run("First pair is a tag name + value, second is a tag name only - 1 value found", func(t *testing.T) {
+		queryExpressionsToTest := []string{
+			"EarType:Pointy&&Nickname",
+			"Nickname&&EarType:Pointy", // Should be equivalent to the above expression
+		}
+
+		expectedKeys := []string{keysToPut[2]}
+		expectedValues := [][]byte{valuesToPut[2]}
+		expectedTags := [][]storage.Tag{tagsToPut[2]}
+		expectedTotalItemsCount := 1
+
+		queryOptionsToTest := []storage.QueryOption{
+			nil,
+			storage.WithPageSize(2),
+			storage.WithPageSize(1),
+			storage.WithPageSize(100),
+		}
+
+		for _, queryExpressionToTest := range queryExpressionsToTest {
+			for _, queryOptionToTest := range queryOptionsToTest {
+				iterator, err := store.Query(queryExpressionToTest, queryOptionToTest)
+				require.NoError(t, err)
+
+				verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+			}
+		}
+	})
+	t.Run("First pair is a tag name + value, second is a tag name only - 0 values found", func(t *testing.T) {
+		queryExpressionsToTest := []string{
+			"EarType:Pointy&&CoatType",
+			"CoatType&&EarType:Pointy", // Should be equivalent to the above expression
+		}
+
+		expectedTotalItemsCount := 0
+
+		queryOptionsToTest := []storage.QueryOption{
+			nil,
+			storage.WithPageSize(2),
+			storage.WithPageSize(1),
+			storage.WithPageSize(100),
+		}
+
+		for _, queryExpressionToTest := range queryExpressionsToTest {
+			for _, queryOptionToTest := range queryOptionsToTest {
+				iterator, err := store.Query(queryExpressionToTest, queryOptionToTest)
+				require.NoError(t, err)
+
+				verifyExpectedIterator(t, iterator, nil, nil, nil, expectedTotalItemsCount)
+			}
+		}
+	})
+}
+
+func getTestData() (testKeys []string, testValues [][]byte, testTags [][]storage.Tag) {
+	testKeys = []string{
+		"Cassie",
+		"Luna",
+		"Miku",
+		"Amber",
+		"Brandy",
+	}
+
+	testValues = [][]byte{
+		[]byte("is a big, young dog"),
+		[]byte("is a small dog"),
+		[]byte("is a fluffy dog (also small)"),
+		[]byte("is a big, old dog"),
+		[]byte("is a big dog of unknown age (but probably old)"),
+	}
+
+	testTags = [][]storage.Tag{
+		{
+			{Name: "Breed", Value: "GoldenRetriever"},
+			{Name: "Personality", Value: "Playful"},
+			{Name: "NumLegs", Value: "4"},
+			{Name: "EarType", Value: "Floppy"},
+			{Name: "Nickname", Value: "Miss"},
+		},
+		{
+			{Name: "Breed", Value: "Schweenie"},
+			{Name: "Personality", Value: "Shy"},
+			{Name: "NumLegs", Value: "4"},
+			{Name: "EarType", Value: "Pointy"},
+		},
+		{
+			{Name: "Breed", Value: "Pomchi"},
+			{Name: "Personality", Value: "Outgoing"},
+			{Name: "NumLegs", Value: "4"},
+			{Name: "EarType", Value: "Pointy"},
+			{Name: "Nickname", Value: "Fluffball"},
+		},
+		{
+			{Name: "Breed", Value: "GoldenRetriever"},
+			{Name: "Personality", Value: "Calm"},
+			{Name: "NumLegs", Value: "4"},
+			{Name: "EarType", Value: "Floppy"},
+		},
+		{
+			{Name: "Breed", Value: "GoldenRetriever"},
+			{Name: "Personality", Value: "Calm"},
+			{Name: "NumLegs", Value: "4"},
+			{Name: "EarType", Value: "Floppy"},
+		},
+	}
+
+	return testKeys, testValues, testTags
+}
+
+func putData(t *testing.T, store storage.Store, keys []string, values [][]byte, tags [][]storage.Tag) {
+	t.Helper()
+
+	for i := 0; i < len(keys); i++ {
+		err := store.Put(keys[i], values[i], tags[i]...)
+		require.NoError(t, err)
+	}
+}
+
+// expectedKeys, expectedValues, and expectedTags are with respect to the query's page settings.
+// Since Iterator.TotalItems' count is not affected by page settings, expectedTotalItemsCount must be passed in and
+// can't be determined by looking at the length of expectedKeys, expectedValues, nor expectedTags.
+func verifyExpectedIterator(t *testing.T, actualResultsItr storage.Iterator, expectedKeys []string,
+	expectedValues [][]byte, expectedTags [][]storage.Tag, expectedTotalItemsCount int) {
+	t.Helper()
+
+	if len(expectedValues) != len(expectedKeys) || len(expectedTags) != len(expectedKeys) {
+		require.FailNow(t,
+			"Invalid test case. Expected keys, values and tags slices must be the same length.")
+	}
+
+	verifyIteratorAnyOrder(t, actualResultsItr, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+}
+
+func verifyIteratorAnyOrder(t *testing.T, actualResultsItr storage.Iterator, //nolint: gocyclo // Test file
+	expectedKeys []string, expectedValues [][]byte, expectedTags [][]storage.Tag, expectedTotalItemsCount int) {
+	t.Helper()
+
+	var dataChecklist struct {
+		keys     []string
+		values   [][]byte
+		tags     [][]storage.Tag
+		received []bool
+	}
+
+	dataChecklist.keys = expectedKeys
+	dataChecklist.values = expectedValues
+	dataChecklist.tags = expectedTags
+	dataChecklist.received = make([]bool, len(expectedKeys))
+
+	moreResultsToCheck, err := actualResultsItr.Next()
+	require.NoError(t, err)
+
+	if !moreResultsToCheck && len(expectedKeys) != 0 {
+		require.FailNow(t, "query unexpectedly returned no results")
+	}
+
+	for moreResultsToCheck {
+		dataReceivedCount := 0
+
+		for _, received := range dataChecklist.received {
+			if received {
+				dataReceivedCount++
+			}
+		}
+
+		if dataReceivedCount == len(dataChecklist.received) {
+			require.FailNow(t, "iterator contains more results than expected")
+		}
+
+		var itrErr error
+		receivedKey, itrErr := actualResultsItr.Key()
+		require.NoError(t, itrErr)
+
+		receivedValue, itrErr := actualResultsItr.Value()
+		require.NoError(t, itrErr)
+
+		receivedTags, itrErr := actualResultsItr.Tags()
+		require.NoError(t, itrErr)
+
+		for i := 0; i < len(dataChecklist.keys); i++ {
+			if receivedKey == dataChecklist.keys[i] {
+				if string(receivedValue) == string(dataChecklist.values[i]) {
+					if equalTags(receivedTags, dataChecklist.tags[i]) {
+						dataChecklist.received[i] = true
+
+						break
+					}
+				}
+			}
+		}
+
+		moreResultsToCheck, err = actualResultsItr.Next()
+		require.NoError(t, err)
+	}
+
+	count, errTotalItems := actualResultsItr.TotalItems()
+	require.NoError(t, errTotalItems)
+	require.Equal(t, expectedTotalItemsCount, count)
+
+	err = actualResultsItr.Close()
+	require.NoError(t, err)
+
+	for _, received := range dataChecklist.received {
+		if !received {
+			require.FailNow(t, "received unexpected query results")
+		}
+	}
+}
+
+func equalTags(tags1, tags2 []storage.Tag) bool { //nolint:gocyclo // Test file
+	if len(tags1) != len(tags2) {
+		return false
+	}
+
+	matchedTags1 := make([]bool, len(tags1))
+	matchedTags2 := make([]bool, len(tags2))
+
+	for i, tag1 := range tags1 {
+		for j, tag2 := range tags2 {
+			if matchedTags2[j] {
+				continue // This tag has already found a match. Tags can only have one match!
+			}
+
+			if tag1.Name == tag2.Name && tag1.Value == tag2.Value {
+				matchedTags1[i] = true
+				matchedTags2[j] = true
+
+				break
+			}
+		}
+
+		if !matchedTags1[i] {
+			return false
+		}
+	}
+
+	for _, matchedTag := range matchedTags1 {
+		if !matchedTag {
+			return false
+		}
+	}
+
+	for _, matchedTag := range matchedTags2 {
+		if !matchedTag {
+			return false
+		}
+	}
+
+	return true
 }
 
 func startMongoDBContainer(t *testing.T, dockerMongoDBTag string) (*dctest.Pool, *dctest.Resource) {
