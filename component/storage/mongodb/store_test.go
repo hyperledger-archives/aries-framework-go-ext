@@ -97,15 +97,64 @@ func TestProvider_GetStoreConfig_Failure(t *testing.T) {
 }
 
 func TestStore_Put_Failure(t *testing.T) {
-	provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
-	require.NoError(t, err)
+	t.Run("Deadline exceeded (server not reachable)", func(t *testing.T) {
+		provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
+		require.NoError(t, err)
 
-	store, err := provider.OpenStore("StoreName")
-	require.NoError(t, err)
+		store, err := provider.OpenStore("StoreName")
+		require.NoError(t, err)
 
-	err = store.Put("key", []byte("value"))
-	require.EqualError(t, err, "failed to run UpdateOne command in MongoDB: server selection error: context "+
-		"deadline exceeded, current topology: { Type: Unknown, Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }")
+		err = store.Put("key", []byte("value"))
+		require.EqualError(t, err, "failed to run UpdateOne command in MongoDB: server selection error: context "+
+			"deadline exceeded, current topology: { Type: Unknown, Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }")
+	})
+	t.Run("Invalid tags", func(t *testing.T) {
+		// We only test for < and > here since the : case is handled in the common unit tests (commontest.TestAll)
+		t.Run("Tag name contains <", func(t *testing.T) {
+			provider, err := mongodb.NewProvider("mongodb://test")
+			require.NoError(t, err)
+
+			store, err := provider.OpenStore("StoreName")
+			require.NoError(t, err)
+
+			err = store.Put("key", []byte("value"), storage.Tag{Name: "<"})
+			require.EqualError(t, err, `"<" is an invalid tag name since it contains one or more of the`+
+				` following substrings: ":", "<=", "<", ">=", ">"`)
+		})
+		t.Run("Tag value contains <", func(t *testing.T) {
+			provider, err := mongodb.NewProvider("mongodb://test")
+			require.NoError(t, err)
+
+			store, err := provider.OpenStore("StoreName")
+			require.NoError(t, err)
+
+			err = store.Put("key", []byte("value"), storage.Tag{Value: "<"})
+			require.EqualError(t, err, `"<" is an invalid tag value since it contains one or more of the`+
+				` following substrings: ":", "<=", "<", ">=", ">"`)
+		})
+		t.Run("Tag name contains >", func(t *testing.T) {
+			provider, err := mongodb.NewProvider("mongodb://test")
+			require.NoError(t, err)
+
+			store, err := provider.OpenStore("StoreName")
+			require.NoError(t, err)
+
+			err = store.Put("key", []byte("value"), storage.Tag{Name: ">"})
+			require.EqualError(t, err, `">" is an invalid tag name since it contains one or more of the`+
+				` following substrings: ":", "<=", "<", ">=", ">"`)
+		})
+		t.Run("Tag value contains >", func(t *testing.T) {
+			provider, err := mongodb.NewProvider("mongodb://test")
+			require.NoError(t, err)
+
+			store, err := provider.OpenStore("StoreName")
+			require.NoError(t, err)
+
+			err = store.Put("key", []byte("value"), storage.Tag{Value: ">"})
+			require.EqualError(t, err, `">" is an invalid tag value since it contains one or more of the`+
+				` following substrings: ":", "<=", "<", ">=", ">"`)
+		})
+	})
 }
 
 func TestStore_Get_Failure(t *testing.T) {
@@ -200,6 +249,7 @@ func doAllTests(t *testing.T, connString string) {
 	testMultipleProvidersStoringSameBulkDataAtTheSameTime(t, connString)
 	testCloseProviderTwice(t, connString)
 	testQueryWithMultipleTags(t, connString)
+	testQueryWithLessThanGreaterThanOperators(t, connString)
 }
 
 func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) {
@@ -775,6 +825,137 @@ func testQueryWithMultipleTags(t *testing.T, connString string) { //nolint: gocy
 	})
 }
 
+func testQueryWithLessThanGreaterThanOperators(t *testing.T, connString string) {
+	t.Helper()
+
+	provider, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, provider.Close())
+	}()
+
+	keysToPut, valuesToPut, tagsToPut := getTestData()
+
+	storeName := randomStoreName()
+
+	store, err := provider.OpenStore(storeName)
+	require.NoError(t, err)
+
+	err = provider.SetStoreConfig(storeName,
+		storage.StoreConfiguration{TagNames: []string{
+			tagsToPut[0][0].Name,
+			tagsToPut[0][1].Name,
+			tagsToPut[0][2].Name,
+			tagsToPut[0][3].Name,
+			tagsToPut[0][4].Name,
+			tagsToPut[0][5].Name,
+		}})
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, store.Close())
+	}()
+
+	putData(t, store, keysToPut, valuesToPut, tagsToPut)
+
+	t.Run("Less than or equal to", func(t *testing.T) {
+		queryExpression := "Age<=2"
+
+		expectedKeys := []string{keysToPut[0], keysToPut[1], keysToPut[2]}
+		expectedValues := [][]byte{valuesToPut[0], valuesToPut[1], valuesToPut[2]}
+		expectedTags := [][]storage.Tag{tagsToPut[0], tagsToPut[1], tagsToPut[2]}
+		expectedTotalItemsCount := 3
+
+		queryOptionsToTest := []storage.QueryOption{
+			nil,
+			storage.WithPageSize(2),
+			storage.WithPageSize(1),
+			storage.WithPageSize(100),
+		}
+
+		for _, queryOptionToTest := range queryOptionsToTest {
+			iterator, err := store.Query(queryExpression, queryOptionToTest)
+			require.NoError(t, err)
+
+			verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+		}
+	})
+	t.Run("Less than", func(t *testing.T) {
+		queryExpression := "Age<2"
+
+		expectedKeys := []string{keysToPut[1], keysToPut[2]}
+		expectedValues := [][]byte{valuesToPut[1], valuesToPut[2]}
+		expectedTags := [][]storage.Tag{tagsToPut[1], tagsToPut[2]}
+		expectedTotalItemsCount := 2
+
+		queryOptionsToTest := []storage.QueryOption{
+			nil,
+			storage.WithPageSize(2),
+			storage.WithPageSize(1),
+			storage.WithPageSize(100),
+		}
+
+		for _, queryOptionToTest := range queryOptionsToTest {
+			iterator, err := store.Query(queryExpression, queryOptionToTest)
+			require.NoError(t, err)
+
+			verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+		}
+	})
+	t.Run("Greater than or equal to", func(t *testing.T) {
+		queryExpression := "Age>=2"
+
+		expectedKeys := []string{keysToPut[0], keysToPut[3]}
+		expectedValues := [][]byte{valuesToPut[0], valuesToPut[3]}
+		expectedTags := [][]storage.Tag{tagsToPut[0], tagsToPut[3]}
+		expectedTotalItemsCount := 2
+
+		queryOptionsToTest := []storage.QueryOption{
+			nil,
+			storage.WithPageSize(2),
+			storage.WithPageSize(1),
+			storage.WithPageSize(100),
+		}
+
+		for _, queryOptionToTest := range queryOptionsToTest {
+			iterator, err := store.Query(queryExpression, queryOptionToTest)
+			require.NoError(t, err)
+
+			verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+		}
+	})
+	t.Run("Greater than", func(t *testing.T) {
+		queryExpression := "Age>2"
+
+		expectedKeys := []string{keysToPut[3]}
+		expectedValues := [][]byte{valuesToPut[3]}
+		expectedTags := [][]storage.Tag{tagsToPut[3]}
+		expectedTotalItemsCount := 1
+
+		queryOptionsToTest := []storage.QueryOption{
+			nil,
+			storage.WithPageSize(2),
+			storage.WithPageSize(1),
+			storage.WithPageSize(100),
+		}
+
+		for _, queryOptionToTest := range queryOptionsToTest {
+			iterator, err := store.Query(queryExpression, queryOptionToTest)
+			require.NoError(t, err)
+
+			verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+		}
+	})
+	t.Run("Tag value is not a valid integer", func(t *testing.T) {
+		iterator, err := store.Query("TagName>ThisIsNotAnInteger")
+		require.EqualError(t, err, "invalid query format. when using any one of the <=, <, >=, > operators, "+
+			"the immediate value on the right side side must be a valid integer: strconv.Atoi: parsing "+
+			`"ThisIsNotAnInteger": invalid syntax`)
+		require.Nil(t, iterator)
+	})
+}
+
 func getTestData() (testKeys []string, testValues [][]byte, testTags [][]storage.Tag) {
 	testKeys = []string{
 		"Cassie",
@@ -799,12 +980,14 @@ func getTestData() (testKeys []string, testValues [][]byte, testTags [][]storage
 			{Name: "NumLegs", Value: "4"},
 			{Name: "EarType", Value: "Floppy"},
 			{Name: "Nickname", Value: "Miss"},
+			{Name: "Age", Value: "2"},
 		},
 		{
 			{Name: "Breed", Value: "Schweenie"},
 			{Name: "Personality", Value: "Shy"},
 			{Name: "NumLegs", Value: "4"},
 			{Name: "EarType", Value: "Pointy"},
+			{Name: "Age", Value: "1"},
 		},
 		{
 			{Name: "Breed", Value: "Pomchi"},
@@ -812,12 +995,14 @@ func getTestData() (testKeys []string, testValues [][]byte, testTags [][]storage
 			{Name: "NumLegs", Value: "4"},
 			{Name: "EarType", Value: "Pointy"},
 			{Name: "Nickname", Value: "Fluffball"},
+			{Name: "Age", Value: "1"},
 		},
 		{
 			{Name: "Breed", Value: "GoldenRetriever"},
 			{Name: "Personality", Value: "Calm"},
 			{Name: "NumLegs", Value: "4"},
 			{Name: "EarType", Value: "Floppy"},
+			{Name: "Age", Value: "14"},
 		},
 		{
 			{Name: "Breed", Value: "GoldenRetriever"},

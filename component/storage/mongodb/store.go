@@ -33,18 +33,22 @@ const (
 	defaultTimeout                         = time.Second * 10
 	defaultMaxIndexCreationConflictRetries = 3
 
-	invalidTagName                       = `"%s" is an invalid tag name since it contains one or more ':' characters`
-	invalidTagValue                      = `"%s" is an invalid tag value since it contains one or more ':' characters`
+	invalidTagName = `"%s" is an invalid tag name since it contains one or more of the ` +
+		`following substrings: ":", "<=", "<", ">=", ">"`
+	invalidTagValue = `"%s" is an invalid tag value since it contains one or more of the ` +
+		`following substrings: ":", "<=", "<", ">=", ">"`
 	failCreateIndexesInMongoDBCollection = "failed to create indexes in MongoDB collection: %w"
 
-	expressionTagNameOnlyLength     = 1
-	expressionTagNameAndValueLength = 2
+	equalsExpressionTagNameOnlyLength     = 1
+	equalsExpressionTagNameAndValueLength = 2
 	andExpressionLength
+	lessThanGreaterThanExpressionLength
 )
 
 var errInvalidQueryExpressionFormat = errors.New("invalid expression format. " +
 	"It must be in the following format: " +
-	"TagName:TagValue or TagName1:TagValue1&&TagName2:TagValue2. Tag values are optional")
+	"TagName:TagValue or TagName1:TagValue1&&TagName2:TagValue2. Tag values are optional. If using tag values," +
+	"<=, <, >=, or > may be used in place of the : to match a range of tag values")
 
 type logger interface {
 	Infof(msg string, args ...interface{})
@@ -610,6 +614,9 @@ func (s *store) GetBulk(keys ...string) ([][]byte, error) {
 // in order to indicate that you want any data tagged with the tag name, regardless of tag value.
 // For example, TagName1:TagValue1&&TagName2:TagValue2 will return only data that has been tagged with both pairs.
 // See testQueryWithMultipleTags in store_test.go for more examples of querying using multiple tags.
+// If the tag you're using has tag values that are integers, then you can use the <, <=, >, >= operators instead of :
+// to get a range of matching data. For example, TagName>3 will return any data tagged with a tag named TagName
+// that has a value greater than 3.
 // It's recommended to set up an index using the Provider.SetStoreConfig method in order to speed up queries.
 // TODO (#146) Investigate compound indexes and see if they may be useful for queries with sorts and/or for queries
 //             with multiple tags.
@@ -951,6 +958,22 @@ func validatePutInput(key string, value []byte, tags []storage.Tag) error {
 		if strings.Contains(tag.Value, ":") {
 			return fmt.Errorf(invalidTagValue, tag.Value)
 		}
+
+		if strings.Contains(tag.Name, "<") { // This also handles the <= case.
+			return fmt.Errorf(invalidTagName, tag.Name)
+		}
+
+		if strings.Contains(tag.Value, "<") { // This also handles the <= case.
+			return fmt.Errorf(invalidTagValue, tag.Value)
+		}
+
+		if strings.Contains(tag.Name, ">") { // This also handles the >= case.
+			return fmt.Errorf(invalidTagName, tag.Name)
+		}
+
+		if strings.Contains(tag.Value, ">") { // This also handles the >= case.
+			return fmt.Errorf(invalidTagValue, tag.Value)
+		}
 	}
 
 	return nil
@@ -1087,27 +1110,80 @@ func prepareANDFilter(expressionSplitByANDOperator []string) (bson.D, error) {
 }
 
 func prepareSingleOperand(expression string) (bson.E, error) {
-	expressionSplitByColon := strings.Split(expression, ":")
-
 	var filterValue interface{}
 
-	switch len(expressionSplitByColon) {
-	case expressionTagNameOnlyLength:
+	operator, splitExpression, err := determineOperatorAndSplit(expression)
+	if err != nil {
+		return bson.E{}, err
+	}
+
+	if operator == "$lt" || operator == "$lte" || operator == "$gt" || operator == "$gte" {
+		value, err := strconv.Atoi(splitExpression[1])
+		if err != nil {
+			return bson.E{}, fmt.Errorf("invalid query format. when using any one of the <=, <, >=, > "+
+				"operators, the immediate value on the right side side must be a valid integer: %w", err)
+		}
+
+		filterValue = bson.D{
+			{Key: operator, Value: value},
+		}
+
+		operand := bson.E{
+			Key:   fmt.Sprintf("tags.%s", splitExpression[0]),
+			Value: filterValue,
+		}
+
+		return operand, nil
+	}
+
+	if operator == "$exists" {
 		filterValue = bson.D{
 			{Key: "$exists", Value: true},
 		}
-	case expressionTagNameAndValueLength:
-		filterValue = convertToIntIfPossible(expressionSplitByColon[1])
-	default:
-		return bson.E{}, errInvalidQueryExpressionFormat
+	} else {
+		filterValue = convertToIntIfPossible(splitExpression[1])
 	}
 
 	operand := bson.E{
-		Key:   fmt.Sprintf("tags.%s", expressionSplitByColon[0]),
+		Key:   fmt.Sprintf("tags.%s", splitExpression[0]),
 		Value: filterValue,
 	}
 
 	return operand, nil
+}
+
+// determineOperatorAndSplit takes the given expression and returns the operator (in the format required by MongoDB)
+// along with the expression split by the operator (as defined in the store.Query documentation).
+func determineOperatorAndSplit(expression string) (mongoDBOperator string, expressionSplit []string, err error) {
+	expressionSplitByLessThanOrEqualTo := strings.Split(expression, "<=")
+	if len(expressionSplitByLessThanOrEqualTo) == lessThanGreaterThanExpressionLength {
+		return "$lte", expressionSplitByLessThanOrEqualTo, nil
+	}
+
+	expressionSplitByLessThan := strings.Split(expression, "<")
+	if len(expressionSplitByLessThan) == lessThanGreaterThanExpressionLength {
+		return "$lt", expressionSplitByLessThan, nil
+	}
+
+	expressionSplitByGreaterThanOrEqualTo := strings.Split(expression, ">=")
+	if len(expressionSplitByGreaterThanOrEqualTo) == lessThanGreaterThanExpressionLength {
+		return "$gte", expressionSplitByGreaterThanOrEqualTo, nil
+	}
+
+	expressionSplitByGreaterThan := strings.Split(expression, ">")
+	if len(expressionSplitByGreaterThan) == lessThanGreaterThanExpressionLength {
+		return "$gt", expressionSplitByGreaterThan, nil
+	}
+
+	expressionSplitByEquals := strings.Split(expression, ":")
+	switch len(expressionSplitByEquals) {
+	case equalsExpressionTagNameOnlyLength:
+		return "$exists", expressionSplitByEquals, nil
+	case equalsExpressionTagNameAndValueLength:
+		return "", expressionSplitByEquals, nil
+	default:
+		return "", nil, errInvalidQueryExpressionFormat
+	}
 }
 
 func generateModelForBulkWriteCall(operation storage.Operation) mongo.WriteModel {
