@@ -978,7 +978,7 @@ func TestVDRI_Read(t *testing.T) {
 			"l5b2Jua3B5NXdmN3FyZm1rNTdpeWt1empvYmRmam95YjQydm1id2V4bHg2NTJ2dHk:EiBRNTUwbxYTOHMKbt9oYtn71GZLKPQ1Co" +
 			"iw2_DgoTdooQ")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "unable to parse verifiable credential")
+		require.Contains(t, err.Error(), "unexpected end of JSON input")
 	})
 
 	t.Run("test success for fetch endpoint from https hint", func(t *testing.T) {
@@ -993,6 +993,34 @@ func TestVDRI_Read(t *testing.T) {
 		doc, err := v.Read("did:orb:https:example.com:uAAA:EiA329wd6Aj36YRmp7NGkeB5ADnVt8ARdMZMPzfXsjwTJA")
 		require.NoError(t, err)
 		require.Equal(t, "did", doc.DIDDocument.ID)
+	})
+
+	t.Run("test error different doc returned", func(t *testing.T) {
+		v, err := New(nil, WithDomain("d1"))
+		require.NoError(t, err)
+
+		c := 1
+
+		v.getHTTPVDR = func(url string) (v vdr, e error) {
+			return &mockvdr.MockVDR{
+				ReadFunc: func(didID string, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
+					c++
+					if c == 2 {
+						return &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil
+					}
+
+					return did.ParseDocumentResolution([]byte(validDocResolution))
+				},
+			}, nil
+		}
+
+		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
+		}}
+
+		_, err = v.Read("did:ex:domain:1234")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to fetch correct did from min resolvers")
 	})
 
 	t.Run("test error from fetch endpoint from domain", func(t *testing.T) {
