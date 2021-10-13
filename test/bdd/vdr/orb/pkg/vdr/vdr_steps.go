@@ -42,7 +42,6 @@ const (
 	bls12381G2KeyType = "Bls12381G2"
 	// Ed25519KeyType ed25519 key type.
 	Ed25519KeyType = "Ed25519"
-	origin         = "https://testnet.orb.local"
 	jsonWebKey2020 = "JsonWebKey2020"
 )
 
@@ -171,7 +170,7 @@ func (e *Steps) recoverDID(keyType, signatureSuite string) error {
 	didDoc := e.createdDoc.DIDDocument
 
 	if err := e.vdr.Update(didDoc,
-		vdrapi.WithOption(orb.RecoverOpt, true), vdrapi.WithOption(orb.AnchorOriginOpt, origin)); err != nil {
+		vdrapi.WithOption(orb.RecoverOpt, true)); err != nil {
 		return err
 	}
 
@@ -239,7 +238,7 @@ func (e *Steps) create(keyType, signatureSuite, resolveDID string) error {
 		retry = nil
 	}
 
-	if err := e.createDID(keyType, signatureSuite, origin, retry); err != nil {
+	if err := e.createDID(keyType, signatureSuite, "", retry); err != nil {
 		return err
 	}
 
@@ -288,9 +287,12 @@ func (e *Steps) createDID(keyType, signatureSuite, origin string, retry *orb.Res
 		opts = append(opts, vdrapi.WithOption(orb.CheckDIDAnchored, retry))
 	}
 
+	if origin != "" {
+		opts = append(opts, vdrapi.WithOption(orb.AnchorOriginOpt, origin))
+	}
+
 	opts = append(opts, vdrapi.WithOption(orb.RecoveryPublicKeyOpt, recoveryKey),
-		vdrapi.WithOption(orb.UpdatePublicKeyOpt, updateKey),
-		vdrapi.WithOption(orb.AnchorOriginOpt, origin))
+		vdrapi.WithOption(orb.UpdatePublicKeyOpt, updateKey))
 
 	createdDocResolution, err := e.vdr.Create(didDoc, opts...)
 	if err != nil {
