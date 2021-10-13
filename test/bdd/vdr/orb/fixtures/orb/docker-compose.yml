@@ -39,6 +39,7 @@ services:
       - HTTP_SIGNATURES_ENABLED=true
       - CREATE_DOCUMENT_STORE_ENABLED=true
       - UPDATE_DOCUMENT_STORE_ENABLED=${UPDATE_DOCUMENT_STORE_ENABLED}
+      - RESOLVE_FROM_ANCHOR_ORIGIN=true
     ports:
       - 443:443
     command: start
@@ -82,6 +83,7 @@ services:
       - HTTP_SIGNATURES_ENABLED=true
       - CREATE_DOCUMENT_STORE_ENABLED=true
       - UPDATE_DOCUMENT_STORE_ENABLED=${UPDATE_DOCUMENT_STORE_ENABLED}
+      - RESOLVE_FROM_ANCHOR_ORIGIN=true
     ports:
       - 8009:443
     command: start

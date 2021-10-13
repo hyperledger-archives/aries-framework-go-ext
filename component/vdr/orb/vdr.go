@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +26,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/ld"
+	ldprocessor "github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	ldstore "github.com/hyperledger/aries-framework-go/pkg/store/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
@@ -353,33 +355,50 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 		}
 	}
 
-	// TODO this temp solution to resolve update DID from cache
-	if len(endpoint.ResolutionEndpoints) > 1 {
-		return nil, fmt.Errorf("multiple resolutionEndpoints not supported")
-	}
+	var docResolution *docdid.DocResolution
 
-	resp, err := v.sidetreeResolve(endpoint.ResolutionEndpoints[0], did, opts...)
-	if err != nil {
-		return nil, err
-	}
+	var docBytes []byte
 
-	if v.domain != "" && resp.DocumentMetadata.Method.Published &&
-		resp.DocumentMetadata.Method.AnchorOrigin != "" &&
-		!strings.Contains(resp.DocumentMetadata.Method.AnchorOrigin, "ipns") &&
-		resp.DocumentMetadata.Method.AnchorOrigin != v.domain {
-		endpoint, err = v.discoveryService.GetEndpoint(resp.DocumentMetadata.Method.AnchorOrigin)
+	minResolver := 0
+
+	// Resolve the DID at each of the n chosen links.
+	// Ensure that the DID resolution result matches (other than resolver-specific metadata such as timestamps).
+	// In case of a mismatch, additional links may need to be chosen until the client has n matches.
+
+	for _, e := range endpoint.ResolutionEndpoints {
+		resp, err := v.sidetreeResolve(e, did, opts...)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get endpoints: %w", err)
+			return nil, err
 		}
 
-		if len(endpoint.ResolutionEndpoints) > 1 {
-			return nil, fmt.Errorf("multiple resolutionEndpoints not supported")
+		respBytes, err := canonicalizeDoc(resp.DIDDocument, v.documentLoader)
+		if err != nil {
+			return nil, fmt.Errorf("cannot canonicalize resolved doc: %w", err)
 		}
 
-		return v.sidetreeResolve(endpoint.ResolutionEndpoints[0], did, opts...)
+		if docResolution != nil && !bytes.Equal(docBytes, respBytes) {
+			logger.Warnf("mismatch in document contents for did %s. Doc 1: %s, Doc 2: %s",
+				did, string(docBytes), string(respBytes))
+
+			continue
+		}
+
+		minResolver++
+
+		docResolution = resp
+
+		docBytes = respBytes
+
+		if minResolver == endpoint.MinResolvers {
+			break
+		}
 	}
 
-	return resp, nil
+	if minResolver != endpoint.MinResolvers {
+		return nil, fmt.Errorf("failed to fetch correct did from min resolvers")
+	}
+
+	return docResolution, nil
 }
 
 // Update did doc.
@@ -1018,4 +1037,23 @@ func closeResponseBody(respBody io.Closer) {
 	if e != nil {
 		logger.Errorf("Failed to close response body: %v", e)
 	}
+}
+
+// canonicalizeDoc canonicalizes a DID doc using json-ld canonicalization.
+func canonicalizeDoc(didDoc *docdid.Doc, docLoader jsonld.DocumentLoader) ([]byte, error) {
+	marshaled, err := didDoc.JSONBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	docMap := map[string]interface{}{}
+
+	err = json.Unmarshal(marshaled, &docMap)
+	if err != nil {
+		return nil, err
+	}
+
+	proc := ldprocessor.Default()
+
+	return proc.GetCanonicalDocument(docMap, ldprocessor.WithDocumentLoader(docLoader))
 }
