@@ -38,6 +38,7 @@ import (
 	"github.com/trustbloc/sidetree-core-go/pkg/util/pubkey"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/internal/ldcontext"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/lb"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/create"
@@ -59,7 +60,7 @@ const (
 	RecoveryPublicKeyOpt = "recoveryPublicKey"
 	// RecoverOpt recover opt.
 	RecoverOpt = "recover"
-	// AnchorOriginOpt anchor origin opt.
+	// AnchorOriginOpt anchor origin opt this option is not mandatory.
 	AnchorOriginOpt = "anchorOrigin"
 	// CheckDIDAnchored check did is anchored.
 	CheckDIDAnchored = "checkDIDAnchored"
@@ -107,18 +108,24 @@ type discoveryService interface {
 	GetEndpointFromAnchorOrigin(did string) (*models.Endpoint, error)
 }
 
+// SelectDomainService select domain service.
+type SelectDomainService interface {
+	Choose(domains []string) (string, error)
+}
+
 // VDR bloc.
 type VDR struct {
 	getHTTPVDR        func(url string) (vdr, error) // needed for unit test
 	tlsConfig         *tls.Config
 	authToken         string
-	domain            string
+	domains           []string
 	disableProofCheck bool
 	sidetreeClient    sidetreeClient
 	keyRetriever      KeyRetriever
 	discoveryService  discoveryService
 	documentLoader    jsonld.DocumentLoader
 	ipfsEndpoint      string
+	selectDomainSvc   SelectDomainService
 }
 
 // KeyRetriever key retriever.
@@ -130,7 +137,7 @@ type KeyRetriever interface {
 
 // New creates new orb VDR.
 func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
-	v := &VDR{}
+	v := &VDR{domains: make([]string, 0), selectDomainSvc: lb.NewRoundRobin()}
 
 	for _, opt := range opts {
 		opt(v)
@@ -240,7 +247,13 @@ func (v *VDR) Create(did *docdid.Doc,
 
 	createOpt := make([]create.Option, 0)
 
-	getEndpoints := v.getSidetreeOperationEndpoints(didMethodOpts)
+	// Select domain
+	domain, err := v.selectDomainSvc.Choose(v.domains)
+	if err != nil {
+		return nil, err
+	}
+
+	getEndpoints := v.getSidetreeOperationEndpoints(didMethodOpts, domain)
 
 	// get keys
 	if didMethodOpts.Values[UpdatePublicKeyOpt] == nil {
@@ -261,13 +274,13 @@ func (v *VDR) Create(did *docdid.Doc,
 		return nil, fmt.Errorf("recoveryPublicKey is not  crypto.PublicKey")
 	}
 
-	if didMethodOpts.Values[AnchorOriginOpt] == nil {
-		return nil, fmt.Errorf("anchorOrigin opt is empty")
-	}
+	anchorOrigin := domain
 
-	anchorOrigin, ok := didMethodOpts.Values[AnchorOriginOpt].(string)
-	if !ok {
-		return nil, fmt.Errorf("anchorOrigin is not string")
+	if didMethodOpts.Values[AnchorOriginOpt] != nil {
+		anchorOrigin, ok = didMethodOpts.Values[AnchorOriginOpt].(string)
+		if !ok {
+			return nil, fmt.Errorf("anchorOrigin is not string")
+		}
 	}
 
 	// get services
@@ -343,8 +356,14 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 		}
 
 		return nil, fmt.Errorf("discovery did not return hint domain")
-	case v.domain != "":
-		endpoint, err = v.discoveryService.GetEndpoint(v.domain)
+	case len(v.domains) != 0:
+		// Select domain
+		domain, errChoose := v.selectDomainSvc.Choose(v.domains)
+		if errChoose != nil {
+			return nil, errChoose
+		}
+
+		endpoint, err = v.discoveryService.GetEndpoint(domain)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get endpoints: %w", err)
 		}
@@ -423,16 +442,24 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 	// check recover option
 	if didMethodOpts.Values[RecoverOpt] != nil {
-		if didMethodOpts.Values[AnchorOriginOpt] == nil {
-			return fmt.Errorf("anchorOrigin opt is empty")
+		// Select domain
+		domain, errChoose := v.selectDomainSvc.Choose(v.domains)
+		if errChoose != nil {
+			return errChoose
 		}
 
-		anchorOrigin, ok := didMethodOpts.Values[AnchorOriginOpt].(string)
-		if !ok {
-			return fmt.Errorf("anchorOrigin is not string")
+		anchorOrigin := docResolution.DocumentMetadata.Method.AnchorOrigin
+
+		if didMethodOpts.Values[AnchorOriginOpt] != nil {
+			var ok bool
+
+			anchorOrigin, ok = didMethodOpts.Values[AnchorOriginOpt].(string)
+			if !ok {
+				return fmt.Errorf("anchorOrigin is not string")
+			}
 		}
 
-		return v.recover(didDoc, v.getSidetreeOperationEndpoints(didMethodOpts),
+		return v.recover(didDoc, v.getSidetreeOperationEndpoints(didMethodOpts, domain),
 			docResolution.DocumentMetadata.Method.RecoveryCommitment, anchorOrigin)
 	}
 
@@ -597,7 +624,14 @@ func (v *VDR) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 		return err
 	}
 
-	deactivateOpt = append(deactivateOpt, deactivate.WithSidetreeEndpoint(v.getSidetreeOperationEndpoints(didMethodOpts)),
+	// Select domain
+	domain, err := v.selectDomainSvc.Choose(v.domains)
+	if err != nil {
+		return err
+	}
+
+	deactivateOpt = append(deactivateOpt,
+		deactivate.WithSidetreeEndpoint(v.getSidetreeOperationEndpoints(didMethodOpts, domain)),
 		deactivate.WithSigningKey(signingKey),
 		deactivate.WithOperationCommitment(docResolution.DocumentMetadata.Method.RecoveryCommitment))
 
@@ -681,10 +715,11 @@ func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*pk, error) { // noli
 	return pksMap, nil
 }
 
-func (v *VDR) getSidetreeOperationEndpoints(didMethodOpts *vdrapi.DIDMethodOpts) func() ([]string, error) {
+func (v *VDR) getSidetreeOperationEndpoints(didMethodOpts *vdrapi.DIDMethodOpts,
+	domain string) func() ([]string, error) {
 	if didMethodOpts.Values[OperationEndpointsOpt] == nil {
 		return func() ([]string, error) {
-			endpoint, err := v.discoveryService.GetEndpoint(v.domain)
+			endpoint, err := v.discoveryService.GetEndpoint(domain)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get endpoints: %w", err)
 			}
@@ -873,9 +908,10 @@ func WithAuthToken(authToken string) Option {
 }
 
 // WithDomain option is setting domain.
+// to set multiple domains call this option multiple times.
 func WithDomain(domain string) Option {
 	return func(opts *VDR) {
-		opts.domain = domain
+		opts.domains = append(opts.domains, domain)
 	}
 }
 

@@ -366,8 +366,7 @@ func TestVDRI_Create(t *testing.T) {
 		}, vdrapi.WithOption(OperationEndpointsOpt, []string{"url"}),
 			vdrapi.WithOption(UpdatePublicKeyOpt, []byte{}),
 			vdrapi.WithOption(RecoveryPublicKeyOpt, []byte{}))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "anchorOrigin opt is empty")
+		require.NoError(t, err)
 	})
 
 	t.Run("test anchor origin opt is not string", func(t *testing.T) {
@@ -759,8 +758,7 @@ func TestVDRI_Recover(t *testing.T) {
 			},
 			Authentication: []did.Verification{*ver},
 		}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
-			vdrapi.WithOption(RecoverOpt, true),
-			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
+			vdrapi.WithOption(RecoverOpt, true))
 		require.NoError(t, err)
 	})
 
@@ -802,23 +800,6 @@ func TestVDRI_Recover(t *testing.T) {
 			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "vm relationship 0 not supported")
-	})
-
-	t.Run("test anchor origin is empty", func(t *testing.T) {
-		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-type", "application/did+ld+json")
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, validDocResolution)
-		}))
-		defer cServ.Close()
-
-		v, err := New(nil)
-		require.NoError(t, err)
-
-		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
-			vdrapi.WithOption(RecoverOpt, true))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "anchorOrigin opt is empty")
 	})
 
 	t.Run("test anchor origin is not string", func(t *testing.T) {
