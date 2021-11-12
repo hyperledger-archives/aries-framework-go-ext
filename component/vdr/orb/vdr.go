@@ -115,17 +115,18 @@ type SelectDomainService interface {
 
 // VDR bloc.
 type VDR struct {
-	getHTTPVDR        func(url string) (vdr, error) // needed for unit test
-	tlsConfig         *tls.Config
-	authToken         string
-	domains           []string
-	disableProofCheck bool
-	sidetreeClient    sidetreeClient
-	keyRetriever      KeyRetriever
-	discoveryService  discoveryService
-	documentLoader    jsonld.DocumentLoader
-	ipfsEndpoint      string
-	selectDomainSvc   SelectDomainService
+	getHTTPVDR            func(url string) (vdr, error) // needed for unit test
+	tlsConfig             *tls.Config
+	unanchoredMaxLifeTime *time.Duration
+	authToken             string
+	domains               []string
+	disableProofCheck     bool
+	sidetreeClient        sidetreeClient
+	keyRetriever          KeyRetriever
+	discoveryService      discoveryService
+	documentLoader        jsonld.DocumentLoader
+	ipfsEndpoint          string
+	selectDomainSvc       SelectDomainService
 }
 
 // KeyRetriever key retriever.
@@ -319,7 +320,9 @@ func (v *VDR) Create(did *docdid.Doc,
 	return v.checkDID(createdDID.DIDDocument.ID, resolveDIDRetry, "", true, opts...)
 }
 
-func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) { //nolint: funlen,gocyclo
+// Read Orb DID.
+//nolint: funlen,gocyclo,gocognit
+func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
 
 	// Apply options
@@ -351,7 +354,16 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 
 		for _, e := range endpoint.ResolutionEndpoints {
 			if strings.Contains(e, hintDomain) {
-				return v.sidetreeResolve(e, did, opts...)
+				docRes, errResolve := v.sidetreeResolve(e, did, opts...)
+				if errResolve != nil {
+					return nil, errResolve
+				}
+
+				if errCheck := v.checkUnanchoredDIDTime(docRes.DIDDocument); errCheck != nil {
+					return nil, errCheck
+				}
+
+				return docRes, nil
 			}
 		}
 
@@ -417,7 +429,25 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 		return nil, fmt.Errorf("failed to fetch correct did from min resolvers")
 	}
 
+	if err := v.checkUnanchoredDIDTime(docResolution.DIDDocument); err != nil {
+		return nil, err
+	}
+
 	return docResolution, nil
+}
+
+func (v *VDR) checkUnanchoredDIDTime(didDocument *docdid.Doc) error {
+	if (strings.HasPrefix(didDocument.ID, fmt.Sprintf("did:%s:%s", DIDMethod, httpsProtocol)) ||
+		strings.HasPrefix(didDocument.ID, fmt.Sprintf("did:%s:%s", DIDMethod, "uAAA"))) &&
+		v.unanchoredMaxLifeTime != nil {
+		rejectTime := didDocument.Created.Add(*v.unanchoredMaxLifeTime)
+
+		if time.Now().In(time.UTC).After(rejectTime) {
+			return fmt.Errorf("unanchored DID reach max time for usage")
+		}
+	}
+
+	return nil
 }
 
 // Update did doc.
@@ -897,6 +927,13 @@ type Option func(opts *VDR)
 func WithTLSConfig(tlsConfig *tls.Config) Option {
 	return func(opts *VDR) {
 		opts.tlsConfig = tlsConfig
+	}
+}
+
+// WithUnanchoredMaxLifeTime option is max time for unanchored to be trusted .
+func WithUnanchoredMaxLifeTime(duration time.Duration) Option {
+	return func(opts *VDR) {
+		opts.unanchoredMaxLifeTime = &duration
 	}
 }
 

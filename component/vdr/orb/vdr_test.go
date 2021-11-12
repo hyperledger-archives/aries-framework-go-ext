@@ -1004,6 +1004,40 @@ func TestVDRI_Read(t *testing.T) {
 		require.Contains(t, err.Error(), "failed to fetch correct did from min resolvers")
 	})
 
+	t.Run("test unanchored did reach max time", func(t *testing.T) {
+		v, err := New(nil, WithDomain("d1"), WithUnanchoredMaxLifeTime(2*time.Second))
+		require.NoError(t, err)
+
+		didDoc, err := did.ParseDocumentResolution([]byte(validDocResolution))
+		require.NoError(t, err)
+
+		timeNow := time.Now().UTC()
+
+		didDoc.DIDDocument.Created = &timeNow
+		didDoc.DIDDocument.ID = "did:orb:uAAA:domain:1234"
+
+		v.getHTTPVDR = func(url string) (v vdr, e error) {
+			return &mockvdr.MockVDR{
+				ReadFunc: func(didID string, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
+					return didDoc, nil
+				},
+			}, nil
+		}
+
+		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 1}, nil
+		}}
+
+		_, err = v.Read("did:orb:uAAA:domain:1234")
+		require.NoError(t, err)
+
+		time.Sleep(2 * time.Second)
+
+		_, err = v.Read("did:orb:interim:domain:1234")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unanchored DID reach max time for usage")
+	})
+
 	t.Run("test error from fetch endpoint from domain", func(t *testing.T) {
 		v, err := New(nil, WithDomain("d1"))
 		require.NoError(t, err)
