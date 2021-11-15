@@ -359,7 +359,7 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 					return nil, errResolve
 				}
 
-				if errCheck := v.checkUnanchoredDIDTime(docRes.DIDDocument); errCheck != nil {
+				if errCheck := v.checkUnanchoredDIDTime(docRes); errCheck != nil {
 					return nil, errCheck
 				}
 
@@ -429,21 +429,25 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 		return nil, fmt.Errorf("failed to fetch correct did from min resolvers")
 	}
 
-	if err := v.checkUnanchoredDIDTime(docResolution.DIDDocument); err != nil {
+	if err := v.checkUnanchoredDIDTime(docResolution); err != nil {
 		return nil, err
 	}
 
 	return docResolution, nil
 }
 
-func (v *VDR) checkUnanchoredDIDTime(didDocument *docdid.Doc) error {
-	if (strings.HasPrefix(didDocument.ID, fmt.Sprintf("did:%s:%s", DIDMethod, httpsProtocol)) ||
-		strings.HasPrefix(didDocument.ID, fmt.Sprintf("did:%s:%s", DIDMethod, "uAAA"))) &&
-		v.unanchoredMaxLifeTime != nil {
-		rejectTime := didDocument.Created.Add(*v.unanchoredMaxLifeTime)
+func (v *VDR) checkUnanchoredDIDTime(didRes *docdid.DocResolution) error {
+	if v.unanchoredMaxLifeTime == nil {
+		return nil
+	}
 
-		if time.Now().In(time.UTC).After(rejectTime) {
-			return fmt.Errorf("unanchored DID reach max time for usage")
+	for _, o := range didRes.DocumentMetadata.Method.UnpublishedOperations {
+		if o.Type == "create" {
+			rejectTime := time.Unix(o.TransactionTime, 0).Add(*v.unanchoredMaxLifeTime)
+
+			if time.Now().In(time.UTC).After(rejectTime) {
+				return fmt.Errorf("unanchored DID reach max time for usage")
+			}
 		}
 	}
 
