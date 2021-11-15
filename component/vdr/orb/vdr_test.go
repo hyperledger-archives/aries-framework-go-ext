@@ -29,6 +29,7 @@ import (
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/update"
 )
 
+//nolint: lll
 const validDocResolution = `
 {
    "@context":"https://w3id.org/did-resolution/v1",
@@ -38,7 +39,15 @@ const validDocResolution = `
       "method":{
          "published":true,
          "recoveryCommitment":"EiB1u5HnTYKVHrmemOpZtrGlc6BoaWWHwNAd-k7CrLKHOg",
-         "updateCommitment":"EiAiTB0QR_Skh3i-fzDSeFgjVoMEDsXYoVIsA56-GUsKjg"
+         "updateCommitment":"EiAiTB0QR_Skh3i-fzDSeFgjVoMEDsXYoVIsA56-GUsKjg",
+         "unpublishedOperations": [
+          {
+            "operationRequest": "eyJkZWx0YSI6eyJwYXRjaGVzIjpbeyJhY3Rpb24iOiJhZGQtc2VydmljZXMiLCJzZXJ2aWNlcyI6W3siaWQiOiJkaWRjb21tIiwicHJpb3JpdHkiOjAsInJlY2lwaWVudEtleXMiOlsiSkRFQnl4WjRyODZQNTIzUzNKRUpwWU1CNUdTNnFmZUYySkRhZkphdnZoZ3kiXSwicm91dGluZ0tleXMiOlsiMmhSTk1Zb1BVRllxZjZXdTh2dHpXUmlzb3p0VG5Eb3BjcGk2MThkcEQxYzgiXSwic2VydmljZUVuZHBvaW50IjoiaHR0cHM6Ly9odWIuZXhhbXBsZS5jb20vLmlkZW50aXR5L2RpZDpleGFtcGxlOjAxMjM0NTY3ODlhYmNkZWYvIiwidHlwZSI6ImRpZC1jb21tdW5pY2F0aW9uIn1dfSx7ImFjdGlvbiI6ImFkZC1wdWJsaWMta2V5cyIsInB1YmxpY0tleXMiOlt7ImlkIjoiY3JlYXRlS2V5IiwicHVibGljS2V5SndrIjp7ImNydiI6IlAtMjU2Iiwia3R5IjoiRUMiLCJ4Ijoic1YwTXlXUTFaMDNkTEV5Vk9NZmZRenAzWjI1YlFfaGR6ZTdBbTloaGdGQSIsInkiOiJtZUF1Nk9sb1lBdnVwZEFlaFBjT0ZCYVJNXzROSFUwR2FuRTNQOWJwMVJrIn0sInB1cnBvc2VzIjpbImF1dGhlbnRpY2F0aW9uIl0sInR5cGUiOiJKc29uV2ViS2V5MjAyMCJ9LHsiaWQiOiJhdXRoIiwicHVibGljS2V5SndrIjp7ImNydiI6IkVkMjU1MTkiLCJrdHkiOiJPS1AiLCJ4IjoiTThFd0p6MHpibFNZSDFhMWVmMFVVcnhBN1Jkb3hsb1BLUFU1Y1lzYWIxbyIsInkiOiIifSwicHVycG9zZXMiOlsiYXNzZXJ0aW9uTWV0aG9kIl0sInR5cGUiOiJFZDI1NTE5VmVyaWZpY2F0aW9uS2V5MjAxOCJ9XX1dLCJ1cGRhdGVDb21taXRtZW50IjoiRWlET2VVTjJyeDNUOS00OHMtM3FydjZiT2JRcUVqSlU5bVFaT2ZKM0Uzck1FZyJ9LCJzdWZmaXhEYXRhIjp7ImFuY2hvck9yaWdpbiI6Imh0dHBzOi8vb3JiLmRvbWFpbjEuY29tIiwiZGVsdGFIYXNoIjoiRWlCZ1VTeHE4Mkd4eFpLaHFkMXpqSWdCdDh2WkxYZHdRdUJrSDBVM05vZTBOZyIsInJlY292ZXJ5Q29tbWl0bWVudCI6IkVpQlh4bEJaNHhzaXNZNVh0QkJ0QzMyYnhueTVzUGx3QXNRb3RDV245bUlwRncifSwidHlwZSI6ImNyZWF0ZSJ9",
+            "protocolVersion": 0,
+            "transactionTime": 1635519155,
+            "type": "create"
+           }
+        ]
       }
    }
 }
@@ -104,8 +113,7 @@ const validDoc = `{
       "recipientKeys" : ["did:example:123456789abcdefghi#key2"],
       "routingKeys" : ["did:example:123456789abcdefghi#key2"]
     }
-  ],
-  "created": "2002-10-10T17:00:00Z"
+  ]
 }`
 
 func TestVDRI_Accept(t *testing.T) {
@@ -1011,9 +1019,7 @@ func TestVDRI_Read(t *testing.T) {
 		didDoc, err := did.ParseDocumentResolution([]byte(validDocResolution))
 		require.NoError(t, err)
 
-		timeNow := time.Now().UTC()
-
-		didDoc.DIDDocument.Created = &timeNow
+		didDoc.DocumentMetadata.Method.UnpublishedOperations[0].TransactionTime = time.Now().Unix()
 		didDoc.DIDDocument.ID = "did:orb:uAAA:domain:1234"
 
 		v.getHTTPVDR = func(url string) (v vdr, e error) {
