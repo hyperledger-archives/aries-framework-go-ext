@@ -250,6 +250,139 @@ func doAllTests(t *testing.T, connString string) {
 	testCloseProviderTwice(t, connString)
 	testQueryWithMultipleTags(t, connString)
 	testQueryWithLessThanGreaterThanOperators(t, connString)
+	testStoreJSONNeedingEscaping(t, connString)
+}
+
+// The JSON stored in this test needs escaping for "." characters in field names due to a limitation of DocumentDB.
+// These tests ensure that escaping and unescaping work as expected.
+func testStoreJSONNeedingEscaping(t *testing.T, connString string) {
+	t.Helper()
+
+	provider, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, provider.Close())
+	}()
+
+	store, err := provider.OpenStore(randomStoreName())
+	require.NoError(t, err)
+
+	t.Run("Success", func(t *testing.T) {
+		type testType1 struct {
+			OneDotHere string `json:"oneDotHere.,omitempty"`
+		}
+
+		testValue1 := testType1{OneDotHere: "SomeValue"}
+
+		testValue1Bytes, err := json.Marshal(testValue1)
+		require.NoError(t, err)
+
+		testKey1 := "TestKey1"
+
+		err = store.Put(testKey1, testValue1Bytes)
+		require.NoError(t, err)
+
+		testValue1BytesRetrieved, err := store.Get(testKey1)
+		require.NoError(t, err)
+
+		var testValue1Retrieved testType1
+
+		err = json.Unmarshal(testValue1BytesRetrieved, &testValue1Retrieved)
+		require.NoError(t, err)
+
+		require.Equal(t, testValue1.OneDotHere, testValue1Retrieved.OneDotHere)
+
+		type testType2 struct {
+			NoDotHere  string `json:"noDotHere,omitempty"`
+			DotInValue string `json:"dotInValue,omitempty"`
+		}
+
+		testValue2 := testType2{
+			NoDotHere:  "SomeValue",
+			DotInValue: "DotHereButItDoesn'tNeedEscaping.",
+		}
+
+		testValue2Bytes, err := json.Marshal(testValue2)
+		require.NoError(t, err)
+
+		testKey2 := "TestKey2"
+
+		err = store.Put(testKey2, testValue2Bytes)
+		require.NoError(t, err)
+
+		testValue2RetrievedBytes, err := store.Get(testKey2)
+		require.NoError(t, err)
+
+		var testValue2Retrieved testType2
+
+		err = json.Unmarshal(testValue2RetrievedBytes, &testValue2Retrieved)
+		require.NoError(t, err)
+
+		require.Equal(t, testValue2.NoDotHere, testValue2Retrieved.NoDotHere)
+		require.Equal(t, testValue2.DotInValue, testValue2Retrieved.DotInValue)
+
+		type testType3Inner struct {
+			SeveralDotsHere string `json:".several.Dots.Here.,omitempty"`
+		}
+
+		type testType3 struct {
+			OneDotHere                string         `json:"oneDotHere.,omitempty"`
+			NoDotHere                 string         `json:"noDotHere,omitempty"`
+			NestedObjectWithDotInName testType3Inner `json:"nestedObject.,omitempty"`
+		}
+
+		testValue3 := testType3{
+			OneDotHere:                "SomeValue",
+			NoDotHere:                 "AlsoSomeValue",
+			NestedObjectWithDotInName: testType3Inner{SeveralDotsHere: "SomeNestedValue"},
+		}
+
+		testValue3Bytes, err := json.Marshal(testValue3)
+		require.NoError(t, err)
+
+		testKey3 := "TestKey3"
+
+		err = store.Put(testKey3, testValue3Bytes)
+		require.NoError(t, err)
+
+		testValue3RetrievedBytes, err := store.Get(testKey3)
+		require.NoError(t, err)
+
+		var testValue3Retrieved testType3
+
+		err = json.Unmarshal(testValue3RetrievedBytes, &testValue3Retrieved)
+		require.NoError(t, err)
+
+		require.Equal(t, testValue3.OneDotHere, testValue3Retrieved.OneDotHere)
+		require.Equal(t, testValue3.NoDotHere, testValue3Retrieved.NoDotHere)
+		require.Equal(t, testValue3.NestedObjectWithDotInName.SeveralDotsHere,
+			testValue3Retrieved.NestedObjectWithDotInName.SeveralDotsHere)
+	})
+	t.Run("Attempt to store JSON with a key containing the backtick (`) character", func(t *testing.T) {
+		testValueUsingBacktickInRootLevel := `{"keyWithBacktick` + "`" + `":"Value"}`
+
+		t.Run("Put", func(t *testing.T) {
+			t.Run("Invalid character in root level", func(t *testing.T) {
+				err := store.Put("TestKey4", []byte(testValueUsingBacktickInRootLevel))
+				require.EqualError(t, err, "JSON keys cannot have \"`\" characters within them. "+
+					"Invalid key: keyWithBacktick`")
+			})
+			t.Run("Invalid character in nested level", func(t *testing.T) {
+				testValueUsingBacktickInNestedLevel := `{"nestedData":{"keyWithBacktick` + "`" + `":"Value"}}`
+
+				err := store.Put("TestKey4", []byte(testValueUsingBacktickInNestedLevel))
+				require.EqualError(t, err, "JSON keys cannot have \"`\" characters within them. "+
+					"Invalid key: keyWithBacktick`")
+			})
+		})
+		t.Run("Batch - invalid character in root level", func(t *testing.T) {
+			operations := []storage.Operation{{Key: "TestKey4", Value: []byte(testValueUsingBacktickInRootLevel)}}
+			err := store.Batch(operations)
+			require.EqualError(t, err, "JSON keys cannot have \"`\" characters within them. "+
+				"Invalid key: keyWithBacktick`")
+		})
+	})
 }
 
 func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) {
@@ -425,7 +558,7 @@ func testMultipleProvidersStoringSameDataAtTheSameTime(t *testing.T, connString 
 	openStores := make([]storage.Store, numberOfProviders)
 
 	for i := 0; i < numberOfProviders; i++ {
-		provider, err := mongodb.NewProvider(connString, mongodb.WithTimeout(time.Second*5),
+		provider, err := mongodb.NewProvider(connString, mongodb.WithTimeout(time.Second*10),
 			mongodb.WithMaxRetries(10),
 			mongodb.WithTimeBetweenRetries(time.Second))
 		require.NoError(t, err)

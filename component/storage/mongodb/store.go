@@ -522,13 +522,18 @@ type store struct {
 
 // Put stores the key + value pair along with the (optional) tags.
 // If tag values are valid int32 or int64, they will be stored as integers in MongoDB, so we can sort numerically later.
+// If storing a JSON value, then any key names (within the JSON) cannot contain "`" characters. This is because we
+// use it as a replacement for "." characters, which are not valid in DocumentDB as JSON key names.
 func (s *store) Put(key string, value []byte, tags ...storage.Tag) error {
 	err := validatePutInput(key, value, tags)
 	if err != nil {
 		return err
 	}
 
-	data := generateDataWrapper(key, value, tags)
+	data, err := generateDataWrapper(key, value, tags)
+	if err != nil {
+		return err
+	}
 
 	return s.executeUpdateOneCommand(key, data)
 }
@@ -681,6 +686,9 @@ func (s *store) Delete(key string) error {
 	return err
 }
 
+// Batch performs multiple Put and/or Delete operations in order.
+// If storing a JSON value, then any key names (within the JSON) cannot contain "`" characters. This is because we
+// use it as a replacement for "." characters, which are not valid in DocumentDB as JSON key names.
 func (s *store) Batch(operations []storage.Operation) error {
 	if len(operations) == 0 {
 		return errors.New("batch requires at least one operation")
@@ -695,7 +703,12 @@ func (s *store) Batch(operations []storage.Operation) error {
 	models := make([]mongo.WriteModel, len(operations))
 
 	for i, operation := range operations {
-		models[i] = generateModelForBulkWriteCall(operation)
+		var err error
+
+		models[i], err = generateModelForBulkWriteCall(operation)
+		if err != nil {
+			return err
+		}
 	}
 
 	return s.executeBulkWriteCommand(models)
@@ -1028,7 +1041,9 @@ func getKeyAndValueFromMongoDBResult(decoder decoder) (key string, value []byte,
 	}
 
 	if data.Doc != nil {
-		dataBytes, errMarshal := json.Marshal(data.Doc)
+		unescapedMap := unescapeForDocumentDB(data.Doc)
+
+		dataBytes, errMarshal := json.Marshal(unescapedMap)
 		if errMarshal != nil {
 			return "", nil, fmt.Errorf("failed to marshal value into bytes: %w", errMarshal)
 		}
@@ -1186,20 +1201,23 @@ func determineOperatorAndSplit(expression string) (mongoDBOperator string, expre
 	}
 }
 
-func generateModelForBulkWriteCall(operation storage.Operation) mongo.WriteModel {
+func generateModelForBulkWriteCall(operation storage.Operation) (mongo.WriteModel, error) {
 	if operation.Value == nil {
-		return mongo.NewDeleteOneModel().SetFilter(bson.M{"_id": operation.Key})
+		return mongo.NewDeleteOneModel().SetFilter(bson.M{"_id": operation.Key}), nil
 	}
 
-	data := generateDataWrapper(operation.Key, operation.Value, operation.Tags)
+	data, err := generateDataWrapper(operation.Key, operation.Value, operation.Tags)
+	if err != nil {
+		return nil, err
+	}
 
 	return mongo.NewUpdateOneModel().
 		SetFilter(bson.M{"_id": operation.Key}).
 		SetUpdate(bson.M{"$set": data}).
-		SetUpsert(true)
+		SetUpsert(true), nil
 }
 
-func generateDataWrapper(key string, value []byte, tags []storage.Tag) dataWrapper {
+func generateDataWrapper(key string, value []byte, tags []storage.Tag) (dataWrapper, error) {
 	tagsAsMap := convertTagSliceToMap(tags)
 
 	data := dataWrapper{
@@ -1214,7 +1232,12 @@ func generateDataWrapper(key string, value []byte, tags []storage.Tag) dataWrapp
 
 	err := jsonDecoder.Decode(&unmarshalledValue)
 	if err == nil {
-		data.Doc = unmarshalledValue
+		escapedMap, errEscape := escapeForDocumentDB(unmarshalledValue)
+		if errEscape != nil {
+			return dataWrapper{}, errEscape
+		}
+
+		data.Doc = escapedMap
 	} else {
 		var unmarshalledStringValue string
 
@@ -1226,5 +1249,55 @@ func generateDataWrapper(key string, value []byte, tags []storage.Tag) dataWrapp
 		}
 	}
 
-	return data
+	return data, nil
+}
+
+// This method does two things:
+// 1. All "." characters in keys (or nested keys) are replaced with "`" characters in order to make them compatible
+//    with DocumentDB.
+// 2. If any "`" characters are discovered in keys (or nested keys), an error is returned, since this would cause
+//    confusion with the scheme described above.
+func escapeForDocumentDB(unescapedMap map[string]interface{}) (map[string]interface{}, error) {
+	escapedMap := make(map[string]interface{})
+
+	for key, value := range unescapedMap {
+		if strings.Contains(key, "`") {
+			return nil,
+				fmt.Errorf(`JSON keys cannot have "`+"`"+`" characters within them. Invalid key: %s`, key)
+		}
+
+		escapedKey := strings.ReplaceAll(key, ".", "`")
+
+		valueAsMap, ok := value.(map[string]interface{})
+		if ok {
+			escapedInnerMap, err := escapeForDocumentDB(valueAsMap)
+			if err != nil {
+				return nil, err
+			}
+
+			escapedMap[escapedKey] = escapedInnerMap
+		} else {
+			escapedMap[escapedKey] = value
+		}
+	}
+
+	return escapedMap, nil
+}
+
+// This method is the inverse of the escapeForDocumentDB method.
+func unescapeForDocumentDB(escapedMap map[string]interface{}) map[string]interface{} {
+	unescapedMap := make(map[string]interface{})
+
+	for escapedKey, value := range escapedMap {
+		unescapedKey := strings.ReplaceAll(escapedKey, "`", ".")
+
+		valueAsMap, ok := value.(map[string]interface{})
+		if ok {
+			unescapedMap[unescapedKey] = unescapeForDocumentDB(valueAsMap)
+		} else {
+			unescapedMap[unescapedKey] = value
+		}
+	}
+
+	return unescapedMap
 }
