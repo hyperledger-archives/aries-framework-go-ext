@@ -1041,7 +1041,7 @@ func getKeyAndValueFromMongoDBResult(decoder decoder) (key string, value []byte,
 	}
 
 	if data.Doc != nil {
-		unescapedMap := unescapeForDocumentDB(data.Doc)
+		unescapedMap := unescapeMapForDocumentDB(data.Doc)
 
 		dataBytes, errMarshal := json.Marshal(unescapedMap)
 		if errMarshal != nil {
@@ -1232,7 +1232,7 @@ func generateDataWrapper(key string, value []byte, tags []storage.Tag) (dataWrap
 
 	err := jsonDecoder.Decode(&unmarshalledValue)
 	if err == nil {
-		escapedMap, errEscape := escapeForDocumentDB(unmarshalledValue)
+		escapedMap, errEscape := escapeMapForDocumentDB(unmarshalledValue)
 		if errEscape != nil {
 			return dataWrapper{}, errEscape
 		}
@@ -1252,52 +1252,121 @@ func generateDataWrapper(key string, value []byte, tags []storage.Tag) (dataWrap
 	return data, nil
 }
 
-// This method does two things:
-// 1. All "." characters in keys (or nested keys) are replaced with "`" characters in order to make them compatible
-//    with DocumentDB.
-// 2. If any "`" characters are discovered in keys (or nested keys), an error is returned, since this would cause
-//    confusion with the scheme described above.
-func escapeForDocumentDB(unescapedMap map[string]interface{}) (map[string]interface{}, error) {
+// escapeMapForDocumentDB recursively travels through the given map and ensures that all keys are safe for DocumentDB.
+// All "." characters in keys are replaced with "`" characters.
+// If any "`" characters are discovered in keys then an error is returned, since this would cause confusion with the
+// scheme described above.
+func escapeMapForDocumentDB(unescapedMap map[string]interface{}) (map[string]interface{}, error) {
 	escapedMap := make(map[string]interface{})
 
-	for key, value := range unescapedMap {
-		if strings.Contains(key, "`") {
-			return nil,
-				fmt.Errorf(`JSON keys cannot have "`+"`"+`" characters within them. Invalid key: %s`, key)
+	for unescapedKey, unescapedValue := range unescapedMap {
+		escapedKey, escapedValue, err := escapeKeyValuePair(unescapedKey, unescapedValue)
+		if err != nil {
+			return nil, err
 		}
 
-		escapedKey := strings.ReplaceAll(key, ".", "`")
-
-		valueAsMap, ok := value.(map[string]interface{})
-		if ok {
-			escapedInnerMap, err := escapeForDocumentDB(valueAsMap)
-			if err != nil {
-				return nil, err
-			}
-
-			escapedMap[escapedKey] = escapedInnerMap
-		} else {
-			escapedMap[escapedKey] = value
-		}
+		escapedMap[escapedKey] = escapedValue
 	}
 
 	return escapedMap, nil
 }
 
-// This method is the inverse of the escapeForDocumentDB method.
-func unescapeForDocumentDB(escapedMap map[string]interface{}) map[string]interface{} {
+func escapeKeyValuePair(unescapedKey string, unescapedValue interface{}) (escapedKey string, escapedValue interface{},
+	err error) {
+	if strings.Contains(unescapedKey, "`") {
+		return "", nil,
+			fmt.Errorf(`JSON keys cannot have "`+"`"+`" characters within them. Invalid key: %s`, unescapedKey)
+	}
+
+	escapedValue, err = escapeValue(unescapedValue)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return escapeKey(unescapedKey), escapedValue, nil
+}
+
+func escapeKey(unescapedKey string) string {
+	return strings.ReplaceAll(unescapedKey, ".", "`")
+}
+
+func escapeValue(unescapedValue interface{}) (interface{}, error) {
+	unescapedValueAsArray, ok := unescapedValue.([]interface{})
+	if ok {
+		return escapeArray(unescapedValueAsArray)
+	}
+
+	unescapedValueAsMap, ok := unescapedValue.(map[string]interface{})
+	if ok {
+		escapedValue, err := escapeMapForDocumentDB(unescapedValueAsMap)
+		if err != nil {
+			return nil, err
+		}
+
+		return escapedValue, nil
+	}
+
+	// In this case, the value is not a nested object or array and so doesn't need escaping.
+	return unescapedValue, nil
+}
+
+func escapeArray(unescapedArray []interface{}) (interface{}, error) {
+	escapedArray := make([]interface{}, len(unescapedArray))
+
+	for i, unescapedValueInUnescapedArray := range unescapedArray {
+		escapedValue, err := escapeValue(unescapedValueInUnescapedArray)
+		if err != nil {
+			return nil, err
+		}
+
+		escapedArray[i] = escapedValue
+	}
+
+	return escapedArray, nil
+}
+
+// This method is the inverse of the escapeMapForDocumentDB method.
+func unescapeMapForDocumentDB(escapedMap map[string]interface{}) map[string]interface{} {
 	unescapedMap := make(map[string]interface{})
 
-	for escapedKey, value := range escapedMap {
-		unescapedKey := strings.ReplaceAll(escapedKey, "`", ".")
+	for escapedKey, escapedValue := range escapedMap {
+		unescapedKey, unescapedValue := unescapeKeyValuePair(escapedKey, escapedValue)
 
-		valueAsMap, ok := value.(map[string]interface{})
-		if ok {
-			unescapedMap[unescapedKey] = unescapeForDocumentDB(valueAsMap)
-		} else {
-			unescapedMap[unescapedKey] = value
-		}
+		unescapedMap[unescapedKey] = unescapedValue
 	}
 
 	return unescapedMap
+}
+
+func unescapeKeyValuePair(escapedKey string, escapedValue interface{}) (key string, unescapedValue interface{}) {
+	return unescapeKey(escapedKey), unescapeValue(escapedValue)
+}
+
+func unescapeKey(escapedKey string) string {
+	return strings.ReplaceAll(escapedKey, "`", ".")
+}
+
+func unescapeValue(escapedValue interface{}) interface{} {
+	escapedValueAsArray, ok := escapedValue.(bson.A)
+	if ok {
+		return unescapeArray(escapedValueAsArray)
+	}
+
+	escapedValueAsMap, ok := escapedValue.(map[string]interface{})
+	if ok {
+		return unescapeMapForDocumentDB(escapedValueAsMap)
+	}
+
+	// In this case, the value is not a nested object or array and so doesn't need unescaping.
+	return escapedValue
+}
+
+func unescapeArray(escapedArray []interface{}) interface{} {
+	unescapedArray := make([]interface{}, len(escapedArray))
+
+	for i, escapedValueInEscapedArray := range escapedArray {
+		unescapedArray[i] = unescapeValue(escapedValueInEscapedArray)
+	}
+
+	return unescapedArray
 }

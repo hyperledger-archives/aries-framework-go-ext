@@ -253,138 +253,6 @@ func doAllTests(t *testing.T, connString string) {
 	testStoreJSONNeedingEscaping(t, connString)
 }
 
-// The JSON stored in this test needs escaping for "." characters in field names due to a limitation of DocumentDB.
-// These tests ensure that escaping and unescaping work as expected.
-func testStoreJSONNeedingEscaping(t *testing.T, connString string) {
-	t.Helper()
-
-	provider, err := mongodb.NewProvider(connString)
-	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, provider.Close())
-	}()
-
-	store, err := provider.OpenStore(randomStoreName())
-	require.NoError(t, err)
-
-	t.Run("Success", func(t *testing.T) {
-		type testType1 struct {
-			OneDotHere string `json:"oneDotHere.,omitempty"`
-		}
-
-		testValue1 := testType1{OneDotHere: "SomeValue"}
-
-		testValue1Bytes, err := json.Marshal(testValue1)
-		require.NoError(t, err)
-
-		testKey1 := "TestKey1"
-
-		err = store.Put(testKey1, testValue1Bytes)
-		require.NoError(t, err)
-
-		testValue1BytesRetrieved, err := store.Get(testKey1)
-		require.NoError(t, err)
-
-		var testValue1Retrieved testType1
-
-		err = json.Unmarshal(testValue1BytesRetrieved, &testValue1Retrieved)
-		require.NoError(t, err)
-
-		require.Equal(t, testValue1.OneDotHere, testValue1Retrieved.OneDotHere)
-
-		type testType2 struct {
-			NoDotHere  string `json:"noDotHere,omitempty"`
-			DotInValue string `json:"dotInValue,omitempty"`
-		}
-
-		testValue2 := testType2{
-			NoDotHere:  "SomeValue",
-			DotInValue: "DotHereButItDoesn'tNeedEscaping.",
-		}
-
-		testValue2Bytes, err := json.Marshal(testValue2)
-		require.NoError(t, err)
-
-		testKey2 := "TestKey2"
-
-		err = store.Put(testKey2, testValue2Bytes)
-		require.NoError(t, err)
-
-		testValue2RetrievedBytes, err := store.Get(testKey2)
-		require.NoError(t, err)
-
-		var testValue2Retrieved testType2
-
-		err = json.Unmarshal(testValue2RetrievedBytes, &testValue2Retrieved)
-		require.NoError(t, err)
-
-		require.Equal(t, testValue2.NoDotHere, testValue2Retrieved.NoDotHere)
-		require.Equal(t, testValue2.DotInValue, testValue2Retrieved.DotInValue)
-
-		type testType3Inner struct {
-			SeveralDotsHere string `json:".several.Dots.Here.,omitempty"`
-		}
-
-		type testType3 struct {
-			OneDotHere                string         `json:"oneDotHere.,omitempty"`
-			NoDotHere                 string         `json:"noDotHere,omitempty"`
-			NestedObjectWithDotInName testType3Inner `json:"nestedObject.,omitempty"`
-		}
-
-		testValue3 := testType3{
-			OneDotHere:                "SomeValue",
-			NoDotHere:                 "AlsoSomeValue",
-			NestedObjectWithDotInName: testType3Inner{SeveralDotsHere: "SomeNestedValue"},
-		}
-
-		testValue3Bytes, err := json.Marshal(testValue3)
-		require.NoError(t, err)
-
-		testKey3 := "TestKey3"
-
-		err = store.Put(testKey3, testValue3Bytes)
-		require.NoError(t, err)
-
-		testValue3RetrievedBytes, err := store.Get(testKey3)
-		require.NoError(t, err)
-
-		var testValue3Retrieved testType3
-
-		err = json.Unmarshal(testValue3RetrievedBytes, &testValue3Retrieved)
-		require.NoError(t, err)
-
-		require.Equal(t, testValue3.OneDotHere, testValue3Retrieved.OneDotHere)
-		require.Equal(t, testValue3.NoDotHere, testValue3Retrieved.NoDotHere)
-		require.Equal(t, testValue3.NestedObjectWithDotInName.SeveralDotsHere,
-			testValue3Retrieved.NestedObjectWithDotInName.SeveralDotsHere)
-	})
-	t.Run("Attempt to store JSON with a key containing the backtick (`) character", func(t *testing.T) {
-		testValueUsingBacktickInRootLevel := `{"keyWithBacktick` + "`" + `":"Value"}`
-
-		t.Run("Put", func(t *testing.T) {
-			t.Run("Invalid character in root level", func(t *testing.T) {
-				err := store.Put("TestKey4", []byte(testValueUsingBacktickInRootLevel))
-				require.EqualError(t, err, "JSON keys cannot have \"`\" characters within them. "+
-					"Invalid key: keyWithBacktick`")
-			})
-			t.Run("Invalid character in nested level", func(t *testing.T) {
-				testValueUsingBacktickInNestedLevel := `{"nestedData":{"keyWithBacktick` + "`" + `":"Value"}}`
-
-				err := store.Put("TestKey4", []byte(testValueUsingBacktickInNestedLevel))
-				require.EqualError(t, err, "JSON keys cannot have \"`\" characters within them. "+
-					"Invalid key: keyWithBacktick`")
-			})
-		})
-		t.Run("Batch - invalid character in root level", func(t *testing.T) {
-			operations := []storage.Operation{{Key: "TestKey4", Value: []byte(testValueUsingBacktickInRootLevel)}}
-			err := store.Batch(operations)
-			require.EqualError(t, err, "JSON keys cannot have \"`\" characters within them. "+
-				"Invalid key: keyWithBacktick`")
-		})
-	})
-}
-
 func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) {
 	t.Helper()
 
@@ -1086,6 +954,313 @@ func testQueryWithLessThanGreaterThanOperators(t *testing.T, connString string) 
 			"the immediate value on the right side side must be a valid integer: strconv.Atoi: parsing "+
 			`"ThisIsNotAnInteger": invalid syntax`)
 		require.Nil(t, iterator)
+	})
+}
+
+func testStoreJSONNeedingEscaping(t *testing.T, connString string) {
+	t.Helper()
+
+	provider, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, provider.Close())
+	}()
+
+	store, err := provider.OpenStore(randomStoreName())
+	require.NoError(t, err)
+
+	t.Run("Success", func(t *testing.T) {
+		t.Run("One simple key-value pair", func(t *testing.T) {
+			type simpleType struct {
+				OneDotHere string `json:"oneDotHere.,omitempty"`
+			}
+
+			testValue := simpleType{OneDotHere: "SomeValue"}
+
+			testValueBytes, err := json.Marshal(testValue)
+			require.NoError(t, err)
+
+			testKey := "TestKey1"
+
+			err = store.Put(testKey, testValueBytes)
+			require.NoError(t, err)
+
+			testValueBytesRetrieved, err := store.Get(testKey)
+			require.NoError(t, err)
+
+			var testValueRetrieved simpleType
+
+			err = json.Unmarshal(testValueBytesRetrieved, &testValueRetrieved)
+			require.NoError(t, err)
+
+			require.Equal(t, testValue.OneDotHere, testValueRetrieved.OneDotHere)
+		})
+		t.Run("Two key-value pairs, no escaping needed", func(t *testing.T) {
+			type testType struct {
+				NoDotHere  string `json:"noDotHere,omitempty"`
+				DotInValue string `json:"dotInValue,omitempty"`
+			}
+
+			testValue := testType{
+				NoDotHere:  "SomeValue",
+				DotInValue: "DotHereButItDoesn'tNeedEscaping.",
+			}
+
+			testValueBytes, err := json.Marshal(testValue)
+			require.NoError(t, err)
+
+			testKey := "TestKey2"
+
+			err = store.Put(testKey, testValueBytes)
+			require.NoError(t, err)
+
+			testValueRetrievedBytes, err := store.Get(testKey)
+			require.NoError(t, err)
+
+			var testValueRetrieved testType
+
+			err = json.Unmarshal(testValueRetrievedBytes, &testValueRetrieved)
+			require.NoError(t, err)
+
+			require.True(t, reflect.DeepEqual(testValueRetrieved, testValue),
+				"Value retrieved from storage not the same as what was put in originally")
+		})
+		t.Run("Two key-value pairs, only one needs escaping", func(t *testing.T) {
+			type testType struct {
+				OneDotHere string `json:"oneDotHere.,omitempty"`
+				DotInValue string `json:"dotInValue,omitempty"`
+			}
+
+			testValue := testType{
+				OneDotHere: "SomeValue",
+				DotInValue: "DotHereButItDoesn'tNeedEscaping.",
+			}
+
+			testValueBytes, err := json.Marshal(testValue)
+			require.NoError(t, err)
+
+			testKey := "TestKey3"
+
+			err = store.Put(testKey, testValueBytes)
+			require.NoError(t, err)
+
+			testValueRetrievedBytes, err := store.Get(testKey)
+			require.NoError(t, err)
+
+			var testValueRetrieved testType
+
+			err = json.Unmarshal(testValueRetrievedBytes, &testValueRetrieved)
+			require.NoError(t, err)
+
+			require.True(t, reflect.DeepEqual(testValueRetrieved, testValue),
+				"Value retrieved from storage not the same as what was put in originally")
+		})
+		t.Run("Nested object", func(t *testing.T) {
+			type testTypeInner struct {
+				SeveralDotsHere string `json:".several.Dots.Here.,omitempty"`
+			}
+
+			type testType struct {
+				OneDotHere                string        `json:"oneDotHere.,omitempty"`
+				NoDotHere                 string        `json:"noDotHere,omitempty"`
+				NestedObjectWithDotInName testTypeInner `json:"nestedObject.,omitempty"`
+			}
+
+			testValue := testType{
+				OneDotHere:                "SomeValue",
+				NoDotHere:                 "AlsoSomeValue",
+				NestedObjectWithDotInName: testTypeInner{SeveralDotsHere: "SomeNestedValue"},
+			}
+
+			testValueBytes, err := json.Marshal(testValue)
+			require.NoError(t, err)
+
+			testKey := "TestKey4"
+
+			err = store.Put(testKey, testValueBytes)
+			require.NoError(t, err)
+
+			testValueRetrievedBytes, err := store.Get(testKey)
+			require.NoError(t, err)
+
+			var testValueRetrieved testType
+
+			err = json.Unmarshal(testValueRetrievedBytes, &testValueRetrieved)
+			require.NoError(t, err)
+
+			require.True(t, reflect.DeepEqual(testValueRetrieved, testValue),
+				"Value retrieved from storage not the same as what was put in originally")
+		})
+		t.Run("Array", func(t *testing.T) {
+			type testTypeInner struct {
+				SeveralDotsHere string `json:".several.Dots.Here.,omitempty"`
+			}
+
+			type testType struct {
+				OneDotHere           string          `json:"oneDotHere.,omitempty"`
+				NoDotHere            string          `json:"noDotHere,omitempty"`
+				ArrayOfNestedObjects []testTypeInner `json:"nestedObject.,omitempty"`
+			}
+
+			testValue := testType{
+				OneDotHere: "SomeValue",
+				NoDotHere:  "AlsoSomeValue",
+				ArrayOfNestedObjects: []testTypeInner{
+					{SeveralDotsHere: "SomeNestedValue1"},
+					{SeveralDotsHere: "SomeNestedValue2"},
+				},
+			}
+
+			testValueBytes, err := json.Marshal(testValue)
+			require.NoError(t, err)
+
+			testKey := "TestKey5"
+
+			err = store.Put(testKey, testValueBytes)
+			require.NoError(t, err)
+
+			testValueRetrievedBytes, err := store.Get(testKey)
+			require.NoError(t, err)
+
+			var testValueRetrieved testType
+
+			err = json.Unmarshal(testValueRetrievedBytes, &testValueRetrieved)
+			require.NoError(t, err)
+
+			require.True(t, reflect.DeepEqual(testValueRetrieved, testValue),
+				"Value retrieved from storage not the same as what was put in originally")
+		})
+		t.Run("Big, complex object with many different types and lots of nesting and arrays", func(t *testing.T) {
+			type leaf struct {
+				NoDotHere       string  `json:"noDotHere,omitempty"`
+				OneDotHere      bool    `json:"oneDotHere.,omitempty"`
+				SeveralDotsHere float64 `json:".several.Dots.Here.,omitempty"`
+			}
+
+			type smallerBranch struct {
+				OneDotHere      string  `json:"oneDotHere.,omitempty"`
+				SeveralDotsHere float32 `json:".several.Dots.Here.,omitempty"`
+				Leaf            leaf    `json:"leaf...,omitempty"`
+			}
+
+			type biggerBranch struct {
+				SeveralDotsHere int             `json:".several.Dots.Here.,omitempty"`
+				NoDotHere       string          `json:"noDotHere,omitempty"`
+				SmallerBranch   smallerBranch   `json:"smallerBranch,omitempty"`
+				SmallerBranches []smallerBranch `json:"smaller.Branches,omitempty"`
+			}
+
+			type treeRoot struct {
+				OneDotHere           string       `json:"oneDotHere.,omitempty"`
+				NoDotHere            string       `json:"noDotHere,omitempty"`
+				AlsoNoDotHere        int          `json:"alsoNoDotHere,omitempty"`
+				DeeplyNestedObject1  biggerBranch `json:"deeply.NestedObject1,omitempty"`
+				ArrayOfNestedObjects []leaf       `json:"arrayOfNestedObjects.,omitempty"`
+				DeeplyNestedObject2  biggerBranch `json:"deeplyNestedObject2,omitempty"`
+			}
+
+			testValue := treeRoot{
+				OneDotHere:    "SomeValue1",
+				NoDotHere:     "SomeValue2",
+				AlsoNoDotHere: 3,
+				DeeplyNestedObject1: biggerBranch{
+					SeveralDotsHere: -4,
+					NoDotHere:       "SomeValue3",
+					SmallerBranch: smallerBranch{
+						OneDotHere:      "SomeValue4",
+						SeveralDotsHere: 0.65,
+						Leaf: leaf{
+							NoDotHere:       "SomeValue5",
+							OneDotHere:      true,
+							SeveralDotsHere: -17.6789323,
+						},
+					},
+					SmallerBranches: []smallerBranch{
+						{
+							OneDotHere:      "SomeValue5",
+							SeveralDotsHere: 100.654,
+							Leaf: leaf{
+								NoDotHere:       "SomeValue6",
+								OneDotHere:      false,
+								SeveralDotsHere: 101,
+							},
+						},
+						{
+							OneDotHere:      "SomeValue7",
+							SeveralDotsHere: 1,
+							Leaf: leaf{
+								NoDotHere:       "SomeValue8",
+								OneDotHere:      false,
+								SeveralDotsHere: 1994,
+							},
+						},
+					},
+				},
+				ArrayOfNestedObjects: []leaf{
+					{
+						NoDotHere:       "SomeValue9",
+						OneDotHere:      true,
+						SeveralDotsHere: 3.14159,
+					},
+					{
+						NoDotHere:       "Some.Value10",
+						OneDotHere:      false,
+						SeveralDotsHere: 589,
+					},
+				},
+			}
+
+			testValueBytes, err := json.Marshal(testValue)
+			require.NoError(t, err)
+
+			testKey := "TestKey6"
+
+			err = store.Put(testKey, testValueBytes)
+			require.NoError(t, err)
+
+			testValueRetrievedBytes, err := store.Get(testKey)
+			require.NoError(t, err)
+
+			var testValueRetrieved treeRoot
+
+			err = json.Unmarshal(testValueRetrievedBytes, &testValueRetrieved)
+			require.NoError(t, err)
+
+			require.True(t, reflect.DeepEqual(testValueRetrieved, testValue),
+				"Value retrieved from storage not the same as what was put in originally")
+		})
+	})
+	t.Run("Attempt to store JSON with a key containing the backtick (`) character", func(t *testing.T) {
+		testValueUsingBacktickInRootLevel := `{"keyWithBacktick` + "`" + `":"Value"}`
+
+		t.Run("Put", func(t *testing.T) {
+			t.Run("Invalid character in root level", func(t *testing.T) {
+				err := store.Put("TestKey4", []byte(testValueUsingBacktickInRootLevel))
+				require.EqualError(t, err, "JSON keys cannot have \"`\" characters within them. "+
+					"Invalid key: keyWithBacktick`")
+			})
+			t.Run("Invalid character in nested object", func(t *testing.T) {
+				testValueUsingBacktickInNestedLevel := `{"nestedData":{"keyWithBacktick` + "`" + `":"Value"}}`
+
+				err := store.Put("TestKey4", []byte(testValueUsingBacktickInNestedLevel))
+				require.EqualError(t, err, "JSON keys cannot have \"`\" characters within them. "+
+					"Invalid key: keyWithBacktick`")
+			})
+			t.Run("Invalid character in object in array", func(t *testing.T) {
+				testValueUsingBacktickInNestedLevel := `{"arrayData":[{"keyWithBacktick` + "`" + `":"Value"}]}`
+
+				err := store.Put("TestKey4", []byte(testValueUsingBacktickInNestedLevel))
+				require.EqualError(t, err, "JSON keys cannot have \"`\" characters within them. "+
+					"Invalid key: keyWithBacktick`")
+			})
+		})
+		t.Run("Batch - invalid character in root level", func(t *testing.T) {
+			operations := []storage.Operation{{Key: "TestKey4", Value: []byte(testValueUsingBacktickInRootLevel)}}
+			err := store.Batch(operations)
+			require.EqualError(t, err, "JSON keys cannot have \"`\" characters within them. "+
+				"Invalid key: keyWithBacktick`")
+		})
 	})
 }
 
