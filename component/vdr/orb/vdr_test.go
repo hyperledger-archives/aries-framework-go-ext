@@ -53,6 +53,30 @@ const validDocResolution = `
 }
 `
 
+//nolint: lll
+const validDocResolutionCachedUpdate = `
+{
+   "@context":"https://w3id.org/did-resolution/v1",
+   "didDocument": ` + validDoc + `,
+   "didDocumentMetadata":{
+      "canonicalId":"did:ex:123333",
+      "method":{
+         "published":true,
+         "recoveryCommitment":"EiB1u5HnTYKVHrmemOpZtrGlc6BoaWWHwNAd-k7CrLKHOg",
+         "updateCommitment":"EiAiTB0QR_Skh3i-fzDSeFgjVoMEDsXYoVIsA56-GUsKjg",
+         "unpublishedOperations": [
+          {
+            "operationRequest": "eyJkZWx0YSI6eyJwYXRjaGVzIjpbeyJhY3Rpb24iOiJhZGQtc2VydmljZXMiLCJzZXJ2aWNlcyI6W3siaWQiOiJkaWRjb21tIiwicHJpb3JpdHkiOjAsInJlY2lwaWVudEtleXMiOlsiSkRFQnl4WjRyODZQNTIzUzNKRUpwWU1CNUdTNnFmZUYySkRhZkphdnZoZ3kiXSwicm91dGluZ0tleXMiOlsiMmhSTk1Zb1BVRllxZjZXdTh2dHpXUmlzb3p0VG5Eb3BjcGk2MThkcEQxYzgiXSwic2VydmljZUVuZHBvaW50IjoiaHR0cHM6Ly9odWIuZXhhbXBsZS5jb20vLmlkZW50aXR5L2RpZDpleGFtcGxlOjAxMjM0NTY3ODlhYmNkZWYvIiwidHlwZSI6ImRpZC1jb21tdW5pY2F0aW9uIn1dfSx7ImFjdGlvbiI6ImFkZC1wdWJsaWMta2V5cyIsInB1YmxpY0tleXMiOlt7ImlkIjoiY3JlYXRlS2V5IiwicHVibGljS2V5SndrIjp7ImNydiI6IlAtMjU2Iiwia3R5IjoiRUMiLCJ4Ijoic1YwTXlXUTFaMDNkTEV5Vk9NZmZRenAzWjI1YlFfaGR6ZTdBbTloaGdGQSIsInkiOiJtZUF1Nk9sb1lBdnVwZEFlaFBjT0ZCYVJNXzROSFUwR2FuRTNQOWJwMVJrIn0sInB1cnBvc2VzIjpbImF1dGhlbnRpY2F0aW9uIl0sInR5cGUiOiJKc29uV2ViS2V5MjAyMCJ9LHsiaWQiOiJhdXRoIiwicHVibGljS2V5SndrIjp7ImNydiI6IkVkMjU1MTkiLCJrdHkiOiJPS1AiLCJ4IjoiTThFd0p6MHpibFNZSDFhMWVmMFVVcnhBN1Jkb3hsb1BLUFU1Y1lzYWIxbyIsInkiOiIifSwicHVycG9zZXMiOlsiYXNzZXJ0aW9uTWV0aG9kIl0sInR5cGUiOiJFZDI1NTE5VmVyaWZpY2F0aW9uS2V5MjAxOCJ9XX1dLCJ1cGRhdGVDb21taXRtZW50IjoiRWlET2VVTjJyeDNUOS00OHMtM3FydjZiT2JRcUVqSlU5bVFaT2ZKM0Uzck1FZyJ9LCJzdWZmaXhEYXRhIjp7ImFuY2hvck9yaWdpbiI6Imh0dHBzOi8vb3JiLmRvbWFpbjEuY29tIiwiZGVsdGFIYXNoIjoiRWlCZ1VTeHE4Mkd4eFpLaHFkMXpqSWdCdDh2WkxYZHdRdUJrSDBVM05vZTBOZyIsInJlY292ZXJ5Q29tbWl0bWVudCI6IkVpQlh4bEJaNHhzaXNZNVh0QkJ0QzMyYnhueTVzUGx3QXNRb3RDV245bUlwRncifSwidHlwZSI6ImNyZWF0ZSJ9",
+            "protocolVersion": 0,
+            "transactionTime": 1635519155,
+            "type": "update"
+           }
+        ]
+      }
+   }
+}
+`
+
 const validDocResolutionNotPublished = `
 {
    "@context":"https://w3id.org/did-resolution/v1",
@@ -1039,9 +1063,41 @@ func TestVDRI_Read(t *testing.T) {
 
 		time.Sleep(2 * time.Second)
 
-		_, err = v.Read("did:orb:interim:domain:1234")
+		_, err = v.Read("did:orb:uAAA:domain:1234")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unanchored DID reach max time for usage")
+	})
+
+	t.Run("test cached updated did reach max time", func(t *testing.T) {
+		v, err := New(nil, WithDomain("d1"), WithUnanchoredMaxLifeTime(2*time.Second))
+		require.NoError(t, err)
+
+		didDoc, err := did.ParseDocumentResolution([]byte(validDocResolutionCachedUpdate))
+		require.NoError(t, err)
+
+		didDoc.DocumentMetadata.Method.UnpublishedOperations[0].TransactionTime = time.Now().Unix()
+		didDoc.DIDDocument.ID = "did:orb:uAAA:domain:1234"
+
+		v.getHTTPVDR = func(url string) (v vdr, e error) {
+			return &mockvdr.MockVDR{
+				ReadFunc: func(didID string, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
+					return didDoc, nil
+				},
+			}, nil
+		}
+
+		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 1}, nil
+		}}
+
+		_, err = v.Read("did:orb:uAAA:domain:1234")
+		require.NoError(t, err)
+
+		time.Sleep(2 * time.Second)
+
+		_, err = v.Read("did:orb:uAAA:domain:1234")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cached updated DID reach max time for usage")
 	})
 
 	t.Run("test error from fetch endpoint from domain", func(t *testing.T) {

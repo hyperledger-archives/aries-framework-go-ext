@@ -442,10 +442,14 @@ func (v *VDR) checkUnanchoredDIDTime(didRes *docdid.DocResolution) error {
 	}
 
 	for _, o := range didRes.DocumentMetadata.Method.UnpublishedOperations {
-		if o.Type == "create" {
+		if o.Type == "create" || o.Type == "update" {
 			rejectTime := time.Unix(o.TransactionTime, 0).UTC().Add(*v.unanchoredMaxLifeTime)
 
 			if time.Now().In(time.UTC).After(rejectTime) {
+				if o.Type == "update" {
+					return fmt.Errorf("cached updated DID reach max time for usage")
+				}
+
 				return fmt.Errorf("unanchored DID reach max time for usage")
 			}
 		}
