@@ -19,6 +19,7 @@ services:
       - ORB_EXTERNAL_ENDPOINT=https://testnet.orb.local
       - ORB_TLS_CERTIFICATE=/etc/orb/tls/ec-pubCert.pem
       - ORB_TLS_KEY=/etc/orb/tls/ec-key.pem
+      - ORB_TLS_CACERTS=/etc/orb/tls/ec-cacert.pem
       - DID_NAMESPACE=did:orb
       - ALLOWED_ORIGINS=https://testnet.orb.local,https://orb2,ipns://k51qzi5uqu5dgkmm1afrkmex5mzpu5r774jstpxjmro6mdsaullur27nfxle1q
       - BATCH_WRITER_TIMEOUT=${BATCH_TIMEOUT}
@@ -63,6 +64,7 @@ services:
       - ORB_EXTERNAL_ENDPOINT=https://orb2
       - ORB_TLS_CERTIFICATE=/etc/orb/tls/ec-pubCert.pem
       - ORB_TLS_KEY=/etc/orb/tls/ec-key.pem
+      - ORB_TLS_CACERTS=/etc/orb/tls/ec-cacert.pem
       - DID_NAMESPACE=did:orb
       - ALLOWED_ORIGINS=https://testnet.orb.local,ipns://k51qzi5uqu5dgkmm1afrkmex5mzpu5r774jstpxjmro6mdsaullur27nfxle1q
       - BATCH_WRITER_TIMEOUT=${BATCH_TIMEOUT}
