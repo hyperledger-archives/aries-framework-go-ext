@@ -34,7 +34,9 @@ import (
 	"github.com/trustbloc/orb/pkg/discovery/endpoint/client"
 	"github.com/trustbloc/orb/pkg/discovery/endpoint/client/models"
 	"github.com/trustbloc/orb/pkg/hashlink"
+	"github.com/trustbloc/orb/pkg/orbclient/resolutionverifier"
 	"github.com/trustbloc/sidetree-core-go/pkg/commitment"
+	"github.com/trustbloc/sidetree-core-go/pkg/document"
 	"github.com/trustbloc/sidetree-core-go/pkg/util/pubkey"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/internal/ldcontext"
@@ -86,6 +88,18 @@ const (
 	Recover
 )
 
+// VerifyResolutionResultType verify resolution result type.
+type VerifyResolutionResultType int
+
+const (
+	// All will verify document if it has unpublished or published operations.
+	All VerifyResolutionResultType = iota
+	// Unpublished will verify document only if it has unpublished operations.
+	Unpublished
+	// None will not verify document.
+	None
+)
+
 // ResolveDIDRetry resolve did retry.
 type ResolveDIDRetry struct {
 	MaxNumber int
@@ -97,6 +111,10 @@ type sidetreeClient interface {
 	UpdateDID(didID string, opts ...update.Option) error
 	RecoverDID(did string, opts ...recovery.Option) error
 	DeactivateDID(did string, opts ...deactivate.Option) error
+}
+
+type verifierResolutionResult interface {
+	Verify(input *document.ResolutionResult) error
 }
 
 type vdr interface {
@@ -115,18 +133,20 @@ type SelectDomainService interface {
 
 // VDR bloc.
 type VDR struct {
-	getHTTPVDR            func(url string) (vdr, error) // needed for unit test
-	tlsConfig             *tls.Config
-	unanchoredMaxLifeTime *time.Duration
-	authToken             string
-	domains               []string
-	disableProofCheck     bool
-	sidetreeClient        sidetreeClient
-	keyRetriever          KeyRetriever
-	discoveryService      discoveryService
-	documentLoader        jsonld.DocumentLoader
-	ipfsEndpoint          string
-	selectDomainSvc       SelectDomainService
+	getHTTPVDR                 func(url string) (vdr, error) // needed for unit test
+	tlsConfig                  *tls.Config
+	unanchoredMaxLifeTime      *time.Duration
+	authToken                  string
+	domains                    []string
+	disableProofCheck          bool
+	sidetreeClient             sidetreeClient
+	keyRetriever               KeyRetriever
+	discoveryService           discoveryService
+	documentLoader             jsonld.DocumentLoader
+	ipfsEndpoint               string
+	selectDomainSvc            SelectDomainService
+	verifyResolutionResultType VerifyResolutionResultType
+	verifier                   verifierResolutionResult
 }
 
 // KeyRetriever key retriever.
@@ -138,7 +158,7 @@ type KeyRetriever interface {
 
 // New creates new orb VDR.
 func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
-	v := &VDR{domains: make([]string, 0), selectDomainSvc: lb.NewRoundRobin()}
+	v := &VDR{domains: make([]string, 0), selectDomainSvc: lb.NewRoundRobin(), verifyResolutionResultType: Unpublished}
 
 	for _, opt := range opts {
 		opt(v)
@@ -155,6 +175,13 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 
 	v.sidetreeClient = sidetree.New(sidetree.WithAuthToken(v.authToken), sidetree.WithTLSConfig(v.tlsConfig))
 
+	var err error
+
+	v.verifier, err = resolutionverifier.New(fmt.Sprintf("did:%s", DIDMethod))
+	if err != nil {
+		return nil, err
+	}
+
 	v.getHTTPVDR = func(url string) (vdr, error) {
 		return httpbinding.New(url,
 			httpbinding.WithTLSConfig(v.tlsConfig), httpbinding.WithResolveAuthToken(v.authToken),
@@ -162,8 +189,6 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 	}
 
 	v.keyRetriever = keyRetriever
-
-	var err error
 
 	c := &http.Client{
 		Transport: &http.Transport{TLSClientConfig: v.tlsConfig},
@@ -359,7 +384,7 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 					return nil, errResolve
 				}
 
-				if errCheck := v.checkUnanchoredDIDTime(docRes); errCheck != nil {
+				if errCheck := v.verifyDID(docRes); errCheck != nil {
 					return nil, errCheck
 				}
 
@@ -429,14 +454,48 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 		return nil, fmt.Errorf("failed to fetch correct did from min resolvers")
 	}
 
-	if err := v.checkUnanchoredDIDTime(docResolution); err != nil {
+	if err := v.verifyDID(docResolution); err != nil {
 		return nil, err
 	}
 
 	return docResolution, nil
 }
 
-func (v *VDR) checkUnanchoredDIDTime(didRes *docdid.DocResolution) error {
+func (v *VDR) verifyDID(didRes *docdid.DocResolution) error { // nolint:gocognit,gocyclo
+	// verify resolution result
+	if didRes.DocumentMetadata != nil && didRes.DocumentMetadata.Method != nil { //nolint:nestif
+		if (v.verifyResolutionResultType == Unpublished &&
+			len(didRes.DocumentMetadata.Method.UnpublishedOperations) > 0) || v.verifyResolutionResultType == All {
+			docRes := &document.ResolutionResult{}
+
+			didDocBytes, err := didRes.DIDDocument.JSONBytes()
+			if err != nil {
+				return err
+			}
+
+			docRes.Document, err = document.FromBytes(didDocBytes)
+			if err != nil {
+				return err
+			}
+
+			documentMetadataBytes, err := json.Marshal(didRes.DocumentMetadata)
+			if err != nil {
+				return err
+			}
+
+			if err := json.Unmarshal(documentMetadataBytes, &docRes.DocumentMetadata); err != nil {
+				return err
+			}
+
+			docRes.Context = didRes.Context[0]
+
+			if err := v.verifier.Verify(docRes); err != nil {
+				return err
+			}
+		}
+	}
+
+	// verify unanchored max life time
 	if v.unanchoredMaxLifeTime == nil {
 		return nil
 	}
@@ -942,6 +1001,13 @@ func WithTLSConfig(tlsConfig *tls.Config) Option {
 func WithUnanchoredMaxLifeTime(duration time.Duration) Option {
 	return func(opts *VDR) {
 		opts.unanchoredMaxLifeTime = &duration
+	}
+}
+
+// WithVerifyResolutionResultType option is set verify resolution result type.
+func WithVerifyResolutionResultType(v VerifyResolutionResultType) Option {
+	return func(opts *VDR) {
+		opts.verifyResolutionResultType = v
 	}
 }
 
