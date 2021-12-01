@@ -22,6 +22,7 @@ import (
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/orb/pkg/discovery/endpoint/client/models"
+	"github.com/trustbloc/sidetree-core-go/pkg/document"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/create"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/deactivate"
@@ -1058,6 +1059,8 @@ func TestVDRI_Read(t *testing.T) {
 			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 1}, nil
 		}}
 
+		v.verifier = &mockVerifierResolutionResult{}
+
 		_, err = v.Read("did:orb:uAAA:domain:1234")
 		require.NoError(t, err)
 
@@ -1089,6 +1092,8 @@ func TestVDRI_Read(t *testing.T) {
 		v.discoveryService = &mockDiscoveryService{getEndpointFunc: func(domain string) (*models.Endpoint, error) {
 			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 1}, nil
 		}}
+
+		v.verifier = &mockVerifierResolutionResult{}
 
 		_, err = v.Read("did:orb:uAAA:domain:1234")
 		require.NoError(t, err)
@@ -1202,4 +1207,10 @@ func (m *mockDiscoveryService) GetEndpointFromAnchorOrigin(didURI string) (*mode
 	}
 
 	return nil, nil
+}
+
+type mockVerifierResolutionResult struct{}
+
+func (m *mockVerifierResolutionResult) Verify(input *document.ResolutionResult) error {
+	return nil
 }
