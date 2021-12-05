@@ -689,6 +689,9 @@ func (s *store) Delete(key string) error {
 // Batch performs multiple Put and/or Delete operations in order.
 // If storing a JSON value, then any key names (within the JSON) cannot contain "`" characters. This is because we
 // use it as a replacement for "." characters, which are not valid in DocumentDB as JSON key names.
+// Put operations can be sped up by making use of the storage.PutOptions.IsNewKey option for any keys that you know
+// for sure do not already exist in the database. If this option is used and the key does exist, then this method will
+// return an error.
 func (s *store) Batch(operations []storage.Operation) error {
 	if len(operations) == 0 {
 		return errors.New("batch requires at least one operation")
@@ -702,16 +705,24 @@ func (s *store) Batch(operations []storage.Operation) error {
 
 	models := make([]mongo.WriteModel, len(operations))
 
+	var atLeastOneInsertOneModel bool
+
 	for i, operation := range operations {
 		var err error
 
-		models[i], err = generateModelForBulkWriteCall(operation)
+		var isInsertOneModel bool
+
+		models[i], isInsertOneModel, err = generateModelForBulkWriteCall(operation)
 		if err != nil {
 			return err
 		}
+
+		if isInsertOneModel {
+			atLeastOneInsertOneModel = true
+		}
 	}
 
-	return s.executeBulkWriteCommand(models)
+	return s.executeBulkWriteCommand(models, atLeastOneInsertOneModel)
 }
 
 // Flush doesn't do anything since this store type doesn't queue values.
@@ -789,7 +800,7 @@ func (s *store) collectBulkGetResults(keys []string, cursor *mongo.Cursor) ([][]
 	return allValues, nil
 }
 
-func (s *store) executeBulkWriteCommand(models []mongo.WriteModel) error {
+func (s *store) executeBulkWriteCommand(models []mongo.WriteModel, atLeastOneInsertOneModel bool) error {
 	var attemptsMade int
 
 	return backoff.Retry(func() error {
@@ -803,16 +814,41 @@ func (s *store) executeBulkWriteCommand(models []mongo.WriteModel) error {
 			// If using MongoDB 4.0.0 (or DocumentDB 4.0.0), and this is called multiple times in parallel on the
 			// same key(s), then it's possible to get a transient error here. We need to retry in this case.
 			if strings.Contains(err.Error(), "duplicate key error collection") {
-				s.logger.Infof(`[Store name: %s] Attempt %d - error while performing batch operations. `+
-					"This can happen if there are multiple calls in parallel to do batch operations under the "+
-					"same key(s). If there are remaining retries, the batch operations will be tried again after %s. "+
-					"Underlying error message: %s", s.name, attemptsMade, s.timeBetweenRetries.String(), err.Error())
+				// If the IsNewKey optimization is being used, then we generate a more informative log message and
+				// error.
+
+				var errorExplanation string
+
+				var retriesExhaustedErrorDetail string
+
+				if atLeastOneInsertOneModel {
+					errorExplanation = "It appears that the IsNewKey optimization flag has been set on one or more " +
+						"put operations. This error indicates that at least one of the keys in those put operations " +
+						"already exists. The IsNewKey flag can only be used if the key does not exist. If the key " +
+						"does exist (or may exist), set it to false instead. Alternatively, if using MongoDB 4.0.0, " +
+						"then this may be a transient error that sometimes happens when there are multiple calls " +
+						"to the database at the same time that do batch operations under the same key(s)."
+					retriesExhaustedErrorDetail = "If this error is due to the transient error, then this storage " +
+						"provider may need to be started with a higher max retry limit and/or higher time between " +
+						"retries."
+				} else {
+					errorExplanation = "If using MongoDB 4.0.0, then this may be a transient error that sometimes " +
+						"happens when there are multiple calls to the database at the same time that do batch " +
+						"operations under the same key(s)."
+					retriesExhaustedErrorDetail = "This storage provider may need to be started with a higher max " +
+						"retry limit and/or higher time between retries."
+				}
+
+				s.logger.Infof("[Store name: %s] Attempt %d - duplicate key error while performing batch "+
+					" operations. %s If there are remaining retries, the batch operations will be tried again "+
+					"after %s. Underlying error message: %s", s.name, attemptsMade, errorExplanation,
+					s.timeBetweenRetries.String(), err.Error())
 
 				// The error below isn't marked using backoff.Permanent, so it'll only be seen if the retry limit
 				// is reached.
-				return fmt.Errorf("failed to perform batch operations after %d attempts. This storage provider "+
-					"may need to be started with a higher max retry limit and/or higher time between retries. "+
-					"Underlying error message: %w", attemptsMade, err)
+				return fmt.Errorf("failed to perform batch operations after %d attempts due to a duplicate "+
+					"key error. %s %s Underlying error message: %w", attemptsMade, errorExplanation,
+					retriesExhaustedErrorDetail, err)
 			}
 
 			// This is an unexpected error.
@@ -1201,20 +1237,25 @@ func determineOperatorAndSplit(expression string) (mongoDBOperator string, expre
 	}
 }
 
-func generateModelForBulkWriteCall(operation storage.Operation) (mongo.WriteModel, error) {
+func generateModelForBulkWriteCall(operation storage.Operation) (model mongo.WriteModel,
+	isInsertOneModel bool, err error) {
 	if operation.Value == nil {
-		return mongo.NewDeleteOneModel().SetFilter(bson.M{"_id": operation.Key}), nil
+		return mongo.NewDeleteOneModel().SetFilter(bson.M{"_id": operation.Key}), false, nil
 	}
 
 	data, err := generateDataWrapper(operation.Key, operation.Value, operation.Tags)
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+
+	if operation.PutOptions != nil && operation.PutOptions.IsNewKey {
+		return mongo.NewInsertOneModel().SetDocument(data), true, nil
 	}
 
 	return mongo.NewUpdateOneModel().
 		SetFilter(bson.M{"_id": operation.Key}).
 		SetUpdate(bson.M{"$set": data}).
-		SetUpsert(true), nil
+		SetUpsert(true), false, nil
 }
 
 func generateDataWrapper(key string, value []byte, tags []storage.Tag) (dataWrapper, error) {

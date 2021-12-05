@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -209,11 +210,13 @@ func TestStore_Delete_Failure(t *testing.T) {
 		"deadline exceeded, current topology: { Type: Unknown, Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }")
 }
 
-func TestStore_Batch_Failure(t *testing.T) {
+func TestStore_Batch_TimeoutFailure(t *testing.T) {
+	storeName := randomStoreName()
+
 	provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
 	require.NoError(t, err)
 
-	store, err := provider.OpenStore("StoreName")
+	store, err := provider.OpenStore(storeName)
 	require.NoError(t, err)
 
 	err = store.Batch([]storage.Operation{{Key: "key"}})
@@ -251,6 +254,7 @@ func doAllTests(t *testing.T, connString string) {
 	testQueryWithMultipleTags(t, connString)
 	testQueryWithLessThanGreaterThanOperators(t, connString)
 	testStoreJSONNeedingEscaping(t, connString)
+	testBatchIsNewKeyError(t, connString)
 }
 
 func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) {
@@ -1262,6 +1266,43 @@ func testStoreJSONNeedingEscaping(t *testing.T, connString string) {
 				"Invalid key: keyWithBacktick`")
 		})
 	})
+}
+
+func testBatchIsNewKeyError(t *testing.T, connString string) {
+	t.Helper()
+
+	storeName := randomStoreName()
+
+	provider, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	store, err := provider.OpenStore(storeName)
+	require.NoError(t, err)
+
+	err = store.Put("SomeKey", []byte("SomeValue"))
+	require.NoError(t, err)
+
+	operations := []storage.Operation{
+		{Key: "SomeKey", Value: []byte("SomeUpdatedValue"), PutOptions: &storage.PutOptions{IsNewKey: true}},
+	}
+
+	err = store.Batch(operations)
+
+	expectedErrMsgPrefix := "failed to perform batch operations after 4 attempts due to a " +
+		"duplicate key error. It appears that the IsNewKey optimization flag has been set on one or " +
+		"more put operations. This error indicates that at least one of the keys in those put operations " +
+		"already exists. The IsNewKey flag can only be used if the key does not exist. If the key does " +
+		"exist (or may exist), set it to false instead. Alternatively, if using MongoDB 4.0.0, then this " +
+		"may be a transient error that sometimes happens when there are multiple calls to the database at " +
+		"the same time that do batch operations under the same key(s). If this error is due to the transient " +
+		"error, then this storage provider may need to be started with a higher max retry limit and/or higher " +
+		"time between retries. Underlying error message: bulk write exception: write errors: [E11000 duplicate" +
+		" key error"
+
+	gotExpectedError := strings.HasPrefix(err.Error(), expectedErrMsgPrefix)
+
+	require.True(t, gotExpectedError, fmt.Sprintf("received unexpected error. Expected the error message to "+
+		`start with "%s", but the error was "%s"`, expectedErrMsgPrefix, err.Error()))
 }
 
 func getTestData() (testKeys []string, testValues [][]byte, testTags [][]storage.Tag) {
