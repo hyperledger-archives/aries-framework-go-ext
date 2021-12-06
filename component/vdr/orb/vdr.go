@@ -41,6 +41,7 @@ import (
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/internal/ldcontext"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/lb"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/tracing"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/create"
@@ -68,12 +69,14 @@ const (
 	CheckDIDAnchored = "checkDIDAnchored"
 	// CheckDIDUpdated check did is updated.
 	CheckDIDUpdated = "checkDIDUpdated"
-	httpTimeOut     = 20 * time.Second
-	sha2_256        = 18 // multihash
-	ipfsGlobal      = "https://ipfs.io"
-	ipfsPrefix      = "ipfs://"
-	httpsProtocol   = "https"
-	httpProtocol    = "http"
+	// TracingCtxOpt tracing opt.
+	TracingCtxOpt = "tracingCtxOpt"
+	httpTimeOut   = 20 * time.Second
+	sha2_256      = 18 // multihash
+	ipfsGlobal    = "https://ipfs.io"
+	ipfsPrefix    = "ipfs://"
+	httpsProtocol = "https"
+	httpProtocol  = "http"
 )
 
 var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
@@ -355,13 +358,24 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 		opt(didMethodOpts)
 	}
 
+	var ctx context.Context
+
+	if didMethodOpts.Values[TracingCtxOpt] != nil {
+		var ok bool
+
+		ctx, ok = didMethodOpts.Values[TracingCtxOpt].(context.Context)
+		if !ok {
+			return nil, fmt.Errorf("tracingOpt not type of span")
+		}
+	}
+
 	if didMethodOpts.Values[ResolutionEndpointsOpt] != nil {
 		endpoints, ok := didMethodOpts.Values[ResolutionEndpointsOpt].([]string)
 		if !ok {
 			return nil, fmt.Errorf("resolutionEndpointsOpt not array of string")
 		}
 
-		return v.sidetreeResolve(endpoints[0], did, opts...)
+		return v.sidetreeResolve(ctx, endpoints[0], did, opts...)
 	}
 
 	var endpoint *models.Endpoint
@@ -379,7 +393,7 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 
 		for _, e := range endpoint.ResolutionEndpoints {
 			if strings.Contains(e, hintDomain) {
-				docRes, errResolve := v.sidetreeResolve(e, did, opts...)
+				docRes, errResolve := v.sidetreeResolve(ctx, e, did, opts...)
 				if errResolve != nil {
 					return nil, errResolve
 				}
@@ -422,7 +436,7 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 	// In case of a mismatch, additional links may need to be chosen until the client has n matches.
 
 	for _, e := range endpoint.ResolutionEndpoints {
-		resp, err := v.sidetreeResolve(e, did, opts...)
+		resp, err := v.sidetreeResolve(ctx, e, did, opts...)
 		if err != nil {
 			return nil, err
 		}
@@ -926,15 +940,24 @@ func getUpdatedPKKeysID(currentDID, updatedDID *docdid.Doc) ([]update.Option, er
 	return updateOpt, nil
 }
 
-func (v *VDR) sidetreeResolve(url, did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
+func (v *VDR) sidetreeResolve(ctx context.Context, url, did string,
+	opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
 	resolver, err := v.getHTTPVDR(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new sidetree vdr: %w", err)
 	}
 
+	span, _ := tracing.StartChildSpan(ctx, "vdr_read_resolve_did")
+
 	docResolution, err := resolver.Read(did, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve did: %w", err)
+	}
+
+	if span != nil {
+		span.SetTag("did-id", did)
+
+		span.Finish()
 	}
 
 	return docResolution, nil

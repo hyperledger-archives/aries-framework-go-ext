@@ -10,6 +10,7 @@ require (
 	github.com/hyperledger/aries-framework-go v0.1.8-0.20211201185059-733a3370f501
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20211201203407-a74be0b999a4
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210910143505-343c246c837c
+	github.com/opentracing/opentracing-go v1.1.0
 	github.com/piprate/json-gold v0.4.1-0.20210813112359-33b90c4ca86c
 	github.com/stretchr/testify v1.7.0
 	github.com/trustbloc/orb v0.1.4-0.20211201141158-15a02b430f04
