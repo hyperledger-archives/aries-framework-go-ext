@@ -817,38 +817,39 @@ func (s *store) executeBulkWriteCommand(models []mongo.WriteModel, atLeastOneIns
 				// If the IsNewKey optimization is being used, then we generate a more informative log message and
 				// error.
 
-				var errorExplanation string
+				var errorReason string
 
-				var retriesExhaustedErrorDetail string
+				var errDuplicateKey error
 
 				if atLeastOneInsertOneModel {
-					errorExplanation = "It appears that the IsNewKey optimization flag has been set on one or more " +
-						"put operations. This error indicates that at least one of the keys in those put operations " +
-						"already exists. The IsNewKey flag can only be used if the key does not exist. If the key " +
-						"does exist (or may exist), set it to false instead. Alternatively, if using MongoDB 4.0.0, " +
-						"then this may be a transient error that sometimes happens when there are multiple calls " +
-						"to the database at the same time that do batch operations under the same key(s)."
-					retriesExhaustedErrorDetail = "If this error is due to the transient error, then this storage " +
-						"provider may need to be started with a higher max retry limit and/or higher time between " +
-						"retries."
+					errorReason = "Either the IsNewKey optimization flag has been set to true for a key that " +
+						"already exists in the database, or, if using MongoDB 4.0.0, then this may be a transient " +
+						"error due to another call storing data under the same key at the same time."
+
+					// The "ErrDuplicateKey" error from the storage interface is used to indicate a failure due to
+					// the IsNewKey flag being used for a key that isn't new. A caller can check for this using
+					// errors.Is().
+					errDuplicateKey = storage.ErrDuplicateKey
 				} else {
-					errorExplanation = "If using MongoDB 4.0.0, then this may be a transient error that sometimes " +
-						"happens when there are multiple calls to the database at the same time that do batch " +
-						"operations under the same key(s)."
-					retriesExhaustedErrorDetail = "This storage provider may need to be started with a higher max " +
-						"retry limit and/or higher time between retries."
+					errorReason = "If using MongoDB 4.0.0, then this may be a transient " +
+						"error due to another call storing data under the same key at the same time."
+
+					// While the text of this error matches the text from storage.ErrDuplicateKey, we don't use that
+					// specific error here since the meaning of storage.ErrDuplicateKey is specifically tied to the
+					// usage of the IsNewKey optimization.
+					errDuplicateKey = errors.New("duplicate key")
 				}
 
-				s.logger.Infof("[Store name: %s] Attempt %d - duplicate key error while performing batch "+
+				s.logger.Infof("[Store name: %s] Attempt %d - %s while performing batch "+
 					" operations. %s If there are remaining retries, the batch operations will be tried again "+
-					"after %s. Underlying error message: %s", s.name, attemptsMade, errorExplanation,
-					s.timeBetweenRetries.String(), err.Error())
+					"after %s. Underlying error message: %s", s.name, attemptsMade, storage.ErrDuplicateKey,
+					errorReason, s.timeBetweenRetries.String(), err.Error())
 
 				// The error below isn't marked using backoff.Permanent, so it'll only be seen if the retry limit
 				// is reached.
-				return fmt.Errorf("failed to perform batch operations after %d attempts due to a duplicate "+
-					"key error. %s %s Underlying error message: %w", attemptsMade, errorExplanation,
-					retriesExhaustedErrorDetail, err)
+				return fmt.Errorf("failed to perform batch operations after %d attempts: %w. "+
+					"%s Underlying error message: %s", attemptsMade, errDuplicateKey, errorReason,
+					err.Error())
 			}
 
 			// This is an unexpected error.
