@@ -1288,16 +1288,11 @@ func testBatchIsNewKeyError(t *testing.T, connString string) {
 
 	err = store.Batch(operations)
 
-	expectedErrMsgPrefix := "failed to perform batch operations after 4 attempts due to a " +
-		"duplicate key error. It appears that the IsNewKey optimization flag has been set on one or " +
-		"more put operations. This error indicates that at least one of the keys in those put operations " +
-		"already exists. The IsNewKey flag can only be used if the key does not exist. If the key does " +
-		"exist (or may exist), set it to false instead. Alternatively, if using MongoDB 4.0.0, then this " +
-		"may be a transient error that sometimes happens when there are multiple calls to the database at " +
-		"the same time that do batch operations under the same key(s). If this error is due to the transient " +
-		"error, then this storage provider may need to be started with a higher max retry limit and/or higher " +
-		"time between retries. Underlying error message: bulk write exception: write errors: [E11000 duplicate" +
-		" key error"
+	expectedErrMsgPrefix := "failed to perform batch operations after 4 attempts: duplicate key. Either the " +
+		"IsNewKey optimization flag has been set to true for a key that already exists in the database, or, if " +
+		"using MongoDB 4.0.0, then this may be a transient error due to another call storing data under the same " +
+		"key at the same time. Underlying error message: bulk write exception: write errors: [E11000 duplicate key " +
+		"error"
 
 	gotExpectedError := strings.HasPrefix(err.Error(), expectedErrMsgPrefix)
 
