@@ -143,32 +143,26 @@ services:
   orb.kms:
     container_name: orb.kms
     restart: always
-    image: ghcr.io/trustbloc/kms:0.1.7
+    image: ghcr.io/trustbloc-cicd/kms:v0.1.8-snapshot-07c1e19
     environment:
       - KMS_BASE_URL=http://orb.kms:7878
-      - KMS_HOST_URL=0.0.0.0:7878
+      - KMS_HOST=0.0.0.0:7878
       - KMS_DATABASE_TYPE=couchdb
       - KMS_DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
       - KMS_DATABASE_PREFIX=orbkmskeystore
-      - KMS_PRIMARY_KEY_DATABASE_TYPE=couchdb
-      - KMS_PRIMARY_KEY_DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
-      - KMS_PRIMARY_KEY_DATABASE_PREFIX=orbkmspk
-      - KMS_LOCAL_KMS_DATABASE_TYPE=couchdb
-      - KMS_LOCAL_KMS_DATABASE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
-      - KMS_LOCAL_KMS_DATABASE_PREFIX=orbkmslocal
-      - KMS_KEY_MANAGER_STORAGE_TYPE=couchdb
-      - KMS_KEY_MANAGER_STORAGE_URL=${COUCHDB_USERNAME}:${COUCHDB_PASSWORD}@couchdb.example.com:5984
-      - KMS_KEY_MANAGER_STORAGE_PREFIX=orbkmskm
+      - KMS_SECRET_LOCK_TYPE=local
+      - KMS_SECRET_LOCK_KEY_PATH=/etc/kms/secret-lock.key
+    volumes:
+      - ../keys/kms:/etc/kms
     ports:
       - 7878:7878
-    entrypoint: ""
     depends_on:
       - couchdb.example.com
-    command: /bin/sh -c "kms-rest start"
+    command: start
 
   orb.vct:
     container_name: orb.vct
-    image: ghcr.io/trustbloc/vct:v0.1.3
+    image: ghcr.io/trustbloc-cicd/vct:v0.1.4-snapshot-d815fdb
     restart: always
     environment:
       - VCT_API_HOST=0.0.0.0:8077
