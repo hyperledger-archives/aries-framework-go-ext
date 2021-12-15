@@ -125,6 +125,10 @@ type vdr interface {
 	Read(id string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error)
 }
 
+type httpClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 type discoveryService interface {
 	GetEndpoint(domain string) (*models.Endpoint, error)
 	GetEndpointFromAnchorOrigin(did string) (*models.Endpoint, error)
@@ -151,6 +155,7 @@ type VDR struct {
 	selectDomainSvc            SelectDomainService
 	verifyResolutionResultType VerifyResolutionResultType
 	verifier                   verifierResolutionResult
+	httpClient                 httpClient
 }
 
 // KeyRetriever key retriever.
@@ -161,7 +166,7 @@ type KeyRetriever interface {
 }
 
 // New creates new orb VDR.
-func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
+func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) { //nolint:funlen
 	v := &VDR{domains: make([]string, 0), selectDomainSvc: lb.NewRoundRobin(), verifyResolutionResultType: Unpublished}
 
 	for _, opt := range opts {
@@ -194,29 +199,31 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 
 	v.keyRetriever = keyRetriever
 
-	c := &http.Client{
-		Timeout: 20 * time.Second, //nolint: gomnd
-		Transport: &http.Transport{
-			Proxy:           http.ProxyFromEnvironment,
-			TLSClientConfig: v.tlsConfig,
-			DialContext: (&net.Dialer{
-				Timeout:   10 * time.Second, //nolint: gomnd
-				KeepAlive: 30 * time.Second, //nolint: gomnd
-			}).DialContext,
-			MaxIdleConns:          100,              //nolint: gomnd
-			IdleConnTimeout:       90 * time.Second, //nolint: gomnd
-			TLSHandshakeTimeout:   5 * time.Second,  //nolint: gomnd
-			ExpectContinueTimeout: 1 * time.Second,
-		},
+	if v.httpClient == nil {
+		v.httpClient = &http.Client{
+			Timeout: 20 * time.Second, //nolint: gomnd
+			Transport: &http.Transport{
+				Proxy:           http.ProxyFromEnvironment,
+				TLSClientConfig: v.tlsConfig,
+				DialContext: (&net.Dialer{
+					Timeout:   10 * time.Second, //nolint: gomnd
+					KeepAlive: 30 * time.Second, //nolint: gomnd
+				}).DialContext,
+				MaxIdleConns:          100,              //nolint: gomnd
+				IdleConnTimeout:       90 * time.Second, //nolint: gomnd
+				TLSHandshakeTimeout:   5 * time.Second,  //nolint: gomnd
+				ExpectContinueTimeout: 1 * time.Second,
+			},
+		}
 	}
 
 	v.discoveryService, err = client.New(v.documentLoader, &casReader{
-		httpClient:   c,
+		httpClient:   v.httpClient,
 		hl:           hashlink.New(),
 		ipfsEndpoint: v.ipfsEndpoint,
 		authToken:    v.authToken,
 	},
-		client.WithDisableProofCheck(v.disableProofCheck), client.WithHTTPClient(c))
+		client.WithDisableProofCheck(v.disableProofCheck), client.WithHTTPClient(v.httpClient))
 	if err != nil {
 		return nil, err
 	}
@@ -1026,6 +1033,13 @@ func (v *VDR) checkDID(did string, resolveDIDRetry *ResolveDIDRetry, updateCommi
 // Option configures the bloc vdr.
 type Option func(opts *VDR)
 
+// WithHTTPClient option is for custom http client.
+func WithHTTPClient(httpClient httpClient) Option {
+	return func(opts *VDR) {
+		opts.httpClient = httpClient
+	}
+}
+
 // WithTLSConfig option is for definition of secured HTTP transport using a tls.Config instance.
 func WithTLSConfig(tlsConfig *tls.Config) Option {
 	return func(opts *VDR) {
@@ -1085,7 +1099,7 @@ func WithIPFSEndpoint(endpoint string) Option {
 
 // casReader.
 type casReader struct {
-	httpClient   *http.Client
+	httpClient   httpClient
 	hl           *hashlink.HashLink
 	ipfsEndpoint string
 	authToken    string
@@ -1170,7 +1184,7 @@ func (c *casReader) getResourceHashWithPossibleLinks(hashWithPossibleHint string
 	return links, nil
 }
 
-func send(httpClient *http.Client, req []byte, method, endpointURL, authToken string) ([]byte, error) {
+func send(httpClient httpClient, req []byte, method, endpointURL, authToken string) ([]byte, error) {
 	var httpReq *http.Request
 
 	var err error
