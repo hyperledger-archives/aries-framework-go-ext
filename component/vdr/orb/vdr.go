@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -194,7 +195,19 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 	v.keyRetriever = keyRetriever
 
 	c := &http.Client{
-		Transport: &http.Transport{TLSClientConfig: v.tlsConfig},
+		Timeout: 20 * time.Second, //nolint: gomnd
+		Transport: &http.Transport{
+			Proxy:           http.ProxyFromEnvironment,
+			TLSClientConfig: v.tlsConfig,
+			DialContext: (&net.Dialer{
+				Timeout:   10 * time.Second, //nolint: gomnd
+				KeepAlive: 30 * time.Second, //nolint: gomnd
+			}).DialContext,
+			MaxIdleConns:          100,              //nolint: gomnd
+			IdleConnTimeout:       90 * time.Second, //nolint: gomnd
+			TLSHandshakeTimeout:   5 * time.Second,  //nolint: gomnd
+			ExpectContinueTimeout: 1 * time.Second,
+		},
 	}
 
 	v.discoveryService, err = client.New(v.documentLoader, &casReader{
