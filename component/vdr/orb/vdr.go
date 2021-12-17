@@ -155,7 +155,7 @@ type VDR struct {
 	selectDomainSvc            SelectDomainService
 	verifyResolutionResultType VerifyResolutionResultType
 	verifier                   verifierResolutionResult
-	httpClient                 httpClient
+	httpClient                 *http.Client
 }
 
 // KeyRetriever key retriever.
@@ -191,12 +191,6 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) { //nolint:fun
 		return nil, err
 	}
 
-	v.getHTTPVDR = func(url string) (vdr, error) {
-		return httpbinding.New(url,
-			httpbinding.WithTLSConfig(v.tlsConfig), httpbinding.WithResolveAuthToken(v.authToken),
-			httpbinding.WithTimeout(httpTimeOut))
-	}
-
 	v.keyRetriever = keyRetriever
 
 	if v.httpClient == nil {
@@ -215,6 +209,12 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) { //nolint:fun
 				ExpectContinueTimeout: 1 * time.Second,
 			},
 		}
+	}
+
+	v.getHTTPVDR = func(url string) (vdr, error) {
+		return httpbinding.New(url,
+			httpbinding.WithHTTPClient(v.httpClient), httpbinding.WithResolveAuthToken(v.authToken),
+			httpbinding.WithTimeout(httpTimeOut))
 	}
 
 	v.discoveryService, err = client.New(v.documentLoader, &casReader{
@@ -1034,7 +1034,7 @@ func (v *VDR) checkDID(did string, resolveDIDRetry *ResolveDIDRetry, updateCommi
 type Option func(opts *VDR)
 
 // WithHTTPClient option is for custom http client.
-func WithHTTPClient(httpClient httpClient) Option {
+func WithHTTPClient(httpClient *http.Client) Option {
 	return func(opts *VDR) {
 		opts.httpClient = httpClient
 	}
