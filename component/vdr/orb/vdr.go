@@ -182,8 +182,6 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) { //nolint:fun
 		v.documentLoader = l
 	}
 
-	v.sidetreeClient = sidetree.New(sidetree.WithAuthToken(v.authToken), sidetree.WithTLSConfig(v.tlsConfig))
-
 	var err error
 
 	v.verifier, err = resolutionverifier.New(fmt.Sprintf("did:%s", DIDMethod))
@@ -210,6 +208,8 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) { //nolint:fun
 			},
 		}
 	}
+
+	v.sidetreeClient = sidetree.New(sidetree.WithAuthToken(v.authToken), sidetree.WithHTTPClient(v.httpClient))
 
 	v.getHTTPVDR = func(url string) (vdr, error) {
 		return httpbinding.New(url,
