@@ -6,16 +6,16 @@ SPDX-License-Identifier: Apache-2.0
 package sidetree
 
 import (
-	"crypto/tls"
+	"net/http"
 )
 
 // Option is a DID client instance option.
 type Option func(opts *Client)
 
-// WithTLSConfig option is for definition of secured HTTP transport using a tls.Config instance.
-func WithTLSConfig(tlsConfig *tls.Config) Option {
+// WithHTTPClient option is for custom http client.
+func WithHTTPClient(httpClient *http.Client) Option {
 	return func(opts *Client) {
-		opts.tlsConfig = tlsConfig
+		opts.client = httpClient
 	}
 }
 
