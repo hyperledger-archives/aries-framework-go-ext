@@ -13,7 +13,6 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,7 +48,6 @@ var logger = log.New("aries-framework-ext/vdr/sidetree/client") //nolint: gochec
 // Client sidetree client.
 type Client struct {
 	client    *http.Client
-	tlsConfig *tls.Config
 	authToken string
 }
 
@@ -61,8 +59,6 @@ func New(opts ...Option) *Client {
 	for _, opt := range opts {
 		opt(c)
 	}
-
-	c.client.Transport = &http.Transport{TLSClientConfig: c.tlsConfig}
 
 	return c
 }
