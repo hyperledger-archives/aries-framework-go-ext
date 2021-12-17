@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"math/big"
 	mathrand "math/rand"
+	"net/http"
 	"strings"
 	"time"
 
@@ -146,7 +147,8 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 		}
 	}
 
-	v.sidetreeClient = sidetree.New(sidetree.WithAuthToken(v.authToken), sidetree.WithTLSConfig(v.tlsConfig))
+	v.sidetreeClient = sidetree.New(sidetree.WithAuthToken(v.authToken), sidetree.WithHTTPClient(
+		&http.Client{Transport: &http.Transport{TLSClientConfig: v.tlsConfig}}))
 
 	v.getHTTPVDR = func(url string) (vdr, error) {
 		return httpbinding.New(url,
