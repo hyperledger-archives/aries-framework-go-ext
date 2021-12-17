@@ -725,7 +725,7 @@ func TestClient_CreateDID(t *testing.T) {
 		ecPrivKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		require.NoError(t, err)
 
-		v := sidetree.New(sidetree.WithTLSConfig(nil))
+		v := sidetree.New(sidetree.WithHTTPClient(&http.Client{}))
 
 		didResol, err := v.CreateDID(create.WithRecoveryPublicKey(ed25519RecoveryPubKey),
 			create.WithSidetreeEndpoint(func() ([]string, error) {
@@ -766,7 +766,7 @@ func TestClient_CreateDID(t *testing.T) {
 		ecUpdatePrivKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		require.NoError(t, err)
 
-		v := sidetree.New(sidetree.WithTLSConfig(nil))
+		v := sidetree.New(sidetree.WithHTTPClient(&http.Client{}))
 
 		_, err = v.CreateDID(create.WithRecoveryPublicKey(ed25519RecoveryPubKey),
 			create.WithSidetreeEndpoint(func() ([]string, error) {
