@@ -674,8 +674,8 @@ func testQueryWithMultipleTags(t *testing.T, connString string) { //nolint: gocy
 
 	t.Run("Both pairs are tag names + values - 3 values found", func(t *testing.T) {
 		queryExpressionsToTest := []string{
-			"Breed:GoldenRetriever&&NumLegs:4",
-			"NumLegs:4&&Breed:GoldenRetriever", // Should be equivalent to the above expression
+			"Breed:GoldenRetriever&&NumLegs:4&&EarType:Floppy",
+			"NumLegs:4&&EarType:Floppy&&Breed:GoldenRetriever", // Should be equivalent to the above expression
 		}
 
 		expectedKeys := []string{keysToPut[0], keysToPut[3], keysToPut[4]}

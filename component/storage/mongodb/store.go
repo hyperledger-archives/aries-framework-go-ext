@@ -41,7 +41,6 @@ const (
 
 	equalsExpressionTagNameOnlyLength     = 1
 	equalsExpressionTagNameAndValueLength = 2
-	andExpressionLength
 	lessThanGreaterThanExpressionLength
 )
 
@@ -614,13 +613,13 @@ func (s *store) GetBulk(keys ...string) ([][]byte, error) {
 }
 
 // Query does a query for data as defined by the documentation in storage.Store (the interface).
-// This implementation also supports querying for data tagged with two tag name + value pairs (using AND logic).
+// This implementation also supports querying for data tagged with multiple tag name + value pairs (using AND logic).
 // To do this, separate the tag name + value pairs using &&. You can still omit one or both of the tag values
 // in order to indicate that you want any data tagged with the tag name, regardless of tag value.
-// For example, TagName1:TagValue1&&TagName2:TagValue2 will return only data that has been tagged with both pairs.
-// See testQueryWithMultipleTags in store_test.go for more examples of querying using multiple tags.
-// If the tag you're using has tag values that are integers, then you can use the <, <=, >, >= operators instead of :
-// to get a range of matching data. For example, TagName>3 will return any data tagged with a tag named TagName
+// For example, TagName1:TagValue1&&TagName2:TagValue2:...:TagNameN:TagValueN will return only data that has been
+// tagged with all pairs. See testQueryWithMultipleTags in store_test.go for more examples of querying using multiple
+// tags. If the tag you're using has tag values that are integers, then you can use the <, <=, >, >= operators instead
+// of : to get a range of matching data. For example, TagName>3 will return any data tagged with a tag named TagName
 // that has a value greater than 3.
 // It's recommended to set up an index using the Provider.SetStoreConfig method in order to speed up queries.
 // TODO (#146) Investigate compound indexes and see if they may be useful for queries with sorts and/or for queries
@@ -630,25 +629,9 @@ func (s *store) Query(expression string, options ...storage.QueryOption) (storag
 		return &iterator{}, errInvalidQueryExpressionFormat
 	}
 
-	expressionSplitByANDOperator := strings.Split(expression, "&&")
-
-	var filter bson.D
-
-	var err error
-
-	switch len(expressionSplitByANDOperator) {
-	case 1:
-		filter, err = prepareSimpleFilter(expression)
-		if err != nil {
-			return nil, err
-		}
-	case andExpressionLength:
-		filter, err = prepareANDFilter(expressionSplitByANDOperator)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, errInvalidQueryExpressionFormat
+	filter, err := prepareFilter(strings.Split(expression, "&&"))
+	if err != nil {
+		return nil, err
 	}
 
 	findOptions := s.createMongoDBFindOptions(options)
@@ -1136,29 +1119,21 @@ func getQueryOptions(options []storage.QueryOption) storage.QueryOptions {
 	return queryOptions
 }
 
-func prepareSimpleFilter(expression string) (bson.D, error) {
-	operand, err := prepareSingleOperand(expression)
-	if err != nil {
-		return nil, err
-	}
+func prepareFilter(expressions []string) (bson.D, error) {
+	operands := make(bson.D, len(expressions))
 
-	return bson.D{operand}, nil
-}
+	for i, exp := range expressions {
+		operand, err := prepareSingleOperand(exp)
+		if err != nil {
+			return nil, err
+		}
 
-func prepareANDFilter(expressionSplitByANDOperator []string) (bson.D, error) {
-	operand1, err := prepareSingleOperand(expressionSplitByANDOperator[0])
-	if err != nil {
-		return nil, err
-	}
-
-	operand2, err := prepareSingleOperand(expressionSplitByANDOperator[1])
-	if err != nil {
-		return nil, err
+		operands[i] = operand
 	}
 
 	// When the bson.D below gets serialized, it'll be comma separated.
 	// MongoDB treats a comma separated list of expression as an implicit AND operation.
-	return bson.D{operand1, operand2}, nil
+	return operands, nil
 }
 
 func prepareSingleOperand(expression string) (bson.E, error) {
