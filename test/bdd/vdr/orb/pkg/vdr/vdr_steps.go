@@ -68,7 +68,10 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 
 	vdrWithoutDomain, err := orb.New(keyRetriever, orb.WithTLSConfig(ctx.TLSConfig),
 		orb.WithAuthToken("ADMIN_TOKEN"), orb.WithDisableProofCheck(true),
-		orb.WithIPFSEndpoint("http://127.0.0.1:5001/api/v0"))
+		orb.WithIPFSEndpoint("http://127.0.0.1:5001/api/v0"),
+		orb.WithHTTPClient(&http.Client{Transport: &http.Transport{
+			TLSClientConfig: ctx.TLSConfig,
+		}}))
 	if err != nil {
 		panic(err.Error())
 	}
