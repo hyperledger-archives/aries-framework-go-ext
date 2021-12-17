@@ -143,13 +143,13 @@ const validDoc = `{
 
 func TestVDRI_Accept(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 		require.True(t, v.Accept(DIDMethod))
 	})
 
 	t.Run("test return false", func(t *testing.T) {
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 		require.False(t, v.Accept("bloc1"))
 	})
@@ -157,7 +157,7 @@ func TestVDRI_Accept(t *testing.T) {
 
 func TestVDRI_Create(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{
@@ -212,7 +212,7 @@ func TestVDRI_Create(t *testing.T) {
 	})
 
 	t.Run("test create did and did not published", func(t *testing.T) {
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{
@@ -267,7 +267,7 @@ func TestVDRI_Create(t *testing.T) {
 	})
 
 	t.Run("test create did and resolve return error", func(t *testing.T) {
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.getHTTPVDR = httpVdrFunc(nil, fmt.Errorf("failed to resolve"))
@@ -319,7 +319,7 @@ func TestVDRI_Create(t *testing.T) {
 	})
 
 	t.Run("test update public key opt is empty", func(t *testing.T) {
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
@@ -347,7 +347,7 @@ func TestVDRI_Create(t *testing.T) {
 	})
 
 	t.Run("test recovery public key opt is empty", func(t *testing.T) {
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
@@ -375,7 +375,7 @@ func TestVDRI_Create(t *testing.T) {
 	})
 
 	t.Run("test anchor origin opt is empty", func(t *testing.T) {
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
@@ -403,7 +403,7 @@ func TestVDRI_Create(t *testing.T) {
 	})
 
 	t.Run("test anchor origin opt is not string", func(t *testing.T) {
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
@@ -442,7 +442,7 @@ func TestVDRI_Deactivate(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{}
@@ -457,7 +457,7 @@ func TestVDRI_Deactivate(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{}
@@ -484,7 +484,7 @@ func TestVDRI_Update(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
@@ -526,7 +526,7 @@ func TestVDRI_Update(t *testing.T) {
 			pk, _, err := ed25519.GenerateKey(rand.Reader)
 
 			return pk, err
-		}})
+		}}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
@@ -570,7 +570,7 @@ func TestVDRI_Update(t *testing.T) {
 			pk, _, err := ed25519.GenerateKey(rand.Reader)
 
 			return pk, err
-		}})
+		}}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
@@ -614,7 +614,7 @@ func TestVDRI_Update(t *testing.T) {
 			pk, _, err := ed25519.GenerateKey(rand.Reader)
 
 			return pk, err
-		}})
+		}}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{
@@ -661,7 +661,7 @@ func TestVDRI_Update(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
@@ -697,7 +697,7 @@ func TestVDRI_Update(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
@@ -718,7 +718,7 @@ func TestVDRI_Update(t *testing.T) {
 		v, err := New(&mockKeyRetriever{getNextUpdatePublicKey: func(didID,
 			commitment string) (crypto.PublicKey, error) {
 			return nil, fmt.Errorf("failed to get next update public key")
-		}})
+		}}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
 		require.Error(t, err)
@@ -733,7 +733,7 @@ func TestVDRI_Update(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(nil)
+		v, err := New(nil, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
@@ -752,7 +752,7 @@ func TestVDRI_Update(t *testing.T) {
 		v, err := New(&mockKeyRetriever{getSigningKey: func(didID string, ot OperationType,
 			commitment string) (crypto.PrivateKey, error) {
 			return nil, fmt.Errorf("failed to get signing key")
-		}})
+		}}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
 		require.Error(t, err)
@@ -769,7 +769,7 @@ func TestVDRI_Recover(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}}
@@ -803,7 +803,7 @@ func TestVDRI_Recover(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{})
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.sidetreeClient = &mockSidetreeClient{createDIDValue: &did.DocResolution{
@@ -843,7 +843,7 @@ func TestVDRI_Recover(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(nil)
+		v, err := New(nil, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
@@ -864,7 +864,7 @@ func TestVDRI_Recover(t *testing.T) {
 		v, err := New(&mockKeyRetriever{getNextUpdatePublicKey: func(didID string,
 			commitment string) (crypto.PublicKey, error) {
 			return nil, fmt.Errorf("failed to get next update public key")
-		}})
+		}}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true),
@@ -884,7 +884,7 @@ func TestVDRI_Recover(t *testing.T) {
 		v, err := New(&mockKeyRetriever{getNextRecoveryPublicKeyFunc: func(didID,
 			commitment string) (crypto.PublicKey, error) {
 			return nil, fmt.Errorf("failed to get next recovery public key")
-		}})
+		}}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true),
@@ -904,7 +904,7 @@ func TestVDRI_Recover(t *testing.T) {
 		v, err := New(&mockKeyRetriever{getSigningKey: func(didID string, ot OperationType,
 			commitment string) (crypto.PrivateKey, error) {
 			return nil, fmt.Errorf("failed to get signing key")
-		}})
+		}}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
 			vdrapi.WithOption(RecoverOpt, true),
@@ -983,7 +983,7 @@ func TestVDRI_Read(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(nil, WithIPFSEndpoint(cServ.URL))
+		v, err := New(nil, WithIPFSEndpoint(cServ.URL), WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
 
 		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{DIDDocument: &did.Doc{ID: "did"}}, nil)

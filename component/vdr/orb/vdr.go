@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -39,6 +38,7 @@ import (
 	"github.com/trustbloc/sidetree-core-go/pkg/commitment"
 	"github.com/trustbloc/sidetree-core-go/pkg/document"
 	"github.com/trustbloc/sidetree-core-go/pkg/util/pubkey"
+	"golang.org/x/net/http2"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/internal/ldcontext"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/lb"
@@ -166,7 +166,7 @@ type KeyRetriever interface {
 }
 
 // New creates new orb VDR.
-func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) { //nolint:funlen
+func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 	v := &VDR{domains: make([]string, 0), selectDomainSvc: lb.NewRoundRobin(), verifyResolutionResultType: Unpublished}
 
 	for _, opt := range opts {
@@ -194,17 +194,8 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) { //nolint:fun
 	if v.httpClient == nil {
 		v.httpClient = &http.Client{
 			Timeout: 20 * time.Second, //nolint: gomnd
-			Transport: &http.Transport{
-				Proxy:           http.ProxyFromEnvironment,
+			Transport: &http2.Transport{
 				TLSClientConfig: v.tlsConfig,
-				DialContext: (&net.Dialer{
-					Timeout:   10 * time.Second, //nolint: gomnd
-					KeepAlive: 30 * time.Second, //nolint: gomnd
-				}).DialContext,
-				MaxIdleConns:          100,              //nolint: gomnd
-				IdleConnTimeout:       90 * time.Second, //nolint: gomnd
-				TLSHandshakeTimeout:   5 * time.Second,  //nolint: gomnd
-				ExpectContinueTimeout: 1 * time.Second,
 			},
 		}
 	}
