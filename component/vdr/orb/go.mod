@@ -13,7 +13,7 @@ require (
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/piprate/json-gold v0.4.1-0.20210813112359-33b90c4ca86c
 	github.com/stretchr/testify v1.7.0
-	github.com/trustbloc/orb v0.1.4-0.20211201141158-15a02b430f04
-	github.com/trustbloc/sidetree-core-go v0.7.1-0.20211124193658-d5f6ccf1e554
+	github.com/trustbloc/orb v0.1.4-0.20211223174027-e48b5f451f1f
+	github.com/trustbloc/sidetree-core-go v0.7.1-0.20211215084556-11b9bec0b714
 	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2
 )
