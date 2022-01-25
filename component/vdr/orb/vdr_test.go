@@ -725,22 +725,6 @@ func TestVDRI_Update(t *testing.T) {
 		require.Contains(t, err.Error(), "failed to get next update public key")
 	})
 
-	t.Run("test did not published", func(t *testing.T) {
-		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-type", "application/did+ld+json")
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, validDocResolutionNotPublished)
-		}))
-		defer cServ.Close()
-
-		v, err := New(nil, WithHTTPClient(&http.Client{}))
-		require.NoError(t, err)
-
-		err = v.Update(&did.Doc{}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "did is not published can't update")
-	})
-
 	t.Run("test failed to get signing key", func(t *testing.T) {
 		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-type", "application/did+ld+json")

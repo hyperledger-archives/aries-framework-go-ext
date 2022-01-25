@@ -558,10 +558,6 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 		return err
 	}
 
-	if !docResolution.DocumentMetadata.Method.Published {
-		return fmt.Errorf("did is not published can't update")
-	}
-
 	// check recover option
 	if didMethodOpts.Values[RecoverOpt] != nil {
 		// Select domain
