@@ -78,21 +78,6 @@ const validDocResolutionCachedUpdate = `
 }
 `
 
-const validDocResolutionNotPublished = `
-{
-   "@context":"https://w3id.org/did-resolution/v1",
-   "didDocument": ` + validDoc + `,
-   "didDocumentMetadata":{
-      "canonicalId":"did:ex:123333",
-      "method":{
-         "published":false,
-         "recoveryCommitment":"EiB1u5HnTYKVHrmemOpZtrGlc6BoaWWHwNAd-k7CrLKHOg",
-         "updateCommitment":"EiAiTB0QR_Skh3i-fzDSeFgjVoMEDsXYoVIsA56-GUsKjg"
-      }
-   }
-}
-`
-
 //nolint:lll
 const validDoc = `{
   "@context": ["https://w3id.org/did/v1"],

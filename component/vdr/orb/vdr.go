@@ -394,10 +394,12 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 	var err error
 
 	switch {
-	case strings.HasPrefix(did, fmt.Sprintf("did:%s:%s", DIDMethod, httpsProtocol)):
+	case strings.HasPrefix(did, fmt.Sprintf("did:%s:%s", DIDMethod, httpsProtocol)) ||
+		strings.HasPrefix(did, fmt.Sprintf("did:%s:%s", DIDMethod, httpProtocol)):
 		hintDomain := strings.Split(did, ":")[3]
 
-		endpoint, err = v.discoveryService.GetEndpoint(fmt.Sprintf("%s://%s", httpsProtocol, hintDomain))
+		endpoint, err = v.discoveryService.GetEndpoint(
+			fmt.Sprintf("%s://%s", strings.Split(did, ":")[2], hintDomain))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get endpoints: %w", err)
 		}
@@ -486,37 +488,45 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 	return docResolution, nil
 }
 
-func (v *VDR) verifyDID(didRes *docdid.DocResolution) error { // nolint:gocognit,gocyclo
+func (v *VDR) verifyDID(didRes *docdid.DocResolution) error { // nolint:gocognit,gocyclo,funlen
+	check := false
+
 	// verify resolution result
-	if didRes.DocumentMetadata != nil && didRes.DocumentMetadata.Method != nil { //nolint:nestif
-		if (v.verifyResolutionResultType == Unpublished &&
-			len(didRes.DocumentMetadata.Method.UnpublishedOperations) > 0) || v.verifyResolutionResultType == All {
-			docRes := &document.ResolutionResult{}
+	if didRes.DocumentMetadata != nil && didRes.DocumentMetadata.Method != nil {
+		if len(didRes.DocumentMetadata.Method.UnpublishedOperations) > 0 &&
+			(v.verifyResolutionResultType == Unpublished || v.verifyResolutionResultType == All) {
+			check = true
+		} else if len(didRes.DocumentMetadata.Method.PublishedOperations) > 0 && v.verifyResolutionResultType == All {
+			check = true
+		}
+	}
 
-			didDocBytes, err := didRes.DIDDocument.JSONBytes()
-			if err != nil {
-				return err
-			}
+	if check { //nolint: nestif
+		docRes := &document.ResolutionResult{}
 
-			docRes.Document, err = document.FromBytes(didDocBytes)
-			if err != nil {
-				return err
-			}
+		didDocBytes, err := didRes.DIDDocument.JSONBytes()
+		if err != nil {
+			return err
+		}
 
-			documentMetadataBytes, err := json.Marshal(didRes.DocumentMetadata)
-			if err != nil {
-				return err
-			}
+		docRes.Document, err = document.FromBytes(didDocBytes)
+		if err != nil {
+			return err
+		}
 
-			if err := json.Unmarshal(documentMetadataBytes, &docRes.DocumentMetadata); err != nil {
-				return err
-			}
+		documentMetadataBytes, err := json.Marshal(didRes.DocumentMetadata)
+		if err != nil {
+			return err
+		}
 
-			docRes.Context = didRes.Context[0]
+		if err := json.Unmarshal(documentMetadataBytes, &docRes.DocumentMetadata); err != nil {
+			return err
+		}
 
-			if err := v.verifier.Verify(docRes); err != nil {
-				return err
-			}
+		docRes.Context = didRes.Context[0]
+
+		if err := v.verifier.Verify(docRes); err != nil {
+			return err
 		}
 	}
 
