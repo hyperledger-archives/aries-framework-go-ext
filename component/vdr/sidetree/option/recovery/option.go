@@ -12,6 +12,7 @@ import (
 
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
 
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/api"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
 )
 
@@ -22,8 +23,7 @@ type Opts struct {
 	GetEndpoints          func() ([]string, error)
 	NextRecoveryPublicKey crypto.PublicKey
 	NextUpdatePublicKey   crypto.PublicKey
-	SigningKey            crypto.PrivateKey
-	SigningKeyID          string
+	Signer                api.Signer
 	OperationCommitment   string
 	MultiHashAlgorithm    uint
 	AnchorOrigin          string
@@ -67,17 +67,10 @@ func WithNextUpdatePublicKey(nextUpdatePublicKey crypto.PublicKey) Option {
 	}
 }
 
-// WithSigningKey set signing key.
-func WithSigningKey(signingKey crypto.PrivateKey) Option {
+// WithSigner set signer.
+func WithSigner(signer api.Signer) Option {
 	return func(opts *Opts) {
-		opts.SigningKey = signingKey
-	}
-}
-
-// WithSigningKeyID set signing key id.
-func WithSigningKeyID(id string) Option {
-	return func(opts *Opts) {
-		opts.SigningKeyID = id
+		opts.Signer = signer
 	}
 }
 

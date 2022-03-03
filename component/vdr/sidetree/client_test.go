@@ -6,6 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 package sidetree_test
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
@@ -22,7 +23,11 @@ import (
 	gojose "github.com/square/go-jose/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/sidetree-core-go/pkg/commitment"
+	"github.com/trustbloc/sidetree-core-go/pkg/jws"
+	"github.com/trustbloc/sidetree-core-go/pkg/util/ecsigner"
+	"github.com/trustbloc/sidetree-core-go/pkg/util/edsigner"
 	"github.com/trustbloc/sidetree-core-go/pkg/util/pubkey"
+	"github.com/trustbloc/sidetree-core-go/pkg/versions/1_0/client"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
@@ -45,7 +50,7 @@ func TestClient_DeactivateDID(t *testing.T) {
 
 		err := v.DeactivateDID("did:ex:123")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "signing key is required")
+		require.Contains(t, err.Error(), "signer is required")
 	})
 
 	t.Run("test operation commitment is empty", func(t *testing.T) {
@@ -54,7 +59,7 @@ func TestClient_DeactivateDID(t *testing.T) {
 		_, privKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		err = v.DeactivateDID("did:ex:123", deactivate.WithSigningKey(privKey))
+		err = v.DeactivateDID("did:ex:123", deactivate.WithSigner(newSignerMock(t, privKey)))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "operation commitment is required")
 	})
@@ -65,29 +70,18 @@ func TestClient_DeactivateDID(t *testing.T) {
 		_, privKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		err = v.DeactivateDID("did:ex:123", deactivate.WithSigningKey(privKey),
+		err = v.DeactivateDID("did:ex:123", deactivate.WithSigner(newSignerMock(t, privKey)),
 			deactivate.WithOperationCommitment("value"))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "sidetree get endpoints func is required")
 
 		err = v.DeactivateDID("did:ex:123", deactivate.WithOperationCommitment("value"),
-			deactivate.WithSigningKey(privKey),
+			deactivate.WithSigner(newSignerMock(t, privKey)),
 			deactivate.WithSidetreeEndpoint(func() ([]string, error) {
 				return nil, fmt.Errorf("failed to get endpoint")
 			}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get endpoint")
-	})
-
-	t.Run("test unsupported signing key", func(t *testing.T) {
-		v := sidetree.New()
-
-		err := v.DeactivateDID("did:ex:123", deactivate.WithOperationCommitment("value"),
-			deactivate.WithSigningKey("www"), deactivate.WithSidetreeEndpoint(func() ([]string, error) {
-				return []string{"url"}, nil
-			}))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "key not supported")
 	})
 
 	t.Run("test error from unique suffix", func(t *testing.T) {
@@ -96,7 +90,8 @@ func TestClient_DeactivateDID(t *testing.T) {
 		_, privKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		err = v.DeactivateDID("wrong", deactivate.WithOperationCommitment("value"), deactivate.WithSigningKey(privKey),
+		err = v.DeactivateDID("wrong", deactivate.WithOperationCommitment("value"),
+			deactivate.WithSigner(newSignerMock(t, privKey)),
 			deactivate.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
 			}))
@@ -123,7 +118,7 @@ func TestClient_DeactivateDID(t *testing.T) {
 
 		err = v.DeactivateDID("did:ex:123",
 			deactivate.WithOperationCommitment(rv),
-			deactivate.WithSigningKey(privKey), deactivate.WithSidetreeEndpoint(func() ([]string, error) {
+			deactivate.WithSigner(newSignerMock(t, privKey)), deactivate.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
 			}))
 		require.Error(t, err)
@@ -138,7 +133,7 @@ func TestClient_DeactivateDID(t *testing.T) {
 
 		err = v.DeactivateDID("did:ex:123",
 			deactivate.WithOperationCommitment("value"),
-			deactivate.WithSigningKey(privKey), deactivate.WithSidetreeEndpoint(func() ([]string, error) {
+			deactivate.WithSigner(newSignerMock(t, privKey)), deactivate.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
 			}))
 		require.Error(t, err)
@@ -162,10 +157,10 @@ func TestClient_DeactivateDID(t *testing.T) {
 		rv, err := commitment.GetRevealValue(signingPubKeyJWK, 18)
 		require.NoError(t, err)
 
-		err = v.DeactivateDID("did:ex:123", deactivate.WithSigningKey(privKey),
+		err = v.DeactivateDID("did:ex:123", deactivate.WithSigner(newSignerMock(t, privKey)),
 			deactivate.WithOperationCommitment(rv), deactivate.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{serv.URL}, nil
-			}), deactivate.WithSigningKeyID("k1"))
+			}))
 		require.NoError(t, err)
 	})
 }
@@ -199,7 +194,7 @@ func TestClient_RecoverDID(t *testing.T) {
 		err = v.RecoverDID("did:ex:123", recovery.WithNextRecoveryPublicKey(pubKey),
 			recovery.WithNextUpdatePublicKey(pubKey))
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "signing key is required")
+		require.Contains(t, err.Error(), "signer is required")
 	})
 
 	t.Run("test operation commitment is empty", func(t *testing.T) {
@@ -209,7 +204,7 @@ func TestClient_RecoverDID(t *testing.T) {
 		require.NoError(t, err)
 
 		err = v.RecoverDID("did:ex:123", recovery.WithNextRecoveryPublicKey(pubKey),
-			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithSigningKey(privKey))
+			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithSigner(newSignerMock(t, privKey)))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "operation commitment is required")
 	})
@@ -222,13 +217,13 @@ func TestClient_RecoverDID(t *testing.T) {
 
 		err = v.RecoverDID("did:ex:123", recovery.WithOperationCommitment("value"),
 			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithNextRecoveryPublicKey(pubKey),
-			recovery.WithSigningKey(privKey))
+			recovery.WithSigner(newSignerMock(t, privKey)))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "sidetree get endpoints func is required")
 
 		err = v.RecoverDID("did:ex:123", recovery.WithOperationCommitment("value"),
 			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithNextRecoveryPublicKey(pubKey),
-			recovery.WithSigningKey(privKey), recovery.WithSidetreeEndpoint(func() ([]string, error) {
+			recovery.WithSigner(newSignerMock(t, privKey)), recovery.WithSidetreeEndpoint(func() ([]string, error) {
 				return nil, fmt.Errorf("failed to get endpoint")
 			}))
 		require.Error(t, err)
@@ -241,7 +236,8 @@ func TestClient_RecoverDID(t *testing.T) {
 		pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		err = v.RecoverDID("did:ex:123", recovery.WithOperationCommitment("value"), recovery.WithSigningKey(privKey),
+		err = v.RecoverDID("did:ex:123", recovery.WithOperationCommitment("value"),
+			recovery.WithSigner(newSignerMock(t, privKey)),
 			recovery.WithNextRecoveryPublicKey([]byte("wrong")), recovery.WithNextUpdatePublicKey(pubKey),
 			recovery.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
@@ -256,7 +252,8 @@ func TestClient_RecoverDID(t *testing.T) {
 		pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		err = v.RecoverDID("did:ex:123", recovery.WithOperationCommitment("value"), recovery.WithSigningKey(privKey),
+		err = v.RecoverDID("did:ex:123", recovery.WithOperationCommitment("value"),
+			recovery.WithSigner(newSignerMock(t, privKey)),
 			recovery.WithNextUpdatePublicKey([]byte("wrong")), recovery.WithNextRecoveryPublicKey(pubKey),
 			recovery.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
@@ -265,28 +262,14 @@ func TestClient_RecoverDID(t *testing.T) {
 		require.Contains(t, err.Error(), "failed to get next update key")
 	})
 
-	t.Run("test unsupported signing key", func(t *testing.T) {
-		v := sidetree.New()
-
-		pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-		require.NoError(t, err)
-
-		err = v.RecoverDID("did:ex:123", recovery.WithOperationCommitment("value"),
-			recovery.WithSigningKey("www"), recovery.WithNextUpdatePublicKey(pubKey),
-			recovery.WithNextRecoveryPublicKey(pubKey), recovery.WithSidetreeEndpoint(func() ([]string, error) {
-				return []string{"url"}, nil
-			}))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "key not supported")
-	})
-
 	t.Run("test error from unique suffix", func(t *testing.T) {
 		v := sidetree.New()
 
 		pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		err = v.RecoverDID("wrong", recovery.WithOperationCommitment("value"), recovery.WithSigningKey(privKey),
+		err = v.RecoverDID("wrong", recovery.WithOperationCommitment("value"),
+			recovery.WithSigner(newSignerMock(t, privKey)),
 			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithNextRecoveryPublicKey(pubKey),
 			recovery.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
@@ -304,8 +287,8 @@ func TestClient_RecoverDID(t *testing.T) {
 		ecPrivKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		require.NoError(t, err)
 
-		err = v.RecoverDID("did:ex:123", recovery.WithOperationCommitment("value"), recovery.WithSigningKey(ecPrivKey),
-			recovery.WithSigningKeyID("k1"), recovery.WithNextRecoveryPublicKey(pubKey),
+		err = v.RecoverDID("did:ex:123", recovery.WithOperationCommitment("value"),
+			recovery.WithSigner(newSignerMock(t, ecPrivKey)), recovery.WithNextRecoveryPublicKey(pubKey),
 			recovery.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
 			}), recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&doc.PublicKey{
@@ -340,7 +323,7 @@ func TestClient_RecoverDID(t *testing.T) {
 		err = v.RecoverDID("did:ex:123", recovery.WithOperationCommitment(rv),
 			recovery.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{serv.URL}, nil
-			}), recovery.WithSigningKey(ecPrivKey), recovery.WithSigningKeyID("k1"),
+			}), recovery.WithSigner(newSignerMock(t, ecPrivKey)),
 			recovery.WithNextRecoveryPublicKey(pubKey),
 			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&doc.PublicKey{
 				ID:   "key3",
@@ -364,7 +347,7 @@ func TestClient_RecoverDID(t *testing.T) {
 		err = v.RecoverDID("did:ex:123", recovery.WithOperationCommitment("value"),
 			recovery.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
-			}), recovery.WithSigningKey(ecPrivKey), recovery.WithSigningKeyID("k1"),
+			}), recovery.WithSigner(newSignerMock(t, ecPrivKey)),
 			recovery.WithNextRecoveryPublicKey(pubKey),
 			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&doc.PublicKey{
 				ID:   "key3",
@@ -406,8 +389,8 @@ func TestClient_RecoverDID(t *testing.T) {
 
 		err = v.RecoverDID("did:ex:123", recovery.WithSidetreeEndpoint(func() ([]string, error) {
 			return []string{serv.URL}, nil
-		}), recovery.WithSigningKey(signingKey), recovery.WithOperationCommitment(rv),
-			recovery.WithSigningKeyID("k1"), recovery.WithNextRecoveryPublicKey(pubKey),
+		}), recovery.WithSigner(newSignerMock(t, signingKey)), recovery.WithOperationCommitment(rv),
+			recovery.WithNextRecoveryPublicKey(pubKey),
 			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&doc.PublicKey{
 				ID:   "key3",
 				Type: doc.Ed25519VerificationKey2018,
@@ -424,7 +407,7 @@ func TestClient_UpdateDID(t *testing.T) {
 
 		err := v.UpdateDID("did:ex:123")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "signing public key is required")
+		require.Contains(t, err.Error(), "signer is required")
 	})
 
 	t.Run("test next updates key empty", func(t *testing.T) {
@@ -433,7 +416,7 @@ func TestClient_UpdateDID(t *testing.T) {
 		_, privKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		err = v.UpdateDID("did:ex:123", update.WithSigningKey(privKey))
+		err = v.UpdateDID("did:ex:123", update.WithSigner(newSignerMock(t, privKey)))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "next update public key is required")
 	})
@@ -444,7 +427,7 @@ func TestClient_UpdateDID(t *testing.T) {
 		pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		err = v.UpdateDID("did:ex:123", update.WithSigningKey(privKey), update.WithNextUpdatePublicKey(pubKey))
+		err = v.UpdateDID("did:ex:123", update.WithSigner(newSignerMock(t, privKey)), update.WithNextUpdatePublicKey(pubKey))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "operation commitment is required")
 	})
@@ -456,12 +439,12 @@ func TestClient_UpdateDID(t *testing.T) {
 		require.NoError(t, err)
 
 		err = v.UpdateDID("did:ex:123", update.WithOperationCommitment("value"), update.WithNextUpdatePublicKey(pubKey),
-			update.WithSigningKey(privKey))
+			update.WithSigner(newSignerMock(t, privKey)))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "sidetree get endpoints func is required")
 
 		err = v.UpdateDID("did:ex:123", update.WithOperationCommitment("value"), update.WithNextUpdatePublicKey(pubKey),
-			update.WithSigningKey(privKey), update.WithSidetreeEndpoint(func() ([]string, error) {
+			update.WithSigner(newSignerMock(t, privKey)), update.WithSidetreeEndpoint(func() ([]string, error) {
 				return nil, fmt.Errorf("failed to get endpoints")
 			}))
 		require.Error(t, err)
@@ -474,26 +457,13 @@ func TestClient_UpdateDID(t *testing.T) {
 		_, privKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		err = v.UpdateDID("did:ex:123", update.WithOperationCommitment("value"), update.WithSigningKey(privKey),
+		err = v.UpdateDID("did:ex:123", update.WithOperationCommitment("value"),
+			update.WithSigner(newSignerMock(t, privKey)),
 			update.WithNextUpdatePublicKey([]byte("wrong")), update.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
 			}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get next update key")
-	})
-
-	t.Run("test unsupported signing key", func(t *testing.T) {
-		v := sidetree.New()
-
-		pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-		require.NoError(t, err)
-
-		err = v.UpdateDID("did:ex:123", update.WithOperationCommitment("value"), update.WithSigningKey("www"),
-			update.WithNextUpdatePublicKey(pubKey), update.WithSidetreeEndpoint(func() ([]string, error) {
-				return []string{"url"}, nil
-			}))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "key not supported")
 	})
 
 	t.Run("error from update patches", func(t *testing.T) {
@@ -504,7 +474,7 @@ func TestClient_UpdateDID(t *testing.T) {
 
 		defaultOptions := []update.Option{
 			update.WithOperationCommitment("value"),
-			update.WithSigningKey(privKey),
+			update.WithSigner(newSignerMock(t, privKey)),
 			update.WithNextUpdatePublicKey(pubKey),
 			update.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
@@ -530,7 +500,8 @@ func TestClient_UpdateDID(t *testing.T) {
 		pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		err = v.UpdateDID("wrong", update.WithOperationCommitment("value"), update.WithSigningKey(privKey),
+		err = v.UpdateDID("wrong", update.WithOperationCommitment("value"),
+			update.WithSigner(newSignerMock(t, privKey)),
 			update.WithNextUpdatePublicKey(pubKey), update.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{"url"}, nil
 			}))
@@ -560,7 +531,7 @@ func TestClient_UpdateDID(t *testing.T) {
 
 		err = v.UpdateDID("did:ex:123", update.WithSidetreeEndpoint(func() ([]string, error) {
 			return []string{serv.URL}, nil
-		}), update.WithSigningKey(signingKey), update.WithOperationCommitment(rv),
+		}), update.WithSigner(newSignerMock(t, signingKey)), update.WithOperationCommitment(rv),
 			update.WithNextUpdatePublicKey(pubKey), update.WithRemoveService("svc1"),
 			update.WithRemoveService("svc1"), update.WithRemovePublicKey("k1"),
 			update.WithRemovePublicKey("k2"), update.WithAddPublicKey(&doc.PublicKey{
@@ -584,7 +555,7 @@ func TestClient_UpdateDID(t *testing.T) {
 
 		err = v.UpdateDID("did:ex:123", update.WithSidetreeEndpoint(func() ([]string, error) {
 			return []string{"url"}, nil
-		}), update.WithSigningKey(signingKey), update.WithOperationCommitment("value"),
+		}), update.WithSigner(newSignerMock(t, signingKey)), update.WithOperationCommitment("value"),
 			update.WithNextUpdatePublicKey(pubKey), update.WithRemoveService("svc1"),
 			update.WithRemoveService("svc1"), update.WithRemovePublicKey("k1"),
 			update.WithRemovePublicKey("k2"), update.WithAddPublicKey(&doc.PublicKey{
@@ -619,7 +590,7 @@ func TestClient_UpdateDID(t *testing.T) {
 
 		err = v.UpdateDID("did:ex:123", update.WithSidetreeEndpoint(func() ([]string, error) {
 			return []string{serv.URL}, nil
-		}), update.WithSigningKey(signingKey), update.WithOperationCommitment(rv),
+		}), update.WithSigner(newSignerMock(t, signingKey)), update.WithOperationCommitment(rv),
 			update.WithNextUpdatePublicKey(pubKey), update.WithRemoveService("svc1"),
 			update.WithRemoveService("svc1"), update.WithRemovePublicKey("k1"),
 			update.WithRemovePublicKey("k2"), update.WithAddPublicKey(&doc.PublicKey{
@@ -842,4 +813,40 @@ func TestClient_CreateDID(t *testing.T) {
 		require.Contains(t, err.Error(), "update public key is required")
 		require.Nil(t, didResol)
 	})
+}
+
+type signerMock struct {
+	signer    client.Signer
+	publicKey *jws.JWK
+}
+
+func newSignerMock(t *testing.T, signingkey crypto.PrivateKey) *signerMock {
+	t.Helper()
+
+	switch key := signingkey.(type) {
+	case *ecdsa.PrivateKey:
+		updateKey, err := pubkey.GetPublicKeyJWK(key.Public())
+		require.NoError(t, err)
+
+		return &signerMock{signer: ecsigner.New(key, "ES256", "k1"), publicKey: updateKey}
+	case ed25519.PrivateKey:
+		updateKey, err := pubkey.GetPublicKeyJWK(key.Public())
+		require.NoError(t, err)
+
+		return &signerMock{signer: edsigner.New(key, "EdDSA", "k1"), publicKey: updateKey}
+	}
+
+	return nil
+}
+
+func (s *signerMock) Sign(data []byte) ([]byte, error) {
+	return s.signer.Sign(data)
+}
+
+func (s *signerMock) Headers() jws.Headers {
+	return s.signer.Headers()
+}
+
+func (s *signerMock) PublicKeyJWK() *jws.JWK {
+	return s.publicKey
 }
