@@ -36,7 +36,7 @@ services:
       - ORB_AUTH_TOKENS_DEF=/services/orb/outbox||admin,/services/orb/inbox||admin,/sidetree/.*/operations||admin
       - ORB_AUTH_TOKENS=admin=ADMIN_TOKEN
       - HTTP_SIGNATURES_ENABLED=true
-      - CREATE_DOCUMENT_STORE_ENABLED=true
+      - UNPUBLISHED_OPERATION_STORE_ENABLED=true
       - UPDATE_DOCUMENT_STORE_ENABLED=${UPDATE_DOCUMENT_STORE_ENABLED}
       - RESOLVE_FROM_ANCHOR_ORIGIN=true
       - INCLUDE_UNPUBLISHED_OPERATIONS_IN_METADATA=true
@@ -80,7 +80,7 @@ services:
       - ORB_AUTH_TOKENS_DEF=/services/orb/outbox||admin,/services/orb/inbox||admin,/sidetree/.*/operations||admin
       - ORB_AUTH_TOKENS=admin=ADMIN_TOKEN,read=READ_TOKEN
       - HTTP_SIGNATURES_ENABLED=true
-      - CREATE_DOCUMENT_STORE_ENABLED=true
+      - UNPUBLISHED_OPERATION_STORE_ENABLED=true
       - UPDATE_DOCUMENT_STORE_ENABLED=${UPDATE_DOCUMENT_STORE_ENABLED}
       - RESOLVE_FROM_ANCHOR_ORIGIN=true
       - INCLUDE_UNPUBLISHED_OPERATIONS_IN_METADATA=true

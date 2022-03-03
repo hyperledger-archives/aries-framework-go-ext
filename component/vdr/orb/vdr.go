@@ -72,12 +72,16 @@ const (
 	CheckDIDUpdated = "checkDIDUpdated"
 	// TracingCtxOpt tracing opt.
 	TracingCtxOpt = "tracingCtxOpt"
-	httpTimeOut   = 20 * time.Second
-	sha2_256      = 18 // multihash
-	ipfsGlobal    = "https://ipfs.io"
-	ipfsPrefix    = "ipfs://"
-	httpsProtocol = "https"
-	httpProtocol  = "http"
+	// VersionIDOpt version id opt this option is not mandatory.
+	VersionIDOpt = httpbinding.VersionIDOpt
+	// VersionTimeOpt version time opt this option is not mandatory.
+	VersionTimeOpt = httpbinding.VersionTimeOpt
+	httpTimeOut    = 20 * time.Second
+	sha2_256       = 18 // multihash
+	ipfsGlobal     = "https://ipfs.io"
+	ipfsPrefix     = "ipfs://"
+	httpsProtocol  = "https"
+	httpProtocol   = "http"
 )
 
 var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals

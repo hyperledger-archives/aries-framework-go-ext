@@ -31,6 +31,6 @@ fi
 
 $cli follower --outbox-url=https://localhost:8009/services/orb/outbox --actor=$domain2IRI --to=$domain1IRI --action=Follow --tls-cacerts=../fixtures/keys/tls/ec-cacert.pem --auth-token=ADMIN_TOKEN
 $cli witness --outbox-url=https://testnet.orb.local/services/orb/outbox --actor=$domain1IRI --to=$domain2IRI --action=InviteWitness --tls-cacerts=../fixtures/keys/tls/ec-cacert.pem --auth-token=ADMIN_TOKEN
-$cli ipfs key-gen --ipfs-url=http://localhost:5001 --key-name=$keyID --privatekey-ed25519=9kRTh70Ut0MKPeHY3Gdv/pi8SACx6dFjaEiIHf7JDugPpXBnCHVvRbgdzYbWfCGsXdvh/Zct+AldKG4bExjHXg
-$cli ipfs host-meta-doc-gen --ipfs-url=http://localhost:5001 --resource-url=https://testnet.orb.local --key-name=$keyID --tls-cacerts=../fixtures/keys/tls/ec-cacert.pem
-$cli ipfs host-meta-dir-upload --ipfs-url=http://localhost:5001 --key-name=$keyID --host-meta-input-dir=./website
+#$cli ipfs key-gen --ipfs-url=http://localhost:5001 --key-name=$keyID --privatekey-ed25519=9kRTh70Ut0MKPeHY3Gdv/pi8SACx6dFjaEiIHf7JDugPpXBnCHVvRbgdzYbWfCGsXdvh/Zct+AldKG4bExjHXg
+#$cli ipfs host-meta-doc-gen --ipfs-url=http://localhost:5001 --resource-url=https://testnet.orb.local --key-name=$keyID --tls-cacerts=../fixtures/keys/tls/ec-cacert.pem
+#$cli ipfs host-meta-dir-upload --ipfs-url=http://localhost:5001 --key-name=$keyID --host-meta-input-dir=./website

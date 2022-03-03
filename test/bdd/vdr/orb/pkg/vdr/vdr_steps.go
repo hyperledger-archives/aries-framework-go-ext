@@ -47,13 +47,16 @@ const (
 
 // Steps is steps for VC BDD tests.
 type Steps struct {
-	bddContext       *context.BDDContext
-	createdDoc       *ariesdid.DocResolution
-	vm               *ariesdid.VerificationMethod
-	httpClient       *http.Client
-	vdr              *orb.VDR
-	vdrWithoutDomain *orb.VDR
-	keyRetriever     *keyRetriever
+	bddContext            *context.BDDContext
+	createdDoc            *ariesdid.DocResolution
+	createdDocVersionID   string
+	createdDocVersionTime string
+	createdDocCanonicalID string
+	vm                    *ariesdid.VerificationMethod
+	httpClient            *http.Client
+	vdr                   *orb.VDR
+	vdrWithoutDomain      *orb.VDR
+	keyRetriever          *keyRetriever
 }
 
 // NewSteps returns new agent from client SDK.
@@ -97,6 +100,8 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 		e.executeScript)
 	s.Step(`^Resolve created DID and validate key type "([^"]*)", signature suite "([^"]*)"$`,
 		e.resolveCreatedDID)
+	s.Step(`^Resolve created DID using "([^"]*)"$`,
+		e.resolveUsingVersionOrTime)
 	s.Step(`^Resolve created DID through anchor origin`,
 		e.resolveCreatedDIDThroughAnchorOrigin)
 	s.Step(`^Resolve created DID through https hint`,
@@ -183,6 +188,8 @@ func (e *Steps) recoverDID(keyType, signatureSuite string) error {
 }
 
 func (e *Steps) updateDID(keyType, signatureSuite, resolveDID string) error {
+	time.Sleep(30 * time.Second) //nolint:gomnd
+
 	kid, pubKey, err := e.getPublicKey(keyType)
 	if err != nil {
 		return err
@@ -219,7 +226,7 @@ func (e *Steps) updateDID(keyType, signatureSuite, resolveDID string) error {
 
 	var opts []vdrapi.DIDMethodOption
 
-	if resolveDID == "true" {
+	if resolveDID == "true" { //nolint:goconst
 		opts = append(opts, vdrapi.WithOption(orb.CheckDIDUpdated,
 			&orb.ResolveDIDRetry{MaxNumber: maxRetry, SleepTime: &sleepTime}))
 	}
@@ -243,6 +250,10 @@ func (e *Steps) create(keyType, signatureSuite, resolveDID string) error {
 
 	if err := e.createDID(keyType, signatureSuite, "", retry); err != nil {
 		return err
+	}
+
+	if resolveDID == "true" {
+		e.createdDocVersionTime = time.Now().UTC().Format(time.RFC3339)
 	}
 
 	return e.resolveCreatedDID(keyType, signatureSuite)
@@ -502,6 +513,30 @@ func (e *Steps) resolveCreatedDIDThroughAnchorOrigin() error {
 	return nil
 }
 
+func (e *Steps) resolveUsingVersionOrTime(resolveType string) error {
+	opts := make([]vdrapi.DIDMethodOption, 0)
+
+	switch resolveType {
+	case "versionID":
+		opts = append(opts, vdrapi.WithOption(orb.VersionIDOpt, e.createdDocVersionID))
+	case "versionTime":
+		opts = append(opts, vdrapi.WithOption(orb.VersionTimeOpt, e.createdDocVersionTime))
+	default:
+		return fmt.Errorf("%s not supported", resolveType)
+	}
+
+	docResolution, err := e.vdr.Read(e.createdDocCanonicalID, opts...)
+	if err != nil {
+		return err
+	}
+
+	if len(docResolution.DIDDocument.Service) != 1 {
+		return fmt.Errorf("resolved %s did service count is not equal to %d", resolveType, 1)
+	}
+
+	return nil
+}
+
 func (e *Steps) resolveCreatedDID(keyType, signatureSuite string) error {
 	docResolution, err := e.vdr.Read(e.createdDoc.DIDDocument.ID)
 	if err != nil {
@@ -518,7 +553,14 @@ func (e *Steps) resolveCreatedDID(keyType, signatureSuite string) error {
 			docResolution.DIDDocument.Service[0].ID, docResolution.DIDDocument.ID+"#"+serviceID)
 	}
 
-	return e.validatePublicKey(docResolution.DIDDocument, keyType, signatureSuite)
+	if err := e.validatePublicKey(docResolution.DIDDocument, keyType, signatureSuite); err != nil {
+		return err
+	}
+
+	e.createdDocVersionID = docResolution.DocumentMetadata.VersionID
+	e.createdDocCanonicalID = docResolution.DocumentMetadata.CanonicalID
+
+	return nil
 }
 
 func (e *Steps) getPublicKey(keyType string) (string, []byte, error) { //nolint:gocritic
