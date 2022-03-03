@@ -12,6 +12,7 @@ import (
 
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
 
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/api"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
 )
 
@@ -26,8 +27,7 @@ type Opts struct {
 	RemoveServices      []string
 	GetEndpoints        func() ([]string, error)
 	NextUpdatePublicKey crypto.PublicKey
-	SigningKey          crypto.PrivateKey
-	SigningKeyID        string
+	Signer              api.Signer
 	OperationCommitment string
 	MultiHashAlgorithm  uint
 }
@@ -53,6 +53,13 @@ func WithRemovePublicKey(publicKeyID string) Option {
 	}
 }
 
+// WithSigner set signer.
+func WithSigner(signer api.Signer) Option {
+	return func(opts *Opts) {
+		opts.Signer = signer
+	}
+}
+
 // WithRemoveService set remove service id.
 func WithRemoveService(serviceID string) Option {
 	return func(opts *Opts) {
@@ -64,20 +71,6 @@ func WithRemoveService(serviceID string) Option {
 func WithNextUpdatePublicKey(nextUpdatePublicKey crypto.PublicKey) Option {
 	return func(opts *Opts) {
 		opts.NextUpdatePublicKey = nextUpdatePublicKey
-	}
-}
-
-// WithSigningKey set signing key.
-func WithSigningKey(signingKey crypto.PrivateKey) Option {
-	return func(opts *Opts) {
-		opts.SigningKey = signingKey
-	}
-}
-
-// WithSigningKeyID set signing key id.
-func WithSigningKeyID(id string) Option {
-	return func(opts *Opts) {
-		opts.SigningKeyID = id
 	}
 }
 

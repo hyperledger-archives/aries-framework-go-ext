@@ -8,14 +8,13 @@ SPDX-License-Identifier: Apache-2.0
 package deactivate
 
 import (
-	"crypto"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/api"
 )
 
 // Opts deactivate did opts.
 type Opts struct {
 	GetEndpoints        func() ([]string, error)
-	SigningKey          crypto.PrivateKey
-	SigningKeyID        string
+	Signer              api.Signer
 	OperationCommitment string
 }
 
@@ -29,17 +28,10 @@ func WithSidetreeEndpoint(getEndpoints func() ([]string, error)) Option {
 	}
 }
 
-// WithSigningKey set signing key.
-func WithSigningKey(signingKey crypto.PrivateKey) Option {
+// WithSigner set signer.
+func WithSigner(signer api.Signer) Option {
 	return func(opts *Opts) {
-		opts.SigningKey = signingKey
-	}
-}
-
-// WithSigningKeyID set signing key id.
-func WithSigningKeyID(id string) Option {
-	return func(opts *Opts) {
-		opts.SigningKeyID = id
+		opts.Signer = signer
 	}
 }
 

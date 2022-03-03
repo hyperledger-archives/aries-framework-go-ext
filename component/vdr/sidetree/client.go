@@ -10,9 +10,6 @@ package sidetree
 import (
 	"bytes"
 	"context"
-	"crypto"
-	"crypto/ecdsa"
-	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,10 +22,7 @@ import (
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/trustbloc/sidetree-core-go/pkg/commitment"
 	"github.com/trustbloc/sidetree-core-go/pkg/hashing"
-	"github.com/trustbloc/sidetree-core-go/pkg/jws"
 	"github.com/trustbloc/sidetree-core-go/pkg/patch"
-	"github.com/trustbloc/sidetree-core-go/pkg/util/ecsigner"
-	"github.com/trustbloc/sidetree-core-go/pkg/util/edsigner"
 	"github.com/trustbloc/sidetree-core-go/pkg/util/pubkey"
 	"github.com/trustbloc/sidetree-core-go/pkg/versions/1_0/client"
 
@@ -236,8 +230,8 @@ func validateCreateReq(createDIDOpts *create.Opts) error {
 }
 
 func validateUpdateReq(updateDIDOpts *update.Opts) error {
-	if updateDIDOpts.SigningKey == nil {
-		return fmt.Errorf("signing public key is required")
+	if updateDIDOpts.Signer == nil {
+		return fmt.Errorf("signer is required")
 	}
 
 	if updateDIDOpts.NextUpdatePublicKey == nil {
@@ -264,8 +258,8 @@ func validateRecoverReq(recoverDIDOpts *recovery.Opts) error {
 		return fmt.Errorf("next update public key is required")
 	}
 
-	if recoverDIDOpts.SigningKey == nil {
-		return fmt.Errorf("signing key is required")
+	if recoverDIDOpts.Signer == nil {
+		return fmt.Errorf("signer is required")
 	}
 
 	if recoverDIDOpts.OperationCommitment == "" {
@@ -280,8 +274,8 @@ func validateRecoverReq(recoverDIDOpts *recovery.Opts) error {
 }
 
 func validateDeactivateReq(deactivateDIDOpts *deactivate.Opts) error {
-	if deactivateDIDOpts.SigningKey == nil {
-		return fmt.Errorf("signing key is required")
+	if deactivateDIDOpts.Signer == nil {
+		return fmt.Errorf("signer is required")
 	}
 
 	if deactivateDIDOpts.OperationCommitment == "" {
@@ -356,11 +350,6 @@ func (c *Client) buildUpdateRequest(did string, multiHashAlgorithm uint,
 		return nil, err
 	}
 
-	signer, updateKey, err := getSigner(updateDIDOpts.SigningKey, updateDIDOpts.SigningKeyID)
-	if err != nil {
-		return nil, err
-	}
-
 	patches, err := createUpdatePatches(updateDIDOpts)
 	if err != nil {
 		return nil, err
@@ -376,7 +365,7 @@ func (c *Client) buildUpdateRequest(did string, multiHashAlgorithm uint,
 		return nil, err
 	}
 
-	rv, err := commitment.GetRevealValue(updateKey, uint(multihashCode))
+	rv, err := commitment.GetRevealValue(updateDIDOpts.Signer.PublicKeyJWK(), uint(multihashCode))
 	if err != nil {
 		return nil, err
 	}
@@ -385,10 +374,10 @@ func (c *Client) buildUpdateRequest(did string, multiHashAlgorithm uint,
 		DidSuffix:        didSuffix,
 		RevealValue:      rv,
 		UpdateCommitment: nextUpdateCommitment,
-		UpdateKey:        updateKey,
+		UpdateKey:        updateDIDOpts.Signer.PublicKeyJWK(),
 		Patches:          patches,
 		MultihashCode:    multiHashAlgorithm,
-		Signer:           signer,
+		Signer:           updateDIDOpts.Signer,
 	})
 }
 
@@ -409,11 +398,6 @@ func buildRecoverRequest(did string, multiHashAlgorithm uint, recoverDIDOpts *re
 		return nil, err
 	}
 
-	signer, recoveryKey, err := getSigner(recoverDIDOpts.SigningKey, recoverDIDOpts.SigningKeyID)
-	if err != nil {
-		return nil, err
-	}
-
 	didSuffix, err := getUniqueSuffix(did)
 	if err != nil {
 		return nil, err
@@ -424,7 +408,7 @@ func buildRecoverRequest(did string, multiHashAlgorithm uint, recoverDIDOpts *re
 		return nil, err
 	}
 
-	rv, err := commitment.GetRevealValue(recoveryKey, uint(multihashCode))
+	rv, err := commitment.GetRevealValue(recoverDIDOpts.Signer.PublicKeyJWK(), uint(multihashCode))
 	if err != nil {
 		return nil, err
 	}
@@ -432,8 +416,8 @@ func buildRecoverRequest(did string, multiHashAlgorithm uint, recoverDIDOpts *re
 	req, err := client.NewRecoverRequest(&client.RecoverRequestInfo{
 		DidSuffix: didSuffix, RevealValue: rv, OpaqueDocument: string(docBytes),
 		RecoveryCommitment: nextRecoveryCommitment, UpdateCommitment: nextUpdateCommitment,
-		MultihashCode: multiHashAlgorithm, Signer: signer, RecoveryKey: recoveryKey,
-		AnchorOrigin: recoverDIDOpts.AnchorOrigin,
+		MultihashCode: multiHashAlgorithm, Signer: recoverDIDOpts.Signer,
+		RecoveryKey: recoverDIDOpts.Signer.PublicKeyJWK(), AnchorOrigin: recoverDIDOpts.AnchorOrigin,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sidetree request: %w", err)
@@ -444,11 +428,6 @@ func buildRecoverRequest(did string, multiHashAlgorithm uint, recoverDIDOpts *re
 
 // buildDeactivateRequest request builder for sidetree public DID deactivate.
 func buildDeactivateRequest(did string, deactivateDIDOpts *deactivate.Opts) ([]byte, error) {
-	signer, publicKey, err := getSigner(deactivateDIDOpts.SigningKey, deactivateDIDOpts.SigningKeyID)
-	if err != nil {
-		return nil, err
-	}
-
 	didSuffix, err := getUniqueSuffix(did)
 	if err != nil {
 		return nil, err
@@ -459,7 +438,7 @@ func buildDeactivateRequest(did string, deactivateDIDOpts *deactivate.Opts) ([]b
 		return nil, err
 	}
 
-	rv, err := commitment.GetRevealValue(publicKey, uint(multihashCode))
+	rv, err := commitment.GetRevealValue(deactivateDIDOpts.Signer.PublicKeyJWK(), uint(multihashCode))
 	if err != nil {
 		return nil, err
 	}
@@ -467,8 +446,8 @@ func buildDeactivateRequest(did string, deactivateDIDOpts *deactivate.Opts) ([]b
 	return client.NewDeactivateRequest(&client.DeactivateRequestInfo{
 		DidSuffix:   didSuffix,
 		RevealValue: rv,
-		RecoveryKey: publicKey,
-		Signer:      signer,
+		RecoveryKey: deactivateDIDOpts.Signer.PublicKeyJWK(),
+		Signer:      deactivateDIDOpts.Signer,
 	})
 }
 
@@ -586,27 +565,6 @@ func createAddPublicKeysPatch(updateDIDOpts *update.Opts) (patch.Patch, error) {
 	}
 
 	return patch.NewAddPublicKeysPatch(string(addPublicKeys))
-}
-
-func getSigner(signingkey crypto.PrivateKey, keyID string) (client.Signer, *jws.JWK, error) {
-	switch key := signingkey.(type) {
-	case *ecdsa.PrivateKey:
-		updateKey, err := pubkey.GetPublicKeyJWK(key.Public())
-		if err != nil {
-			return nil, nil, err
-		}
-
-		return ecsigner.New(key, "ES256", keyID), updateKey, nil
-	case ed25519.PrivateKey:
-		updateKey, err := pubkey.GetPublicKeyJWK(key.Public())
-		if err != nil {
-			return nil, nil, err
-		}
-
-		return edsigner.New(key, "EdDSA", keyID), updateKey, nil
-	default:
-		return nil, nil, fmt.Errorf("key not supported")
-	}
 }
 
 func getUniqueSuffix(id string) (string, error) {
