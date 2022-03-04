@@ -44,6 +44,7 @@ import (
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/lb"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/tracing"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/api"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/create"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/deactivate"
@@ -166,7 +167,7 @@ type VDR struct {
 type KeyRetriever interface {
 	GetNextRecoveryPublicKey(didID, commitment string) (crypto.PublicKey, error)
 	GetNextUpdatePublicKey(didID, commitment string) (crypto.PublicKey, error)
-	GetSigningKey(didID string, ot OperationType, commitment string) (crypto.PrivateKey, error)
+	GetSigner(didID string, ot OperationType, commitment string) (api.Signer, error)
 }
 
 // New creates new orb VDR.
@@ -620,7 +621,7 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 		return err
 	}
 
-	updateSigningKey, err := v.keyRetriever.GetSigningKey(didDoc.ID, Update,
+	signer, err := v.keyRetriever.GetSigner(didDoc.ID, Update,
 		docResolution.DocumentMetadata.Method.UpdateCommitment)
 	if err != nil {
 		return err
@@ -646,7 +647,7 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 	}),
 		update.WithNextUpdatePublicKey(nextUpdatePublicKey),
 		update.WithMultiHashAlgorithm(sha2_256),
-		update.WithSigningKey(updateSigningKey),
+		update.WithSigner(signer),
 		update.WithOperationCommitment(docResolution.DocumentMetadata.Method.UpdateCommitment))
 
 	if errUpdateDID := v.sidetreeClient.UpdateDID(didDoc.ID, updateOpt...); errUpdateDID != nil {
@@ -718,7 +719,7 @@ func (v *VDR) recover(didDoc *docdid.Doc, getEndpoints func() ([]string, error),
 		return err
 	}
 
-	updateSigningKey, err := v.keyRetriever.GetSigningKey(didDoc.ID, Recover, recoveryCommitment)
+	signer, err := v.keyRetriever.GetSigner(didDoc.ID, Recover, recoveryCommitment)
 	if err != nil {
 		return err
 	}
@@ -727,7 +728,7 @@ func (v *VDR) recover(didDoc *docdid.Doc, getEndpoints func() ([]string, error),
 		recovery.WithNextUpdatePublicKey(nextUpdatePublicKey),
 		recovery.WithNextRecoveryPublicKey(nextRecoveryPublicKey),
 		recovery.WithMultiHashAlgorithm(sha2_256),
-		recovery.WithSigningKey(updateSigningKey),
+		recovery.WithSigner(signer),
 		recovery.WithOperationCommitment(recoveryCommitment),
 		recovery.WithAnchorOrigin(anchorOrigin))
 
@@ -750,7 +751,7 @@ func (v *VDR) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 		return err
 	}
 
-	signingKey, err := v.keyRetriever.GetSigningKey(didID, Recover,
+	signer, err := v.keyRetriever.GetSigner(didID, Recover,
 		docResolution.DocumentMetadata.Method.RecoveryCommitment)
 	if err != nil {
 		return err
@@ -764,7 +765,7 @@ func (v *VDR) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 
 	deactivateOpt = append(deactivateOpt,
 		deactivate.WithSidetreeEndpoint(v.getSidetreeOperationEndpoints(didMethodOpts, domain)),
-		deactivate.WithSigningKey(signingKey),
+		deactivate.WithSigner(signer),
 		deactivate.WithOperationCommitment(docResolution.DocumentMetadata.Method.RecoveryCommitment))
 
 	return v.sidetreeClient.DeactivateDID(didID, deactivateOpt...)
