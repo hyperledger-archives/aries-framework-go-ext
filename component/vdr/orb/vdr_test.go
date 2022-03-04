@@ -24,6 +24,7 @@ import (
 	"github.com/trustbloc/orb/pkg/discovery/endpoint/client/models"
 	"github.com/trustbloc/sidetree-core-go/pkg/document"
 
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/api"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/create"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/deactivate"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/recovery"
@@ -718,8 +719,8 @@ func TestVDRI_Update(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{getSigningKey: func(didID string, ot OperationType,
-			commitment string) (crypto.PrivateKey, error) {
+		v, err := New(&mockKeyRetriever{getSigner: func(didID string, ot OperationType,
+			commitment string) (api.Signer, error) {
 			return nil, fmt.Errorf("failed to get signing key")
 		}}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
@@ -870,8 +871,8 @@ func TestVDRI_Recover(t *testing.T) {
 		}))
 		defer cServ.Close()
 
-		v, err := New(&mockKeyRetriever{getSigningKey: func(didID string, ot OperationType,
-			commitment string) (crypto.PrivateKey, error) {
+		v, err := New(&mockKeyRetriever{getSigner: func(didID string, ot OperationType,
+			commitment string) (api.Signer, error) {
 			return nil, fmt.Errorf("failed to get signing key")
 		}}, WithHTTPClient(&http.Client{}))
 		require.NoError(t, err)
@@ -1130,7 +1131,7 @@ func (m *mockSidetreeClient) DeactivateDID(didID string, opts ...deactivate.Opti
 type mockKeyRetriever struct {
 	getNextRecoveryPublicKeyFunc func(didID, commitment string) (crypto.PublicKey, error)
 	getNextUpdatePublicKey       func(didID, commitment string) (crypto.PublicKey, error)
-	getSigningKey                func(didID string, ot OperationType, commitment string) (crypto.PrivateKey, error)
+	getSigner                    func(didID string, ot OperationType, commitment string) (api.Signer, error)
 }
 
 func (m *mockKeyRetriever) GetNextRecoveryPublicKey(didID, commitment string) (crypto.PublicKey, error) {
@@ -1149,9 +1150,9 @@ func (m *mockKeyRetriever) GetNextUpdatePublicKey(didID, commitment string) (cry
 	return nil, nil
 }
 
-func (m *mockKeyRetriever) GetSigningKey(didID string, ot OperationType, commitment string) (crypto.PrivateKey, error) {
-	if m.getSigningKey != nil {
-		return m.getSigningKey(didID, ot, commitment)
+func (m *mockKeyRetriever) GetSigner(didID string, ot OperationType, commitment string) (api.Signer, error) {
+	if m.getSigner != nil {
+		return m.getSigner(didID, ot, commitment)
 	}
 
 	return nil, nil
