@@ -104,6 +104,8 @@ func NewProvider(dbPath string, opts ...Option) (*Provider, error) {
 // OpenStore opens a store with the given name and returns a handle.
 // If the store has never been opened before, then it is created.
 // Store names are not case-sensitive. If name is blank, then an error will be returned.
+// WARNING: This method will create a database and table based on the given name. Those database calls may be
+// vulnerable to an SQL injection attack. Be very careful if you use a user-provided string in the store name!
 func (p *Provider) OpenStore(name string) (storage.Store, error) {
 	if name == "" {
 		return nil, errBlankStoreName
