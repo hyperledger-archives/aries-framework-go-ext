@@ -27,7 +27,7 @@ services:
       - IPFS_URL=ipfs:5001
       - ANCHOR_CREDENTIAL_ISSUER=https://testnet.orb.local
       - ANCHOR_CREDENTIAL_URL=https://testnet.orb.local/vc
-      - ANCHOR_CREDENTIAL_SIGNATURE_SUITE=Ed25519Signature2018
+      - ANCHOR_CREDENTIAL_SIGNATURE_SUITE=Ed25519Signature2020
       - ANCHOR_CREDENTIAL_DOMAIN=https://testnet.orb.local
       - DATABASE_TYPE=mongodb
       - DATABASE_URL=mongodb://mongodb.shared.com:27017
@@ -72,7 +72,7 @@ services:
       - IPFS_URL=ipfs:5001
       - ANCHOR_CREDENTIAL_ISSUER=https://orb2
       - ANCHOR_CREDENTIAL_URL=https://orb2/vc
-      - ANCHOR_CREDENTIAL_SIGNATURE_SUITE=Ed25519Signature2018
+      - ANCHOR_CREDENTIAL_SIGNATURE_SUITE=Ed25519Signature2020
       - ANCHOR_CREDENTIAL_DOMAIN=https://orb2
       - DATABASE_TYPE=mongodb
       - DATABASE_URL=mongodb://mongodb.shared.com:27017
@@ -157,7 +157,7 @@ services:
 
   orb.vct:
     container_name: orb.vct
-    image: ghcr.io/trustbloc-cicd/vct:v0.1.4-snapshot-d815fdb
+    image: ghcr.io/trustbloc-cicd/vct:v0.1.4-snapshot-ceab63d
     restart: always
     environment:
       - VCT_API_HOST=0.0.0.0:8077
