@@ -23,6 +23,7 @@ Feature: Test orb vdr
     Then Orb DID is deactivated
     Examples:
       | keyType    |  signatureSuite             |
+      | Ed25519    |  Ed25519VerificationKey2020 |
       | Ed25519    |  JsonWebKey2020             |
       | Ed25519    |  Ed25519VerificationKey2018 |
       | Bls12381G2 |  Bls12381G2Key2020          |
