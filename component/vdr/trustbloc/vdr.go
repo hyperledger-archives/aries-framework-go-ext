@@ -30,6 +30,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
 	jsonld "github.com/piprate/json-gold/ld"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/net/http2"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
@@ -115,6 +116,7 @@ type VDR struct {
 	sidetreeClient              sidetreeClient
 	keyRetriever                KeyRetriever
 	documentLoader              jsonld.DocumentLoader
+	httpClient                  *http.Client
 }
 
 type genesisFileData struct {
@@ -147,12 +149,19 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 		}
 	}
 
-	v.sidetreeClient = sidetree.New(sidetree.WithAuthToken(v.authToken), sidetree.WithHTTPClient(
-		&http.Client{Transport: &http.Transport{TLSClientConfig: v.tlsConfig}}))
+	if v.httpClient == nil {
+		v.httpClient = &http.Client{
+			Transport: &http2.Transport{
+				TLSClientConfig: v.tlsConfig,
+			},
+		}
+	}
+
+	v.sidetreeClient = sidetree.New(sidetree.WithAuthToken(v.authToken), sidetree.WithHTTPClient(v.httpClient))
 
 	v.getHTTPVDR = func(url string) (vdr, error) {
-		return httpbinding.New(url,
-			httpbinding.WithTLSConfig(v.tlsConfig), httpbinding.WithResolveAuthToken(v.authToken))
+		return httpbinding.New(url, httpbinding.WithHTTPClient(v.httpClient),
+			httpbinding.WithResolveAuthToken(v.authToken))
 	}
 
 	configService := httpconfig.NewService(httpconfig.WithTLSConfig(v.tlsConfig))
@@ -847,6 +856,13 @@ func WithDomain(domain string) Option {
 func WithTLSConfig(tlsConfig *tls.Config) Option {
 	return func(opts *VDR) {
 		opts.tlsConfig = tlsConfig
+	}
+}
+
+// WithHTTPClient option is for custom http client.
+func WithHTTPClient(httpClient *http.Client) Option {
+	return func(opts *VDR) {
+		opts.httpClient = httpClient
 	}
 }
 
