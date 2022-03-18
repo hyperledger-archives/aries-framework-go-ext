@@ -19,6 +19,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/uuid"
 	spi "github.com/hyperledger/aries-framework-go/spi/storage"
+	commontest "github.com/hyperledger/aries-framework-go/test/component/storage"
 	"github.com/jackc/pgx/v4"
 	dctest "github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
@@ -33,7 +34,7 @@ const (
 	postgreSQLConnectionString = "postgres://postgres:mysecretpassword@localhost:5432"
 )
 
-func TestAll(t *testing.T) {
+func TestCommon(t *testing.T) {
 	pool, err := dctest.NewPool("")
 	if err != nil {
 		panic(fmt.Sprintf("pool: %v", err))
@@ -92,10 +93,13 @@ func runCommonTests(t *testing.T, provider spi.Provider) {
 	t.Helper()
 
 	testProviderOpenStore(t, provider)
+	testProviderSetStoreConfig(t, provider)
 	testStorePutGet(t, provider)
+	testStoreQuery(t, provider)
 	testStoreFlush(t, provider)
 	testStoreClose(t, provider)
-	testNotImplemented(t, provider)
+	testProviderAndStoreNotImplemented(t, provider)
+	commontest.TestProviderClose(t, provider)
 }
 
 func testProviderOpenStore(t *testing.T, provider spi.Provider) {
@@ -162,6 +166,60 @@ func testProviderOpenStore(t *testing.T, provider spi.Provider) {
 	})
 }
 
+func testProviderSetStoreConfig(t *testing.T, provider spi.Provider) {
+	t.Helper()
+
+	t.Run("Set store config with all new tags", func(t *testing.T) {
+		testStoreName := randomStoreName()
+
+		store, err := provider.OpenStore(testStoreName)
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		defer func() {
+			require.NoError(t, store.Close())
+		}()
+
+		config := spi.StoreConfiguration{TagNames: []string{"tagName1", "tagName2", "tagName3"}}
+
+		err = provider.SetStoreConfig(testStoreName, config)
+		require.NoError(t, err)
+	})
+	t.Run("Attempt to set config without opening store first", func(t *testing.T) {
+		err := provider.SetStoreConfig("NonExistentStore", spi.StoreConfiguration{})
+		require.True(t, errors.Is(err, spi.ErrStoreNotFound), "Got unexpected error or no error")
+	})
+	t.Run("Invalid tag names", func(t *testing.T) {
+		testStoreName := randomStoreName()
+
+		store, err := provider.OpenStore(testStoreName)
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		defer func() {
+			require.NoError(t, store.Close())
+		}()
+
+		config := spi.StoreConfiguration{TagNames: []string{"tagName1", "tagName2", "tagNameWith:Character"}}
+
+		err = provider.SetStoreConfig(testStoreName, config)
+		require.EqualError(t, err, `"tagNameWith:Character" is an invalid tag name since it contains `+
+			`one or more of the following substrings: ":", "<=", "<", ">=", ">"`)
+
+		config = spi.StoreConfiguration{TagNames: []string{"tagName1", "tagName2", "tagNameWith<Character"}}
+
+		err = provider.SetStoreConfig(testStoreName, config)
+		require.EqualError(t, err, `"tagNameWith<Character" is an invalid tag name since it contains `+
+			`one or more of the following substrings: ":", "<=", "<", ">=", ">"`)
+
+		config = spi.StoreConfiguration{TagNames: []string{"tagName1", "tagName2", "tagNameWith>Character"}}
+
+		err = provider.SetStoreConfig(testStoreName, config)
+		require.EqualError(t, err, `"tagNameWith>Character" is an invalid tag name since it contains `+
+			`one or more of the following substrings: ":", "<=", "<", ">=", ">"`)
+	})
+}
+
 type testStruct struct {
 	String string `json:"string"`
 
@@ -201,20 +259,66 @@ func testStorePutGet(t *testing.T, provider spi.Provider) {
 	testKeyNonURL := "TestKey"
 	testKeyURL := "https://example.com"
 
+	testValueSimpleString := "TestValue"
+	testValueSimpleString2 := "TestValue2"
+	testBinaryData := []byte{0x5f, 0xcb, 0x5c, 0xe9, 0x7f, 0xe3, 0x81}
+	testBinaryData2 := []byte{0x5f, 0xcb, 0x5c, 0xe9, 0x7f}
+	testValueJSONString := `"TestValue"`
+
 	t.Run("Put and get a value", func(t *testing.T) {
 		t.Run("Key is not a URL", func(t *testing.T) {
-			doPutThenGetTest(t, provider, testKeyNonURL)
+			t.Run("Value is simple text", func(t *testing.T) {
+				doPutThenGetTest(t, provider, testKeyNonURL, []byte(testValueSimpleString))
+			})
+			t.Run("Value is JSON-formatted object", func(t *testing.T) {
+				doPutThenGetTestWithJSONFormattedObject(t, provider, testKeyNonURL)
+			})
+			t.Run("Value is JSON-formatted string", func(t *testing.T) {
+				doPutThenGetTest(t, provider, testKeyNonURL, []byte(testValueJSONString))
+			})
+			t.Run("Value is binary data", func(t *testing.T) {
+				doPutThenGetTest(t, provider, testKeyNonURL, testBinaryData)
+			})
 		})
 		t.Run("Key is a URL", func(t *testing.T) {
-			doPutThenGetTest(t, provider, testKeyURL)
+			t.Run("Value is simple text", func(t *testing.T) {
+				doPutThenGetTest(t, provider, testKeyURL, []byte(testValueSimpleString))
+			})
+			t.Run("Value is JSON-formatted object", func(t *testing.T) {
+				doPutThenGetTestWithJSONFormattedObject(t, provider, testKeyURL)
+			})
+			t.Run("Value is JSON-formatted string", func(t *testing.T) {
+				doPutThenGetTest(t, provider, testKeyURL, []byte(testValueJSONString))
+			})
+			t.Run("Value is binary data", func(t *testing.T) {
+				doPutThenGetTest(t, provider, testKeyURL, testBinaryData)
+			})
 		})
 	})
 	t.Run("Put a value, update it, and get the updated value", func(t *testing.T) {
 		t.Run("Key is not a URL", func(t *testing.T) {
-			doPutThenUpdateThenGetTest(t, provider, testKeyNonURL)
+			t.Run("Value is simple text", func(t *testing.T) {
+				doPutThenUpdateThenGetTest(t, provider, testKeyNonURL,
+					[]byte(testValueSimpleString), []byte(testValueSimpleString2))
+			})
+			t.Run("Value is JSON-formatted object", func(t *testing.T) {
+				doPutThenUpdateThenGetTestWithJSONFormattedObject(t, provider, testKeyNonURL)
+			})
+			t.Run("Value is binary data", func(t *testing.T) {
+				doPutThenUpdateThenGetTest(t, provider, testKeyNonURL, testBinaryData, testBinaryData2)
+			})
 		})
 		t.Run("Key is a URL", func(t *testing.T) {
-			doPutThenUpdateThenGetTest(t, provider, testKeyURL)
+			t.Run("Value is simple text", func(t *testing.T) {
+				doPutThenUpdateThenGetTest(t, provider, testKeyURL, []byte(testValueSimpleString),
+					[]byte(testValueSimpleString2))
+			})
+			t.Run("Value is JSON-formatted object", func(t *testing.T) {
+				doPutThenUpdateThenGetTestWithJSONFormattedObject(t, provider, testKeyURL)
+			})
+			t.Run("Value is binary data", func(t *testing.T) {
+				doPutThenUpdateThenGetTest(t, provider, testKeyURL, testBinaryData, testBinaryData2)
+			})
 		})
 	})
 	t.Run("Put a value, then delete it, then put again using the same key", func(t *testing.T) {
@@ -383,7 +487,7 @@ func testStorePutGet(t *testing.T, provider spi.Provider) {
 		err = store.Put(testKeyNonURL, nil)
 		require.EqualError(t, err, "value cannot be nil")
 	})
-	t.Run("Put with tags", func(t *testing.T) {
+	t.Run("Put with invalid tag", func(t *testing.T) {
 		store, err := provider.OpenStore(randomStoreName())
 		require.NoError(t, err)
 
@@ -391,33 +495,166 @@ func testStorePutGet(t *testing.T, provider spi.Provider) {
 			require.NoError(t, store.Close())
 		}()
 
-		err = store.Put(testKeyNonURL, []byte(`{"name":"value"}`), spi.Tag{
-			Name:  "SomeName",
-			Value: "SomeValue",
-		})
-		require.EqualError(t, err, "tags are not currently supported")
+		err = store.Put("key", []byte("value"), spi.Tag{Name: ":"})
+		require.EqualError(t, err, `":" is an invalid tag name since it contains one or more of the`+
+			` following substrings: ":", "<=", "<", ">=", ">"`)
+
+		err = store.Put("key", []byte("value"), spi.Tag{Value: ":"})
+		require.EqualError(t, err, `":" is an invalid tag value since it contains one or more of the`+
+			` following substrings: ":", "<=", "<", ">=", ">"`)
+
+		err = store.Put("key", []byte("value"), spi.Tag{Name: "<"})
+		require.EqualError(t, err, `"<" is an invalid tag name since it contains one or more of the`+
+			` following substrings: ":", "<=", "<", ">=", ">"`)
+
+		err = store.Put("key", []byte("value"), spi.Tag{Value: "<"})
+		require.EqualError(t, err, `"<" is an invalid tag value since it contains one or more of the`+
+			` following substrings: ":", "<=", "<", ">=", ">"`)
+
+		err = store.Put("key", []byte("value"), spi.Tag{Name: ">"})
+		require.EqualError(t, err, `">" is an invalid tag name since it contains one or more of the`+
+			` following substrings: ":", "<=", "<", ">=", ">"`)
+
+		err = store.Put("key", []byte("value"), spi.Tag{Value: ">"})
+		require.EqualError(t, err, `">" is an invalid tag value since it contains one or more of the`+
+			` following substrings: ":", "<=", "<", ">=", ">"`)
 	})
 }
 
-func doPutThenGetTest(t *testing.T, provider spi.Provider, key string) {
+func testStoreQuery(t *testing.T, provider spi.Provider) {
+	t.Helper()
+
+	t.Run("Tag name only query - 2 values found", func(t *testing.T) {
+		keysToPut := []string{"key1", "key2", "key3"}
+		valuesToPut := [][]byte{[]byte("value1"), []byte("value2"), []byte(`3`)}
+		tagsToPut := [][]spi.Tag{
+			{{Name: "tagName1", Value: "tagValue1"}, {Name: "tagName2", Value: "tagValue2"}},
+			{{Name: "tagName3", Value: "tagValue"}, {Name: "tagName4"}},
+			{{Name: "tagName3", Value: "tagValue2"}},
+		}
+
+		expectedKeys := []string{keysToPut[1], keysToPut[2]}
+		expectedValues := [][]byte{valuesToPut[1], valuesToPut[2]}
+
+		queryExpression := "tagName3"
+
+		storeName := randomStoreName()
+
+		store, err := provider.OpenStore(storeName)
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		defer func() {
+			require.NoError(t, store.Close())
+		}()
+
+		err = provider.SetStoreConfig(storeName,
+			spi.StoreConfiguration{TagNames: []string{"tagName1", "tagName2", "tagName3", "tagName4"}})
+		require.NoError(t, err)
+
+		putData(t, store, keysToPut, valuesToPut, tagsToPut)
+
+		iterator, err := store.Query(queryExpression)
+		require.NoError(t, err)
+
+		verifyExpectedIterator(t, iterator, expectedKeys, expectedValues)
+	})
+	t.Run("Tag name only query - 0 values found", func(t *testing.T) {
+		keysToPut := []string{"key1", "key2", "key3"}
+		valuesToPut := [][]byte{[]byte("value1"), []byte("value2"), []byte("value3")}
+		tagsToPut := [][]spi.Tag{
+			{{Name: "tagName1", Value: "tagValue1"}, {Name: "tagName2", Value: "tagValue2"}},
+			{{Name: "tagName3", Value: "tagValue"}, {Name: "tagName4"}},
+			{{Name: "tagName3", Value: "tagValue2"}},
+		}
+
+		queryExpression := "tagName5"
+
+		storeName := randomStoreName()
+
+		store, err := provider.OpenStore(storeName)
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		defer func() {
+			require.NoError(t, store.Close())
+		}()
+
+		err = provider.SetStoreConfig(storeName,
+			spi.StoreConfiguration{TagNames: []string{"tagName1", "tagName2", "tagName3", "tagName4", "tagName5"}})
+		require.NoError(t, err)
+
+		putData(t, store, keysToPut, valuesToPut, tagsToPut)
+
+		iterator, err := store.Query(queryExpression)
+		require.NoError(t, err)
+
+		verifyExpectedIterator(t, iterator, nil, nil)
+	})
+	t.Run("Invalid expression formats", func(t *testing.T) {
+		storeName := randomStoreName()
+
+		store, err := provider.OpenStore(storeName)
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		defer func() {
+			require.NoError(t, store.Close())
+		}()
+
+		t.Run("Empty expression", func(t *testing.T) {
+			iterator, err := store.Query("")
+			require.EqualError(t, err, "expression cannot be empty")
+			require.Empty(t, iterator)
+		})
+		t.Run("Tag name + value query, which isn't supported currently", func(t *testing.T) {
+			iterator, err := store.Query("name:value:somethingElse")
+			require.EqualError(t, err, "tag name + value queries not implemented")
+			require.Empty(t, iterator)
+		})
+	})
+	t.Run("Unsupported query options", func(t *testing.T) {
+		storeName := randomStoreName()
+
+		store, err := provider.OpenStore(storeName)
+		require.NoError(t, err)
+		require.NotNil(t, store)
+
+		defer func() {
+			require.NoError(t, store.Close())
+		}()
+
+		iterator, err := store.Query("expression", spi.WithInitialPageNum(1))
+		require.EqualError(t, err, "setting initial page number not implemented")
+		require.Nil(t, iterator)
+
+		iterator, err = store.Query("expression", spi.WithSortOrder(&spi.SortOptions{}))
+		require.EqualError(t, err, "custom sort options not implemented")
+		require.Nil(t, iterator)
+	})
+}
+
+func testStoreFlush(t *testing.T, provider spi.Provider) {
 	t.Helper()
 
 	store, err := provider.OpenStore(randomStoreName())
 	require.NoError(t, err)
 
-	defer func() {
-		require.NoError(t, store.Close())
-	}()
-
-	storedTestData := storeTestJSONData(t, store, key)
-
-	retrievedValue, err := store.Get(key)
+	err = store.Flush()
 	require.NoError(t, err)
-
-	checkIfTestStructsMatch(t, retrievedValue, &storedTestData)
 }
 
-func doPutThenUpdateThenGetTest(t *testing.T, provider spi.Provider, key string) {
+func testStoreClose(t *testing.T, provider spi.Provider) {
+	t.Helper()
+
+	store, err := provider.OpenStore(randomStoreName())
+	require.NoError(t, err)
+
+	err = store.Close()
+	require.NoError(t, err)
+}
+
+func doPutThenUpdateThenGetTestWithJSONFormattedObject(t *testing.T, provider spi.Provider, key string) {
 	t.Helper()
 
 	store, err := provider.OpenStore(randomStoreName())
@@ -446,6 +683,72 @@ func doPutThenUpdateThenGetTest(t *testing.T, provider spi.Provider, key string)
 	require.NoError(t, err)
 
 	checkIfTestStructsMatch(t, retrievedValue, &storedTestData)
+}
+
+func doPutThenGetTestWithJSONFormattedObject(t *testing.T, provider spi.Provider, key string) {
+	t.Helper()
+
+	store, err := provider.OpenStore(randomStoreName())
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, store.Close())
+	}()
+
+	storedTestData := storeTestJSONData(t, store, key)
+
+	retrievedValue, err := store.Get(key)
+	require.NoError(t, err)
+
+	checkIfTestStructsMatch(t, retrievedValue, &storedTestData)
+}
+
+func doPutThenGetTest(t *testing.T, provider spi.Provider, key string, value []byte) {
+	t.Helper()
+
+	store, err := provider.OpenStore(randomStoreName())
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, store.Close())
+	}()
+
+	err = store.Put(key, value)
+	require.NoError(t, err)
+
+	retrievedValue, err := store.Get(key)
+	require.NoError(t, err)
+	require.Equal(t, value, retrievedValue)
+}
+
+func putData(t *testing.T, store spi.Store, keys []string, values [][]byte, tags [][]spi.Tag) {
+	t.Helper()
+
+	for i := 0; i < len(keys); i++ {
+		err := store.Put(keys[i], values[i], tags[i]...)
+		require.NoError(t, err)
+	}
+}
+
+func doPutThenUpdateThenGetTest(t *testing.T, provider spi.Provider, key string, value, updatedValue []byte) {
+	t.Helper()
+
+	store, err := provider.OpenStore(randomStoreName())
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, store.Close())
+	}()
+
+	err = store.Put(key, value)
+	require.NoError(t, err)
+
+	err = store.Put(key, updatedValue)
+	require.NoError(t, err)
+
+	retrievedValue, err := store.Get(key)
+	require.NoError(t, err)
+	require.Equal(t, updatedValue, retrievedValue)
 }
 
 func storeTestJSONData(t *testing.T, store spi.Store, key string) testStruct {
@@ -531,41 +834,15 @@ func checkIfTestStructsMatch(t *testing.T, retrievedValue []byte, storedTestData
 	require.Equal(t, storedTestData.ZeroFloat64, retrievedTestData.ZeroFloat64)
 }
 
-func testStoreFlush(t *testing.T, provider spi.Provider) {
+func testProviderAndStoreNotImplemented(t *testing.T, provider spi.Provider) {
 	t.Helper()
 
-	store, err := provider.OpenStore(randomStoreName())
-	require.NoError(t, err)
-
-	err = store.Flush()
-	require.NoError(t, err)
-}
-
-func testStoreClose(t *testing.T, provider spi.Provider) {
-	t.Helper()
-
-	store, err := provider.OpenStore(randomStoreName())
-	require.NoError(t, err)
-
-	err = store.Close()
-	require.NoError(t, err)
-}
-
-func testNotImplemented(t *testing.T, provider spi.Provider) {
-	t.Helper()
-
-	err := provider.SetStoreConfig("storename", spi.StoreConfiguration{})
-	require.EqualError(t, err, "not implemented")
-
-	_, err = provider.GetStoreConfig("storename")
+	_, err := provider.GetStoreConfig("storename")
 	require.EqualError(t, err, "not implemented")
 
 	require.Panics(t, func() {
 		provider.GetOpenStores()
 	})
-
-	err = provider.Close()
-	require.EqualError(t, err, "not implemented")
 
 	store, err := provider.OpenStore(randomStoreName())
 	require.NoError(t, err)
@@ -578,12 +855,86 @@ func testNotImplemented(t *testing.T, provider spi.Provider) {
 	require.EqualError(t, err, "not implemented")
 	require.Nil(t, values)
 
-	iterator, err := store.Query("expression")
-	require.EqualError(t, err, "not implemented")
-	require.Nil(t, iterator)
-
 	err = store.Batch(nil)
 	require.EqualError(t, err, "not implemented")
+}
+
+func verifyExpectedIterator(t *testing.T, actualResultsItr spi.Iterator, // nolint:gocyclo // Test file
+	expectedKeys []string, expectedValues [][]byte) {
+	t.Helper()
+
+	if len(expectedValues) != len(expectedKeys) {
+		require.FailNow(t,
+			"Invalid test case. Expected keys and values slices must be the same length.")
+	}
+
+	var dataChecklist struct {
+		keys     []string
+		values   [][]byte
+		received []bool
+	}
+
+	dataChecklist.keys = expectedKeys
+	dataChecklist.values = expectedValues
+	dataChecklist.received = make([]bool, len(expectedKeys))
+
+	moreResultsToCheck, err := actualResultsItr.Next()
+	require.NoError(t, err)
+
+	if !moreResultsToCheck && len(expectedKeys) != 0 {
+		require.FailNow(t, "query unexpectedly returned no results")
+	}
+
+	for moreResultsToCheck {
+		dataReceivedCount := 0
+
+		for _, received := range dataChecklist.received {
+			if received {
+				dataReceivedCount++
+			}
+		}
+
+		if dataReceivedCount == len(dataChecklist.received) {
+			require.FailNow(t, "iterator contains more results than expected")
+		}
+
+		var itrErr error
+		receivedKey, itrErr := actualResultsItr.Key()
+		require.NoError(t, itrErr)
+
+		receivedValue, itrErr := actualResultsItr.Value()
+		require.NoError(t, itrErr)
+
+		for i := 0; i < len(dataChecklist.keys); i++ {
+			if receivedKey == dataChecklist.keys[i] {
+				if string(receivedValue) == string(dataChecklist.values[i]) {
+					dataChecklist.received[i] = true
+
+					break
+				}
+			}
+		}
+
+		moreResultsToCheck, err = actualResultsItr.Next()
+		require.NoError(t, err)
+	}
+
+	err = actualResultsItr.Close()
+	require.NoError(t, err)
+
+	tags, err := actualResultsItr.Tags()
+	require.EqualError(t, err, "not implemented")
+	require.Nil(t, tags)
+
+	totalitems, err := actualResultsItr.TotalItems()
+	require.EqualError(t, err, "not implemented")
+	require.Equal(t, -1, totalitems)
+
+	for _, received := range dataChecklist.received {
+		if !received {
+			require.FailNow(t, "received unexpected query results")
+		}
+	}
 }
 
 func ensurePostgreSQLIsUp() error {
