@@ -14,7 +14,6 @@ import (
 	"fmt"
 
 	"github.com/hyperledger/aries-framework-go/pkg/common/log"
-	commtransport "github.com/hyperledger/aries-framework-go/pkg/didcomm/common/transport"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/transport"
 	"github.com/pkg/errors"
@@ -30,7 +29,7 @@ type Inbound struct {
 	ch                *amqp.Channel
 	que               amqp.Queue
 	certFile, keyFile string
-	packager          commtransport.Packager
+	packager          transport.Packager
 	msgHandler        transport.InboundMessageHandler
 	logger            *log.Log
 }
@@ -159,7 +158,7 @@ func (i *Inbound) listenAndServe() error {
 
 		messageHandler := i.msgHandler
 
-		err = messageHandler(unpackMsg.Message, unpackMsg.ToDID, unpackMsg.FromDID)
+		err = messageHandler(unpackMsg)
 		if err != nil {
 			i.logger.Errorf("incoming msg processing failed: %v", err)
 		}
