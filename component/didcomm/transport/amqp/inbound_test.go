@@ -15,7 +15,6 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
-	commontransport "github.com/hyperledger/aries-framework-go/pkg/didcomm/common/transport"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/transport"
 	mockpackager "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/packager"
 	dctest "github.com/ory/dockertest/v3"
@@ -96,7 +95,7 @@ func TestInboundTransport(t *testing.T) {
 		inbound, err := NewInbound(port, externalAddr, "queue", "", "")
 		require.NoError(t, err)
 
-		mockPackager := &mockpackager.Packager{UnpackValue: &commontransport.Envelope{Message: []byte("data")}}
+		mockPackager := &mockpackager.Packager{UnpackValue: &transport.Envelope{Message: []byte("data")}}
 		err = inbound.Start(&mockProvider{packagerValue: mockPackager})
 		require.Error(t, err)
 	})
@@ -116,7 +115,7 @@ func TestInboundTransport(t *testing.T) {
 		inbound, err := NewInbound(addr, externalAddr, "queue", "invalid", "invalid")
 		require.NoError(t, err)
 
-		mockPackager := &mockpackager.Packager{UnpackValue: &commontransport.Envelope{Message: []byte("data")}}
+		mockPackager := &mockpackager.Packager{UnpackValue: &transport.Envelope{Message: []byte("data")}}
 		err = inbound.Start(&mockProvider{packagerValue: mockPackager})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid cert")
@@ -139,7 +138,7 @@ func TestInboundDataProcessing(t *testing.T) {
 		require.NotEmpty(t, inbound)
 
 		// start server
-		mockPackager := &mockpackager.Packager{UnpackValue: &commontransport.Envelope{Message: []byte("valid-data")}}
+		mockPackager := &mockpackager.Packager{UnpackValue: &transport.Envelope{Message: []byte("valid-data")}}
 		err = inbound.Start(&mockProvider{packagerValue: mockPackager})
 
 		require.NoError(t, err)
@@ -206,7 +205,7 @@ func TestInboundDataProcessing(t *testing.T) {
 		require.NotEmpty(t, inbound)
 
 		// start server
-		mockPackager := &mockpackager.Packager{UnpackValue: &commontransport.Envelope{Message: []byte("invalid-data")}}
+		mockPackager := &mockpackager.Packager{UnpackValue: &transport.Envelope{Message: []byte("invalid-data")}}
 		err = inbound.Start(&mockProvider{packagerValue: mockPackager})
 		require.NoError(t, err)
 
@@ -249,12 +248,12 @@ func amqpClient(t *testing.T, addr string) (ch *amqp.Channel, cleanup func()) {
 }
 
 type mockProvider struct {
-	packagerValue commontransport.Packager
+	packagerValue transport.Packager
 }
 
 func (p *mockProvider) InboundMessageHandler() transport.InboundMessageHandler {
-	return func(message []byte, myDID, theirDID string) error {
-		if string(message) == "invalid-data" {
+	return func(envelope *transport.Envelope) error {
+		if envelope != nil && string(envelope.Message) == "invalid-data" {
 			return errors.New("error")
 		}
 
@@ -262,7 +261,7 @@ func (p *mockProvider) InboundMessageHandler() transport.InboundMessageHandler {
 	}
 }
 
-func (p *mockProvider) Packager() commontransport.Packager {
+func (p *mockProvider) Packager() transport.Packager {
 	return p.packagerValue
 }
 

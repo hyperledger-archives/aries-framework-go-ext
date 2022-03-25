@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 module github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb
 
-go 1.15
+go 1.17
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
@@ -11,8 +11,8 @@ require (
 	github.com/go-kivik/kivik/v3 v3.2.3
 	github.com/google/go-cmp v0.5.2 // indirect
 	github.com/google/uuid v1.2.0 // indirect
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210909135806-a1c268dfb633
-	github.com/hyperledger/aries-framework-go/test/component v0.0.0-20210909135806-a1c268dfb633
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220324201531-18c87667df19
+	github.com/hyperledger/aries-framework-go/test/component v0.0.0-20220324201531-18c87667df19
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/ory/dockertest/v3 v3.6.3
 	github.com/stretchr/testify v1.7.0
