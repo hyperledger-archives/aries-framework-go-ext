@@ -110,8 +110,16 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), p.timeout)
 	defer cancel()
 
+	split := strings.Split(p.connectionString, "?")
+
+	connectString := fmt.Sprintf("%s/%s", p.connectionString, name)
+
+	if len(split) > 1 {
+		connectString = fmt.Sprintf("%s/%s?%s", split[0], name, split[1])
+	}
+
 	connectionPoolToDatabase, err := pgxpool.Connect(ctxWithTimeout,
-		fmt.Sprintf("%s/%s", p.connectionString, name))
+		connectString)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}

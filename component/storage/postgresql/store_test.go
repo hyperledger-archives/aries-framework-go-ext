@@ -31,7 +31,7 @@ import (
 const (
 	postgreSQLDockerImage      = "postgres"
 	postgreSQLDockerTag        = "14.2"
-	postgreSQLConnectionString = "postgres://postgres:mysecretpassword@localhost:5432"
+	postgreSQLConnectionString = "postgres://postgres:mysecretpassword@localhost:5432?sslmode=disable"
 )
 
 func TestCommon(t *testing.T) {
