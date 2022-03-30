@@ -39,10 +39,10 @@ github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510/go.mod h1:pupxD2MaaD3
 github.com/google/uuid v1.1.2 h1:EVhdT+1Kseyi1/pUmXKaFxYsDNy9RQYkMWRH68J/W7Y=
 github.com/google/uuid v1.1.2/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/hyperledger/aries-framework-go/spi v0.0.0-20220322085443-50e8f9bd208b/go.mod h1:4bD5c5fj5K7rkQurVa/8I8+TfNcI4bxIBzaUNcxTOTg=
-github.com/hyperledger/aries-framework-go/spi v0.0.0-20220324201531-18c87667df19 h1:vi45YIiONWOquuQk9xfYqE9mqxDhL5JJLYOn0LleHw0=
-github.com/hyperledger/aries-framework-go/spi v0.0.0-20220324201531-18c87667df19/go.mod h1:4bD5c5fj5K7rkQurVa/8I8+TfNcI4bxIBzaUNcxTOTg=
-github.com/hyperledger/aries-framework-go/test/component v0.0.0-20220324201531-18c87667df19 h1:j0v1HW+pgjBhB5KvXQaqqnMC2mfBEn7+FwrY297QpO0=
-github.com/hyperledger/aries-framework-go/test/component v0.0.0-20220324201531-18c87667df19/go.mod h1:lykx3N+GX+sAWSxO2Ycc4Dz+ynV9b0Fv4NdP+ms4Alc=
+github.com/hyperledger/aries-framework-go/spi v0.0.0-20220330140627-07042d78580c h1:snzJfKNYzt57Q2/+P0YdCJus+K2k3c3fUTvOSoHSUxU=
+github.com/hyperledger/aries-framework-go/spi v0.0.0-20220330140627-07042d78580c/go.mod h1:4bD5c5fj5K7rkQurVa/8I8+TfNcI4bxIBzaUNcxTOTg=
+github.com/hyperledger/aries-framework-go/test/component v0.0.0-20220330140627-07042d78580c h1:Fq9I4mMK1+rNqBTxmsB4dzuUvilaKTPWhtxwuWFrPiI=
+github.com/hyperledger/aries-framework-go/test/component v0.0.0-20220330140627-07042d78580c/go.mod h1:lykx3N+GX+sAWSxO2Ycc4Dz+ynV9b0Fv4NdP+ms4Alc=
 github.com/imdario/mergo v0.3.12 h1:b6R2BslTbIEToALKP7LxUvijTsNI9TAe80pLWN2g/HU=
 github.com/imdario/mergo v0.3.12/go.mod h1:jmQim1M+e3UYxmgPu/WyfjB3N3VflVyUjjjwH0dnCYA=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
