@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/hyperledger/aries-framework-go/spi/storage"
+	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/valyala/fastjson"
@@ -110,12 +111,21 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), p.timeout)
 	defer cancel()
 
-	split := strings.Split(p.connectionString, "?")
+	c, err := pgconn.ParseConfig(p.connectionString)
+	if err != nil {
+		return nil, err
+	}
 
-	connectString := fmt.Sprintf("%s/%s", p.connectionString, name)
+	connectString := strings.ReplaceAll(p.connectionString, c.Database, name)
 
-	if len(split) > 1 {
-		connectString = fmt.Sprintf("%s/%s?%s", split[0], name, split[1])
+	if c.Database == "" {
+		split := strings.Split(p.connectionString, "?")
+
+		connectString = fmt.Sprintf("%s/%s", p.connectionString, name)
+
+		if len(split) > 1 {
+			connectString = fmt.Sprintf("%s/%s?%s", split[0], name, split[1])
+		}
 	}
 
 	connectionPoolToDatabase, err := pgxpool.Connect(ctxWithTimeout,
