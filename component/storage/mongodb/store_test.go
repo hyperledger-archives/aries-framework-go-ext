@@ -155,6 +155,17 @@ func TestStore_Put_Failure(t *testing.T) {
 			require.EqualError(t, err, `">" is an invalid tag value since it contains one or more of the`+
 				` following substrings: ":", "<=", "<", ">=", ">"`)
 		})
+		t.Run("Tag name used more than once", func(t *testing.T) {
+			provider, err := mongodb.NewProvider("mongodb://test")
+			require.NoError(t, err)
+
+			store, err := provider.OpenStore("StoreName")
+			require.NoError(t, err)
+
+			err = store.Put("key", []byte("value"), storage.Tag{Name: "SomeName"}, storage.Tag{Name: "SomeName"})
+			require.EqualError(t, err, "tag name SomeName appears in more than one tag. "+
+				"A single key-value pair cannot have multiple tags that share the same tag name")
+		})
 	})
 }
 
