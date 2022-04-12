@@ -605,8 +605,6 @@ type store struct {
 }
 
 // Put stores the key + value pair along with the (optional) tags.
-// TODO (#44) Tags do not have to be defined in the store config prior to storing data that uses them.
-//  Should all store implementations require tags to be defined in store config before allowing them to be used?
 // TODO (#81) If data is binary and large, store as CouchDB attachment instead.
 func (s *store) Put(k string, v []byte, tags ...storage.Tag) error {
 	errInputValidation := validatePutInput(k, v, tags)
@@ -618,9 +616,12 @@ func (s *store) Put(k string, v []byte, tags ...storage.Tag) error {
 
 	newDocument.Value = v
 
-	setDocumentTags(&newDocument, tags)
+	err := setDocumentTags(&newDocument, tags)
+	if err != nil {
+		return err
+	}
 
-	err := s.put(k, newDocument)
+	err = s.put(k, newDocument)
 	if err != nil {
 		return fmt.Errorf("failure while putting document into CouchDB database: %w", err)
 	}
@@ -812,7 +813,10 @@ func (s *store) Batch(operations []storage.Operation) error {
 		var newDocument document
 		newDocument.ID = keys[i]
 
-		setDocumentTags(&newDocument, operations[i].Tags)
+		err = setDocumentTags(&newDocument, operations[i].Tags)
+		if err != nil {
+			return fmt.Errorf("failed to set document tags on the operation at index %d: %w", i, err)
+		}
 
 		if existingDocument != nil {
 			// If there was a document that was previously deleted that has the same ID as a new document,
@@ -1346,10 +1350,16 @@ func removeDuplicatesKeepingOnlyLast(operations []storage.Operation) []storage.O
 	return operations
 }
 
-func setDocumentTags(document *document, tags []storage.Tag) {
+func setDocumentTags(document *document, tags []storage.Tag) error {
 	document.Tags = make(map[string]interface{})
 
 	for _, tag := range tags {
+		_, exists := document.Tags[tag.Name]
+		if exists {
+			return fmt.Errorf("tag name %s appears in more than one tag. A single key-value pair cannot "+
+				"have multiple tags that share the same tag name", tag.Name)
+		}
+
 		tagValueAsInt, err := strconv.Atoi(tag.Value)
 		if err != nil {
 			document.Tags[tag.Name] = tag.Value
@@ -1357,4 +1367,6 @@ func setDocumentTags(document *document, tags []storage.Tag) {
 			document.Tags[tag.Name] = tagValueAsInt
 		}
 	}
+
+	return nil
 }

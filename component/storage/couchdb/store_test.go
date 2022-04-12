@@ -206,6 +206,36 @@ func TestProvider_OpenStore(t *testing.T) {
 	})
 }
 
+func TestStore_Put_DuplicateTagName(t *testing.T) {
+	provider, err := NewProvider(couchDBURL)
+	require.NoError(t, err)
+	require.NotNil(t, provider)
+
+	store, err := provider.OpenStore("TestStore")
+	require.NoError(t, err)
+
+	err = store.Put("key", []byte("value"), spi.Tag{Name: "SomeName"}, spi.Tag{Name: "SomeName"})
+	require.EqualError(t, err, "tag name SomeName appears in more than one tag. "+
+		"A single key-value pair cannot have multiple tags that share the same tag name")
+}
+
+func TestStore_Batch_DuplicateTagName(t *testing.T) {
+	provider, err := NewProvider(couchDBURL)
+	require.NoError(t, err)
+	require.NotNil(t, provider)
+
+	store, err := provider.OpenStore("TestStore")
+	require.NoError(t, err)
+
+	err = store.Batch(
+		[]spi.Operation{{
+			Key: "key", Value: []byte("value"),
+			Tags: []spi.Tag{{Name: "SomeName"}, {Name: "SomeName"}},
+		}})
+	require.EqualError(t, err, "failed to set document tags on the operation at index 0: tag name SomeName "+
+		"appears in more than one tag. A single key-value pair cannot have multiple tags that share the same tag name")
+}
+
 func TestNoIndexSetWarning(t *testing.T) {
 	stringLogger := &stringLogger{}
 	prov, err := NewProvider(couchDBURL, WithLogger(stringLogger))

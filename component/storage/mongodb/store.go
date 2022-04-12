@@ -1012,14 +1012,20 @@ func validatePutInput(key string, value []byte, tags []storage.Tag) error {
 	return nil
 }
 
-func convertTagSliceToMap(tagSlice []storage.Tag) map[string]interface{} {
+func convertTagSliceToMap(tagSlice []storage.Tag) (map[string]interface{}, error) {
 	tagsMap := make(map[string]interface{})
 
 	for _, tag := range tagSlice {
+		_, exists := tagsMap[tag.Name]
+		if exists {
+			return nil, fmt.Errorf("tag name %s appears in more than one tag. A single key-value pair cannot "+
+				"have multiple tags that share the same tag name", tag.Name)
+		}
+
 		tagsMap[tag.Name] = convertToIntIfPossible(tag.Value)
 	}
 
-	return tagsMap
+	return tagsMap, nil
 }
 
 // If possible, converts value to an int and returns it.
@@ -1235,7 +1241,10 @@ func generateModelForBulkWriteCall(operation storage.Operation) (model mongo.Wri
 }
 
 func generateDataWrapper(key string, value []byte, tags []storage.Tag) (dataWrapper, error) {
-	tagsAsMap := convertTagSliceToMap(tags)
+	tagsAsMap, err := convertTagSliceToMap(tags)
+	if err != nil {
+		return dataWrapper{}, err
+	}
 
 	data := dataWrapper{
 		Key:  key,
@@ -1247,7 +1256,7 @@ func generateDataWrapper(key string, value []byte, tags []storage.Tag) (dataWrap
 	jsonDecoder := json.NewDecoder(bytes.NewReader(value))
 	jsonDecoder.UseNumber()
 
-	err := jsonDecoder.Decode(&unmarshalledValue)
+	err = jsonDecoder.Decode(&unmarshalledValue)
 	if err == nil {
 		escapedMap, errEscape := escapeMapForDocumentDB(unmarshalledValue)
 		if errEscape != nil {
