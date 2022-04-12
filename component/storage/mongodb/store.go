@@ -279,7 +279,16 @@ func (p *Provider) GetStoreConfig(name string) (storage.StoreConfiguration, erro
 	}
 
 	if len(databaseNames) == 0 {
-		return storage.StoreConfiguration{}, storage.ErrStoreNotFound
+		// MongoDB defers the creation of the collection until the first actual storage call.
+		// In the case where someone calls OpenStore and then GetStoreConfig immediately, MongoDB will report that
+		// the database doesn't exist, but logically from the point of view of this object it does indeed exist,
+		// so we shouldn't return an ErrStoreNotFound.
+		_, exists := p.openStores[name]
+		if !exists {
+			return storage.StoreConfiguration{}, storage.ErrStoreNotFound
+		}
+
+		return storage.StoreConfiguration{}, nil
 	}
 
 	existingIndexedTagNames, err := p.getExistingIndexedTagNames(p.getCollectionHandle(name))

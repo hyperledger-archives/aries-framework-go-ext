@@ -289,14 +289,13 @@ func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) 
 	_, err = provider.OpenStore(storeName)
 	require.NoError(t, err)
 
-	// MongoDB defers creating the database until data is put in it or indexes are created.
-	// The call above to OpenStore shouldn't have created the database yet.
+	// Even though MongoDB defers creation of the underlying database until there is data put in or indexes are set,
+	// we have code to ensure this method doesn't return an ErrStoreNotFound.
 	config, err = provider.GetStoreConfig(storeName)
-	require.Equal(t, true, errors.Is(storage.ErrStoreNotFound, err),
-		"unexpected error or no error")
+	require.NoError(t, err)
 	require.Empty(t, config)
 
-	// This will create the database.
+	// This will cause MongoDB to create the actual database.
 	err = provider.SetStoreConfig(storeName, storage.StoreConfiguration{TagNames: []string{"TagName1"}})
 	require.NoError(t, err)
 
@@ -322,7 +321,8 @@ func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) 
 	require.Len(t, openStores, 0)
 
 	// This will succeed since GetStoreConfig checks the underlying databases instead of the
-	// in-memory store objects.
+	// in-memory store objects (which will be empty).
+	// If we hadn't called SetStoreConfig before, then this would return an ErrStoreNotFound.
 	config, err = provider2.GetStoreConfig(storeName)
 	require.NoError(t, err)
 	require.Equal(t, "TagName1", config.TagNames[0])
@@ -332,25 +332,35 @@ func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) 
 	require.Len(t, openStores, 0)
 
 	// As mentioned above, MongoDB defers creating databases until there is data put in or indexes are set.
-	// The code above triggered database creationg by creating indexes. Below we will do the same type of test, but this
+	// The code above triggered database creation by creating indexes. Below we will do the same type of test, but this
 	// time we create the database by storing data.
 	storeName2 := randomStoreName()
 
 	store, err := provider2.OpenStore(storeName2)
 	require.NoError(t, err)
 
-	// Underlying database shouldn't exist yet.
+	// Even though MongoDB defers creation of the underlying database until there is data put in or indexes are set,
+	// we have code to ensure this method doesn't return an ErrStoreNotFound.
 	config, err = provider2.GetStoreConfig(storeName2)
-	require.Equal(t, true, errors.Is(storage.ErrStoreNotFound, err),
-		"unexpected error or no error")
+	require.NoError(t, err)
 	require.Empty(t, config)
 
+	// This will cause MongoDB to create the actual database.
 	err = store.Put("key", []byte("value"))
 	require.NoError(t, err)
 
-	// Now the underlying database should be found.
-	// The config will be empty since it was never set
-	config, err = provider2.GetStoreConfig(storeName2)
+	// Create a new Provider object.
+	provider3, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	defer func() {
+		require.NoError(t, provider3.Close())
+	}()
+
+	// This will succeed since GetStoreConfig checks the underlying databases instead of the
+	// in-memory store objects (which will be empty).
+	// If we hadn't called Put before, then this would return an ErrStoreNotFound.
+	config, err = provider3.GetStoreConfig(storeName2)
 	require.NoError(t, err)
 	require.Empty(t, config.TagNames)
 }
