@@ -7,14 +7,14 @@ go 1.17
 
 require (
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
-	github.com/hyperledger/aries-framework-go v0.1.9-0.20220412084931-86d3da140d61
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20220330145438-233eb7999876
+	github.com/hyperledger/aries-framework-go v0.1.9-0.20220412155017-81442062e607
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v1.0.0-rc.1
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220330140627-07042d78580c
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/piprate/json-gold v0.4.1
 	github.com/stretchr/testify v1.7.0
-	github.com/trustbloc/orb v0.1.4-0.20220412070324-edc9187e0c3e
-	github.com/trustbloc/sidetree-core-go v0.7.1-0.20220411215804-6eb6023d9f62
+	github.com/trustbloc/orb v1.0.0-rc.1
+	github.com/trustbloc/sidetree-core-go v1.0.0-rc.1
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd
 )
 
@@ -33,7 +33,7 @@ require (
 	github.com/google/tink/go v1.6.1 // indirect
 	github.com/google/trillian v1.3.14-0.20210520152752-ceda464a95a3 // indirect
 	github.com/google/uuid v1.3.0 // indirect
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220324201531-18c87667df19 // indirect
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220330140627-07042d78580c // indirect
 	github.com/ipfs/go-cid v0.0.7 // indirect
 	github.com/jinzhu/copier v0.0.0-20190924061706-b57f9002281a // indirect
 	github.com/kilic/bls12-381 v0.1.1-0.20210503002446-7b7597926c69 // indirect
@@ -51,8 +51,8 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693 // indirect
 	github.com/teserakt-io/golang-ed25519 v0.0.0-20210104091850-3888c087a4c8 // indirect
-	github.com/trustbloc/edge-core v0.1.8-0.20220113141450-e19ffd091d98 // indirect
-	github.com/trustbloc/vct v0.1.4-0.20220406092826-222452d04e9b // indirect
+	github.com/trustbloc/edge-core v0.1.8 // indirect
+	github.com/trustbloc/vct v1.0.0-rc.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
