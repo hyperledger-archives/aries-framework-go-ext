@@ -247,6 +247,15 @@ func (p *Provider) Close() error {
 	return nil
 }
 
+// Ping verifies whether the PostgreSQL client can successfully connect to the deployment specified by
+// the connection string used in the NewProvider call.
+func (p *Provider) Ping() error {
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), p.timeout)
+	defer cancel()
+
+	return p.connectionPool.Ping(ctxWithTimeout)
+}
+
 func (p *Provider) removeStore(name string) {
 	p.lock.Lock()
 	defer p.lock.Unlock()

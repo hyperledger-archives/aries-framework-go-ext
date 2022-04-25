@@ -181,8 +181,8 @@ func WithLogger(logger logger) Option {
 	}
 }
 
-// PingCouchDB performs a readiness check on the CouchDB instance located at url.
-func PingCouchDB(url string) error {
+// ReadinessCheck performs a readiness check on the CouchDB instance located at url.
+func ReadinessCheck(url string) error {
 	if url == "" {
 		return errors.New("url can't be blank")
 	}
@@ -208,7 +208,7 @@ func PingCouchDB(url string) error {
 // NewProvider instantiates a new CouchDB Provider.
 // TODO (#48): Allow context to be passed in.
 func NewProvider(hostURL string, opts ...Option) (*Provider, error) {
-	err := PingCouchDB(hostURL)
+	err := ReadinessCheck(hostURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ping couchDB: %w", err)
 	}
@@ -367,6 +367,14 @@ func (p *Provider) Close() error {
 	}
 
 	return nil
+}
+
+// Ping verifies whether the CouchDB client can successfully connect to the deployment specified by
+// the host URL string used in the NewProvider call.
+func (p *Provider) Ping() error {
+	_, err := p.couchDBClient.Ping(context.Background())
+
+	return err
 }
 
 func (p *Provider) createStore(name string) (storage.Store, error) {

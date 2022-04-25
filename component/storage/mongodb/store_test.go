@@ -97,6 +97,17 @@ func TestProvider_GetStoreConfig_Failure(t *testing.T) {
 	require.Empty(t, config)
 }
 
+func TestProvider_Ping_Failure(t *testing.T) {
+	provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(time.Second))
+	require.NoError(t, err)
+
+	err = provider.Ping()
+	require.Contains(t, err.Error(), "server selection error: context deadline exceeded, current topology: "+
+		"{ Type: Unknown, Servers: [{ Addr: badurl:27017, Type: Unknown, Last error: connection() error "+
+		"occured "+ //nolint: misspell // Misspelled word comes from underlying library
+		"during connection handshake: dial tcp: lookup badurl:")
+}
+
 func TestStore_Put_Failure(t *testing.T) {
 	t.Run("Deadline exceeded (server not reachable)", func(t *testing.T) {
 		provider, err := mongodb.NewProvider("mongodb://BadURL", mongodb.WithTimeout(1))
@@ -266,6 +277,7 @@ func doAllTests(t *testing.T, connString string) {
 	testQueryWithLessThanGreaterThanOperators(t, connString)
 	testStoreJSONNeedingEscaping(t, connString)
 	testBatchIsNewKeyError(t, connString)
+	testPing(t, connString)
 }
 
 func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) {
@@ -1319,6 +1331,16 @@ func testBatchIsNewKeyError(t *testing.T, connString string) {
 
 	require.True(t, gotExpectedError, fmt.Sprintf("received unexpected error. Expected the error message to "+
 		`start with "%s", but the error was "%s"`, expectedErrMsgPrefix, err.Error()))
+}
+
+func testPing(t *testing.T, connString string) {
+	t.Helper()
+
+	provider, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	err = provider.Ping()
+	require.NoError(t, err)
 }
 
 func getTestData() (testKeys []string, testValues [][]byte, testTags [][]storage.Tag) {

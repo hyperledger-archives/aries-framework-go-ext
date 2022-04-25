@@ -89,7 +89,7 @@ func TestNewProvider(t *testing.T) {
 	})
 }
 
-func runCommonTests(t *testing.T, provider spi.Provider) {
+func runCommonTests(t *testing.T, provider *postgresql.Provider) {
 	t.Helper()
 
 	testProviderOpenStore(t, provider)
@@ -98,6 +98,7 @@ func runCommonTests(t *testing.T, provider spi.Provider) {
 	testStoreQuery(t, provider)
 	testStoreFlush(t, provider)
 	testStoreClose(t, provider)
+	testProviderPing(t, provider)
 	testProviderAndStoreNotImplemented(t, provider)
 	commontest.TestProviderClose(t, provider)
 }
@@ -651,6 +652,13 @@ func testStoreClose(t *testing.T, provider spi.Provider) {
 	require.NoError(t, err)
 
 	err = store.Close()
+	require.NoError(t, err)
+}
+
+func testProviderPing(t *testing.T, provider *postgresql.Provider) {
+	t.Helper()
+
+	err := provider.Ping()
 	require.NoError(t, err)
 }
 

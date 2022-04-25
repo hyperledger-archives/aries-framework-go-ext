@@ -90,7 +90,7 @@ const retries = 30
 
 func checkCouchDB() error {
 	return backoff.Retry(func() error {
-		return PingCouchDB(couchDBURL)
+		return ReadinessCheck(couchDBURL)
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), retries))
 }
 
@@ -331,4 +331,13 @@ func TestIteratorTotalItemsCountWithTagsWithBlankTagValues(t *testing.T) {
 	totalCount, err = iterator.TotalItems()
 	require.NoError(t, err)
 	require.Equal(t, 2, totalCount)
+}
+
+func TestProvider_Ping(t *testing.T) {
+	provider, err := NewProvider(couchDBURL)
+	require.NoError(t, err)
+	require.NotNil(t, provider)
+
+	err = provider.Ping()
+	require.NoError(t, err)
 }
