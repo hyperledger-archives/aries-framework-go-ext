@@ -352,6 +352,15 @@ func (p *Provider) Close() error {
 	return nil
 }
 
+// Ping verifies whether the MongoDB client can successfully connect to the deployment specified by
+// the connection string used in the NewProvider call.
+func (p *Provider) Ping() error {
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), p.timeout)
+	defer cancel()
+
+	return p.client.Ping(ctxWithTimeout, nil)
+}
+
 func (p *Provider) removeStore(name string) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
