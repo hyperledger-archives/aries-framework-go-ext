@@ -151,8 +151,8 @@ func PopulateRawServices(services []docdid.Service) []map[string]interface{} {
 			rawService[jsonldRecipientKeys] = services[i].RecipientKeys
 		}
 
-		if len(services[i].RoutingKeys) > 0 {
-			rawService[jsonldRoutingKeys] = services[i].RoutingKeys
+		if len(services[i].ServiceEndpoint.RoutingKeys) > 0 {
+			rawService[jsonldRoutingKeys] = services[i].ServiceEndpoint.RoutingKeys
 		}
 
 		rawServices = append(rawServices, rawService)
