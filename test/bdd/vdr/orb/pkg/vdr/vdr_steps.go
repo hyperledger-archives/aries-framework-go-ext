@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/cucumber/godog"
+	"github.com/hyperledger/aries-framework-go/pkg/common/model"
 	"github.com/hyperledger/aries-framework-go/pkg/crypto/primitive/bbs12381g2pub"
 	ariesdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
@@ -223,9 +224,11 @@ func (e *Steps) updateDID(keyType, signatureSuite, resolveDID string) error {
 
 	didDoc.Service[0].Type = "typeUpdated"
 	didDoc.Service = append(didDoc.Service, ariesdid.Service{
-		ID:              service2ID,
-		Type:            "type",
-		ServiceEndpoint: "http://www.example.com/",
+		ID:   service2ID,
+		Type: "type",
+		ServiceEndpoint: model.Endpoint{
+			URI: "http://example.com",
+		},
 	})
 
 	sleepTime := time.Second * 1
@@ -300,7 +303,13 @@ func (e *Steps) createDID(keyType, signatureSuite, origin string, retry *orb.Res
 	didDoc.Authentication = append(didDoc.Authentication, *ariesdid.NewReferencedVerification(vm,
 		ariesdid.Authentication))
 
-	didDoc.Service = []ariesdid.Service{{ID: serviceID, Type: "type", ServiceEndpoint: "http://www.example.com/"}}
+	didDoc.Service = []ariesdid.Service{{
+		ID:   serviceID,
+		Type: "type",
+		ServiceEndpoint: model.Endpoint{
+			URI: "http://example.com",
+		},
+	}}
 
 	var opts []vdrapi.DIDMethodOption
 	if retry != nil {
