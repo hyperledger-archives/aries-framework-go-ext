@@ -7,8 +7,8 @@ go 1.17
 
 require (
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
-	github.com/hyperledger/aries-framework-go v0.1.9-0.20220412155017-81442062e607
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v1.0.0-rc.1
+	github.com/hyperledger/aries-framework-go v0.1.9-0.20220428145156-7e6cf9acbc9e
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v1.0.0-rc.1.0.20220428154356-41d198a5fade
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220330140627-07042d78580c
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/piprate/json-gold v0.4.1
