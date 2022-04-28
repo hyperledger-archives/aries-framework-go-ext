@@ -7,7 +7,7 @@ go 1.17
 
 require (
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
-	github.com/hyperledger/aries-framework-go v0.1.9-0.20220412155017-81442062e607
+	github.com/hyperledger/aries-framework-go v0.1.9-0.20220428145156-7e6cf9acbc9e
 	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693
 	github.com/stretchr/testify v1.7.0
 	github.com/trustbloc/sidetree-core-go v1.0.0-rc.1
