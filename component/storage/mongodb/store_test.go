@@ -278,6 +278,8 @@ func doAllTests(t *testing.T, connString string) {
 	testStoreJSONNeedingEscaping(t, connString)
 	testBatchIsNewKeyError(t, connString)
 	testPing(t, connString)
+	testGetAsRawMap(t, connString)
+	testCustomIndexAndQuery(t, connString)
 }
 
 func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) {
@@ -327,19 +329,19 @@ func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) 
 		require.NoError(t, provider2.Close())
 	}()
 
-	// This method tells you how many store objects are open in this Provider.
+	// This method tells you how many Store objects are open in this Provider.
 	// Since it's a new Provider, there shouldn't be any.
 	openStores := provider2.GetOpenStores()
 	require.Len(t, openStores, 0)
 
 	// This will succeed since GetStoreConfig checks the underlying databases instead of the
-	// in-memory store objects (which will be empty).
+	// in-memory Store objects (which will be empty).
 	// If we hadn't called SetStoreConfig before, then this would return an ErrStoreNotFound.
 	config, err = provider2.GetStoreConfig(storeName)
 	require.NoError(t, err)
 	require.Equal(t, "TagName1", config.TagNames[0])
 
-	// The call above should not have created a new store object.
+	// The call above should not have created a new Store object.
 	openStores = provider2.GetOpenStores()
 	require.Len(t, openStores, 0)
 
@@ -370,7 +372,7 @@ func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) 
 	}()
 
 	// This will succeed since GetStoreConfig checks the underlying databases instead of the
-	// in-memory store objects (which will be empty).
+	// in-memory Store objects (which will be empty).
 	// If we hadn't called Put before, then this would return an ErrStoreNotFound.
 	config, err = provider3.GetStoreConfig(storeName2)
 	require.NoError(t, err)
@@ -389,7 +391,7 @@ func testMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t *testing.
 	openStores := make([]storage.Store, numberOfProviders)
 
 	for i := 0; i < numberOfProviders; i++ {
-		provider, err := mongodb.NewProvider(connString, mongodb.WithTimeout(time.Second*5),
+		provider, err := mongodb.NewProvider(connString, mongodb.WithTimeout(time.Second*10),
 			mongodb.WithMaxRetries(10),
 			mongodb.WithTimeBetweenRetries(time.Second))
 		require.NoError(t, err)
@@ -433,7 +435,7 @@ func testMultipleProvidersSettingSameStoreConfigurationAtTheSameTime(t *testing.
 				}})
 			require.NoError(t, errSetStoreConfig)
 
-			// Close the store as soon as possible in order to free up resources for other threads.
+			// Close the Store as soon as possible in order to free up resources for other threads.
 			require.NoError(t, openStores[i].Close())
 		}
 		go setStoreConfig()
@@ -615,7 +617,7 @@ func testMultipleProvidersStoringSameBulkDataAtTheSameTime(t *testing.T, connStr
 			errBatch := openStores[i].Batch(operations)
 			require.NoError(t, errBatch)
 
-			// Close the store as soon as possible in order to free up resources for other threads.
+			// Close the Store as soon as possible in order to free up resources for other threads.
 			require.NoError(t, openStores[i].Close())
 		}
 		go setStoreConfig()
@@ -728,7 +730,7 @@ func testQueryWithMultipleTags(t *testing.T, connString string) { //nolint: gocy
 				iterator, err := store.Query(queryExpressionToTest, queryOptionToTest)
 				require.NoError(t, err)
 
-				verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+				verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount, false)
 			}
 		}
 	})
@@ -755,7 +757,7 @@ func testQueryWithMultipleTags(t *testing.T, connString string) { //nolint: gocy
 				iterator, err := store.Query(queryExpressionToTest, queryOptionToTest)
 				require.NoError(t, err)
 
-				verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+				verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount, false)
 			}
 		}
 	})
@@ -782,7 +784,7 @@ func testQueryWithMultipleTags(t *testing.T, connString string) { //nolint: gocy
 				iterator, err := store.Query(queryExpressionToTest, queryOptionToTest)
 				require.NoError(t, err)
 
-				verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+				verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount, false)
 			}
 		}
 	})
@@ -806,7 +808,7 @@ func testQueryWithMultipleTags(t *testing.T, connString string) { //nolint: gocy
 				iterator, err := store.Query(queryExpressionToTest, queryOptionToTest)
 				require.NoError(t, err)
 
-				verifyExpectedIterator(t, iterator, nil, nil, nil, expectedTotalItemsCount)
+				verifyExpectedIterator(t, iterator, nil, nil, nil, expectedTotalItemsCount, false)
 			}
 		}
 	})
@@ -833,7 +835,7 @@ func testQueryWithMultipleTags(t *testing.T, connString string) { //nolint: gocy
 				iterator, err := store.Query(queryExpressionToTest, queryOptionToTest)
 				require.NoError(t, err)
 
-				verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+				verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount, false)
 			}
 		}
 	})
@@ -857,7 +859,7 @@ func testQueryWithMultipleTags(t *testing.T, connString string) { //nolint: gocy
 				iterator, err := store.Query(queryExpressionToTest, queryOptionToTest)
 				require.NoError(t, err)
 
-				verifyExpectedIterator(t, iterator, nil, nil, nil, expectedTotalItemsCount)
+				verifyExpectedIterator(t, iterator, nil, nil, nil, expectedTotalItemsCount, false)
 			}
 		}
 	})
@@ -916,7 +918,7 @@ func testQueryWithLessThanGreaterThanOperators(t *testing.T, connString string) 
 			iterator, err := store.Query(queryExpression, queryOptionToTest)
 			require.NoError(t, err)
 
-			verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+			verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount, false)
 		}
 	})
 	t.Run("Less than", func(t *testing.T) {
@@ -938,7 +940,7 @@ func testQueryWithLessThanGreaterThanOperators(t *testing.T, connString string) 
 			iterator, err := store.Query(queryExpression, queryOptionToTest)
 			require.NoError(t, err)
 
-			verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+			verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount, false)
 		}
 	})
 	t.Run("Greater than or equal to", func(t *testing.T) {
@@ -960,7 +962,7 @@ func testQueryWithLessThanGreaterThanOperators(t *testing.T, connString string) 
 			iterator, err := store.Query(queryExpression, queryOptionToTest)
 			require.NoError(t, err)
 
-			verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+			verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount, false)
 		}
 	})
 	t.Run("Greater than", func(t *testing.T) {
@@ -982,7 +984,7 @@ func testQueryWithLessThanGreaterThanOperators(t *testing.T, connString string) 
 			iterator, err := store.Query(queryExpression, queryOptionToTest)
 			require.NoError(t, err)
 
-			verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+			verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount, false)
 		}
 	})
 	t.Run("Tag value is not a valid integer", func(t *testing.T) {
@@ -1343,6 +1345,175 @@ func testPing(t *testing.T, connString string) {
 	require.NoError(t, err)
 }
 
+func testGetAsRawMap(t *testing.T, connString string) {
+	t.Helper()
+
+	provider, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	storeName := randomStoreName()
+
+	store, err := provider.OpenStore(storeName)
+	require.NoError(t, err)
+
+	var ok bool
+
+	mongoDBStore, ok := store.(*mongodb.Store)
+	require.True(t, ok)
+
+	testData := map[string]interface{}{
+		"field1": "value1",
+		"field2": int32(2),
+		"field3": true,
+	}
+
+	err = mongoDBStore.PutAsJSON("TestKey", testData)
+	require.NoError(t, err)
+
+	retrievedTestData, err := mongoDBStore.GetAsRawMap("TestKey")
+	require.NoError(t, err)
+
+	// The retrieved test data should be the same as the input test data, except that there's an _id field now.
+
+	testData["_id"] = "TestKey"
+
+	require.True(t, reflect.DeepEqual(testData, retrievedTestData),
+		"unexpected retrieved test data")
+}
+
+func testCustomIndexAndQuery(t *testing.T, connString string) {
+	t.Helper()
+	t.Run("Using individual PutAsJSON calls", func(t *testing.T) {
+		doCustomIndexAndQueryTest(t, connString, false)
+	})
+	t.Run("Using BatchAsJSON call", func(t *testing.T) {
+		doCustomIndexAndQueryTest(t, connString, true)
+	})
+	t.Run("Store not found", func(t *testing.T) {
+		provider, err := mongodb.NewProvider(connString)
+		require.NoError(t, err)
+
+		err = provider.CreateCustomIndex("NonExistentStore", mongo.IndexModel{})
+		require.Equal(t, err, storage.ErrStoreNotFound)
+	})
+
+	t.Run("Fail to create indexes", func(t *testing.T) {
+		provider, err := mongodb.NewProvider(connString)
+		require.NoError(t, err)
+
+		storeName := randomStoreName()
+
+		_, err = provider.OpenStore(storeName)
+		require.NoError(t, err)
+
+		err = provider.CreateCustomIndex(storeName, mongo.IndexModel{})
+		require.EqualError(t, err, "failed to create indexes in MongoDB collection: failed to create "+
+			"indexes in MongoDB collection: index model keys cannot be nil")
+	})
+}
+
+func doCustomIndexAndQueryTest(t *testing.T, connString string, useBatch bool) {
+	t.Helper()
+
+	provider, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	storeName := randomStoreName()
+
+	store, err := provider.OpenStore(storeName)
+	require.NoError(t, err)
+
+	var ok bool
+
+	mongoDBStore, ok := store.(*mongodb.Store)
+	require.True(t, ok)
+
+	valuesToStore := generateJSONTestData()
+
+	storeDataAsJSON(t, mongoDBStore, valuesToStore, useBatch)
+
+	createCustomIndexForCustomQueryTests(t, provider, storeName)
+
+	t.Run("Querying for one attribute", func(t *testing.T) {
+		filter := bson.D{
+			{
+				Key:   "indexed.attributes.name",
+				Value: "Name1",
+			},
+		}
+
+		iterator, err := mongoDBStore.QueryCustom(filter)
+		require.NoError(t, err)
+		require.NotEmpty(t, iterator)
+
+		expectedKeys := []string{"Document1", "Document2"}
+
+		verifyExpectedIterator(t, iterator, expectedKeys, valuesToStore, nil, 2, true)
+	})
+	t.Run("Querying for two attributes (AND operator)", func(t *testing.T) {
+		filter := bson.D{
+			{
+				Key:   "indexed.attributes.name",
+				Value: "Name1",
+			},
+			{
+				Key:   "indexed.attributes.value",
+				Value: "Value1",
+			},
+		}
+
+		iterator, err := mongoDBStore.QueryCustom(filter)
+		require.NoError(t, err)
+		require.NotEmpty(t, iterator)
+
+		expectedKeys := []string{"Document1"}
+		expectedValues := [][]byte{valuesToStore[0]}
+
+		verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, nil, 1, true)
+	})
+	t.Run("Querying for two attributes (OR operator)", func(t *testing.T) {
+		filter := bson.D{
+			{
+				Key: "$or",
+				Value: bson.A{
+					bson.D{{Key: "indexed.attributes.name", Value: "Name3"}},
+					bson.D{{Key: "indexed.attributes.name", Value: "Name4"}},
+				},
+			},
+		}
+		iterator, err := mongoDBStore.QueryCustom(filter)
+		require.NoError(t, err)
+		require.NotEmpty(t, iterator)
+
+		expectedKeys := []string{"Document1", "Document3"}
+		expectedValues := [][]byte{valuesToStore[0], valuesToStore[2]}
+
+		verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, nil, 2, true)
+	})
+	t.Run("Querying for multiple attributes (mix of AND and OR operators)", func(t *testing.T) {
+		filter := bson.D{
+			{
+				Key: "$or",
+				Value: bson.A{
+					bson.D{
+						{Key: "indexed.attributes.name", Value: "Name1"},
+						{Key: "indexed.attributes.value", Value: "Value2"},
+					},
+					bson.D{{Key: "indexed.attributes.name", Value: "Name4"}},
+				},
+			},
+		}
+		iterator, err := mongoDBStore.QueryCustom(filter)
+		require.NoError(t, err)
+		require.NotEmpty(t, iterator)
+
+		expectedKeys := []string{"Document2", "Document3"}
+		expectedValues := [][]byte{valuesToStore[1], valuesToStore[2]}
+
+		verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, nil, 2, true)
+	})
+}
+
 func getTestData() (testKeys []string, testValues [][]byte, testTags [][]storage.Tag) {
 	testKeys = []string{
 		"Cassie",
@@ -1411,23 +1582,187 @@ func putData(t *testing.T, store storage.Store, keys []string, values [][]byte, 
 	}
 }
 
+func createCustomIndexForCustomQueryTests(t *testing.T, provider *mongodb.Provider, storeName string) {
+	t.Helper()
+
+	indexOptions := options.Index()
+	indexOptions.SetName("Custom Index")
+
+	model := mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "indexed.attributes.name", Value: 1},
+			{Key: "indexed.attributes.value", Value: 1},
+		},
+		Options: indexOptions,
+	}
+
+	err := provider.CreateCustomIndex(storeName, model)
+	require.NoError(t, err)
+}
+
+func storeDataAsJSON(t *testing.T, store *mongodb.Store, values [][]byte, useBatch bool) {
+	t.Helper()
+
+	if useBatch {
+		operations := make([]mongodb.BatchAsJSONOperation, len(values))
+
+		for i, value := range values {
+			var valueAsMap map[string]interface{}
+
+			err := json.Unmarshal(value, &valueAsMap)
+			require.NoError(t, err)
+
+			operations[i] = mongodb.BatchAsJSONOperation{
+				Key:   fmt.Sprintf("Document%d", i+1),
+				Value: valueAsMap,
+			}
+		}
+
+		err := store.BatchAsJSON(operations)
+		require.NoError(t, err)
+
+		return
+	}
+
+	for i, value := range values {
+		var valueAsMap map[string]interface{}
+
+		err := json.Unmarshal(value, &valueAsMap)
+		require.NoError(t, err)
+
+		err = store.PutAsJSON(fmt.Sprintf("Document%d", i+1), valueAsMap)
+		require.NoError(t, err)
+	}
+}
+
+func generateJSONTestData() [][]byte {
+	value1Bytes := []byte(`{
+    "sequence": 0,
+    "indexed": [{
+      "sequence": 0,
+      "hmac": {
+        "id": "https://example.com/kms/z7BgF536GaR",
+        "type": "Sha256HmacKey2019"
+      },
+      "attributes": [{
+        "name": "Name1",
+        "value": "Value1"
+      }, {
+        "name": "Name2",
+        "value": "Value1",
+	    "anotherField": "Something"
+      },
+	  {
+        "name": "Name3",
+        "value": "Value1",
+	    "aBoolField": true
+      }]
+    }],
+    "jwe": {
+      "protected": "eyJlbmMiOiJDMjBQIn0",
+      "recipients": [
+        {
+          "header": {
+            "alg": "A256KW",
+            "kid": "https://example.com/kms/z7BgF536GaR"
+          },
+          "encrypted_key":
+            "OR1vdCNvf_B68mfUxFQVT-vyXVrBembuiM40mAAjDC1-Qu5iArDbug"
+        }
+      ],
+      "iv": "i8Nins2vTI3PlrYW",
+      "ciphertext": "Cb-963UCXblINT8F6MDHzMJN9EAhK3I",
+      "tag": "pfZO0JulJcrc3trOZy8rjA"
+    }
+  }`)
+
+	value2Bytes := []byte(`{
+    "sequence": 0,
+    "indexed": [{
+      "sequence": 0,
+      "hmac": {
+        "id": "https://example.com/kms/z7BgF536GaR",
+        "type": "Sha256HmacKey2019"
+      },
+      "attributes": [{
+        "name": "Name1",
+        "value": "Value2"
+      }, {
+        "name": "Name2",
+        "value": "Value2"
+      }]
+    }],
+    "jwe": {
+      "protected": "eyJlbmMiOiJDMjBQIn0",
+      "recipients": [
+        {
+          "header": {
+            "alg": "A256KW",
+            "kid": "https://example.com/kms/z7BgF536GaR"
+          },
+          "encrypted_key":
+            "OR1vdCNvf_B68mfUxFQVT-vyXVrBembuiM40mAAjDC1-Qu5iArDbug"
+        }
+      ],
+      "iv": "i8Nins2vTI3PlrYW",
+      "ciphertext": "Cb-963UCXblINT8F6MDHzMJN9EAhK3I",
+      "tag": "pfZO0JulJcrc3trOZy8rjA"
+    }
+  }`)
+
+	value3Bytes := []byte(`{
+    "sequence": 0,
+    "indexed": [{
+      "sequence": 0,
+      "hmac": {
+        "id": "https://example.com/kms/z7BgF536GaR",
+        "type": "Sha256HmacKey2019"
+      },
+      "attributes": [{
+        "name": "Name4",
+        "value": "Value1"
+      }]
+    }],
+    "jwe": {
+      "protected": "eyJlbmMiOiJDMjBQIn0",
+      "recipients": [
+        {
+          "header": {
+            "alg": "A256KW",
+            "kid": "https://example.com/kms/z7BgF536GaR"
+          },
+          "encrypted_key":
+            "OR1vdCNvf_B68mfUxFQVT-vyXVrBembuiM40mAAjDC1-Qu5iArDbug"
+        }
+      ],
+      "iv": "i8Nins2vTI3PlrYW",
+      "ciphertext": "Cb-963UCXblINT8F6MDHzMJN9EAhK3I",
+      "tag": "pfZO0JulJcrc3trOZy8rjA"
+    }
+  }`)
+
+	return [][]byte{value1Bytes, value2Bytes, value3Bytes}
+}
+
 // expectedKeys, expectedValues, and expectedTags are with respect to the query's page settings.
 // Since Iterator.TotalItems' count is not affected by page settings, expectedTotalItemsCount must be passed in and
 // can't be determined by looking at the length of expectedKeys, expectedValues, nor expectedTags.
 func verifyExpectedIterator(t *testing.T, actualResultsItr storage.Iterator, expectedKeys []string,
-	expectedValues [][]byte, expectedTags [][]storage.Tag, expectedTotalItemsCount int) {
+	expectedValues [][]byte, expectedTags [][]storage.Tag, expectedTotalItemsCount int, isCustomQueryTest bool) {
 	t.Helper()
 
-	if len(expectedValues) != len(expectedKeys) || len(expectedTags) != len(expectedKeys) {
+	if !isCustomQueryTest && (len(expectedValues) != len(expectedKeys) || len(expectedTags) != len(expectedKeys)) {
 		require.FailNow(t,
 			"Invalid test case. Expected keys, values and tags slices must be the same length.")
 	}
 
-	verifyIteratorAnyOrder(t, actualResultsItr, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount)
+	verifyIteratorAnyOrder(t, actualResultsItr, expectedKeys, expectedValues, expectedTags, expectedTotalItemsCount,
+		isCustomQueryTest)
 }
 
-func verifyIteratorAnyOrder(t *testing.T, actualResultsItr storage.Iterator, //nolint: gocyclo // Test file
-	expectedKeys []string, expectedValues [][]byte, expectedTags [][]storage.Tag, expectedTotalItemsCount int) {
+func verifyIteratorAnyOrder(t *testing.T, actualResultsItr storage.Iterator, //nolint:gocognit, gocyclo // test file
+	expectedKeys []string, expectedValues [][]byte, expectedTags [][]storage.Tag, expectedTotalItemsCount int,
+	isCustomQueryTest bool) {
 	t.Helper()
 
 	var dataChecklist struct {
@@ -1466,19 +1801,39 @@ func verifyIteratorAnyOrder(t *testing.T, actualResultsItr storage.Iterator, //n
 		receivedKey, itrErr := actualResultsItr.Key()
 		require.NoError(t, itrErr)
 
-		receivedValue, itrErr := actualResultsItr.Value()
-		require.NoError(t, itrErr)
+		var receivedValueMap map[string]interface{}
+
+		var receivedValue []byte
+
+		if isCustomQueryTest {
+			actualMongoDBResultsItr, ok := actualResultsItr.(*mongodb.Iterator)
+			require.True(t, ok)
+
+			receivedValueMap, itrErr = actualMongoDBResultsItr.ValueAsRawMap()
+			require.NoError(t, itrErr)
+		} else {
+			receivedValue, itrErr = actualResultsItr.Value()
+			require.NoError(t, itrErr)
+		}
 
 		receivedTags, itrErr := actualResultsItr.Tags()
 		require.NoError(t, itrErr)
 
 		for i := 0; i < len(dataChecklist.keys); i++ {
-			if receivedKey == dataChecklist.keys[i] {
-				if string(receivedValue) == string(dataChecklist.values[i]) {
-					if equalTags(receivedTags, dataChecklist.tags[i]) {
+			if receivedKey == dataChecklist.keys[i] { //nolint:nestif // test file
+				if isCustomQueryTest {
+					if isEquivalentJSON(t, receivedValueMap, dataChecklist.values[i]) {
 						dataChecklist.received[i] = true
 
 						break
+					}
+				} else {
+					if string(receivedValue) == string(dataChecklist.values[i]) {
+						if equalTags(receivedTags, dataChecklist.tags[i]) {
+							dataChecklist.received[i] = true
+
+							break
+						}
 					}
 				}
 			}
@@ -1500,6 +1855,28 @@ func verifyIteratorAnyOrder(t *testing.T, actualResultsItr storage.Iterator, //n
 			require.FailNow(t, "received unexpected query results")
 		}
 	}
+}
+
+func isEquivalentJSON(t *testing.T, receivedMapFromMongoDB map[string]interface{}, originalValue []byte) bool {
+	t.Helper()
+
+	var originalValueAsMap map[string]interface{}
+
+	err := json.Unmarshal(originalValue, &originalValueAsMap)
+	require.NoError(t, err)
+
+	// Add the _id field that we expect MongoDB to add so the two are comparable.
+	// Then, remarshal so we can compare to see if we got equivalent JSON.
+
+	originalValueAsMap["_id"] = receivedMapFromMongoDB["_id"]
+
+	remarshalledOriginalValue, err := json.Marshal(originalValueAsMap)
+	require.NoError(t, err)
+
+	remarshalledReceivedValue, err := json.Marshal(receivedMapFromMongoDB)
+	require.NoError(t, err)
+
+	return string(remarshalledReceivedValue) == string(remarshalledOriginalValue)
 }
 
 func equalTags(tags1, tags2 []storage.Tag) bool { //nolint:gocyclo // Test file
