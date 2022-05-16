@@ -102,8 +102,8 @@ func WithTimeout(timeout time.Duration) Option {
 // from MongoDB. These transient errors can happen in two situations:
 // 1. An index conflict error when setting indexes via the SetStoreConfig method from multiple MongoDB Provider
 //    objects that look at the same stores (which might happen if you have multiple running instances of a service).
-// 2. If you're using MongoDB 4.0.0 (or DocumentDB 4.0.0), a "dup key" type of error when calling store.Put or
-//    store.Batch from multiple MongoDB Provider objects that look at the same stores.
+// 2. If you're using MongoDB 4.0.0 (or DocumentDB 4.0.0), a "dup key" type of error when calling Store.Put or
+//    Store.Batch from multiple MongoDB Provider objects that look at the same stores.
 // maxRetries must be > 0. If not set (or set to an invalid value), it will default to 3.
 func WithMaxRetries(maxRetries uint64) Option {
 	return func(opts *Provider) {
@@ -115,8 +115,8 @@ func WithMaxRetries(maxRetries uint64) Option {
 // there are certain transient errors from MongoDB. These transient errors can happen in two situations:
 // 1. An index conflict error when setting indexes via the SetStoreConfig method from multiple MongoDB Provider
 //    objects that look at the same stores (which might happen if you have multiple running instances of a service).
-// 2. If you're using MongoDB 4.0.0 (or DocumentDB 4.0.0), a "dup key" type of error when calling store.Put or
-//    store.Batch multiple times in parallel on the same key.
+// 2. If you're using MongoDB 4.0.0 (or DocumentDB 4.0.0), a "dup key" type of error when calling Store.Put or
+//    Store.Batch multiple times in parallel on the same key.
 // Defaults to two seconds if not set.
 func WithTimeBetweenRetries(timeBetweenRetries time.Duration) Option {
 	return func(opts *Provider) {
@@ -127,7 +127,7 @@ func WithTimeBetweenRetries(timeBetweenRetries time.Duration) Option {
 // Provider represents a MongoDB/DocumentDB implementation of the storage.Provider interface.
 type Provider struct {
 	client             *mongo.Client
-	openStores         map[string]*store
+	openStores         map[string]*Store
 	dbPrefix           string
 	lock               sync.RWMutex
 	logger             logger
@@ -144,7 +144,7 @@ type Provider struct {
 // If using DocumentDB, the retryWrites option must be set to false in the connection string (retryWrites=false) in
 // order for it to work.
 func NewProvider(connString string, opts ...Option) (*Provider, error) {
-	p := &Provider{openStores: map[string]*store{}}
+	p := &Provider{openStores: map[string]*Store{}}
 
 	setOptions(opts, p)
 
@@ -184,7 +184,7 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 		return openStore, nil
 	}
 
-	newStore := &store{
+	newStore := &Store{
 		// The storage interface doesn't have the concept of a nested database, so we have no real use for the
 		// collection abstraction MongoDB uses. Since we have to use at least one collection, we keep the collection
 		// name as short as possible to avoid hitting the index size limit.
@@ -202,10 +202,10 @@ func (p *Provider) OpenStore(name string) (storage.Store, error) {
 	return newStore, nil
 }
 
-// SetStoreConfig sets the configuration on a store.
-// Indexes are created based on the tag names in config. This allows the store.Query method to operate faster.
-// Existing tag names/indexes in the store that are not in the config passed in here will be removed.
-// The store must already be open in this provider from a prior call to OpenStore. The name parameter cannot be blank.
+// SetStoreConfig sets the configuration on a Store.
+// Indexes are created based on the tag names in config. This allows the Store.Query method to operate faster.
+// Existing tag names/indexes in the Store that are not in the config passed in here will be removed.
+// The Store must already be open in this provider from a prior call to OpenStore. The name parameter cannot be blank.
 func (p *Provider) SetStoreConfig(storeName string, config storage.StoreConfiguration) error {
 	for _, tagName := range config.TagNames {
 		if strings.Contains(tagName, ":") {
@@ -227,9 +227,9 @@ func (p *Provider) SetStoreConfig(storeName string, config storage.StoreConfigur
 
 		err := p.setIndexes(openStore, config)
 		if err != nil {
-			// If there are multiple MongoDB Providers trying to set store configurations, it's possible
+			// If there are multiple MongoDB Providers trying to set Store configurations, it's possible
 			// to get an error. In cases where those multiple MongoDB providers are trying
-			// to set the exact same store configuration, retrying here allows them to succeed without failing
+			// to set the exact same Store configuration, retrying here allows them to succeed without failing
 			// unnecessarily.
 			if isIndexConflictErrorMessage(err) {
 				p.logger.Infof("[Store name: %s] Attempt %d - error while setting indexes. "+
@@ -264,7 +264,7 @@ func (p *Provider) SetStoreConfig(storeName string, config storage.StoreConfigur
 // GetStoreConfig gets the current Store configuration.
 // If the underlying database for the given name has never been
 // created by a call to OpenStore at some point, then an error wrapping ErrStoreNotFound will be returned. This
-// method will not open a store in the Provider.
+// method will not open a Store in the Provider.
 // If name is blank, then an error will be returned.
 func (p *Provider) GetStoreConfig(name string) (storage.StoreConfiguration, error) {
 	name = strings.ToLower(p.dbPrefix + name)
@@ -316,11 +316,11 @@ func (p *Provider) GetOpenStores() []storage.Store {
 	return openStores
 }
 
-// Close closes all stores created under this store provider.
+// Close closes all stores created under this Store provider.
 func (p *Provider) Close() error {
 	p.lock.RLock()
 
-	openStoresSnapshot := make([]*store, len(p.openStores))
+	openStoresSnapshot := make([]*Store, len(p.openStores))
 
 	var counter int
 
@@ -361,6 +361,24 @@ func (p *Provider) Ping() error {
 	return p.client.Ping(ctxWithTimeout, nil)
 }
 
+// CreateCustomIndex allows for any custom index to be created in MongoDB based on the given index model.
+// Intended for use alongside the CreateCustomIndex, PutAsJSON, and ValueAsRawMap methods.
+func (p *Provider) CreateCustomIndex(storeName string, model mongo.IndexModel) error {
+	storeName = strings.ToLower(p.dbPrefix + storeName)
+
+	store, exists := p.openStores[storeName]
+	if !exists {
+		return storage.ErrStoreNotFound
+	}
+
+	err := p.createIndexes(store, []mongo.IndexModel{model})
+	if err != nil {
+		return fmt.Errorf(failCreateIndexesInMongoDBCollection, err)
+	}
+
+	return nil
+}
+
 func (p *Provider) removeStore(name string) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -375,7 +393,7 @@ func (p *Provider) getCollectionHandle(name string) *mongo.Collection {
 	return p.client.Database(name).Collection("c")
 }
 
-func (p *Provider) setIndexes(openStore *store, config storage.StoreConfiguration) error {
+func (p *Provider) setIndexes(openStore *Store, config storage.StoreConfiguration) error {
 	tagNamesNeedIndexCreation, err := p.determineTagNamesNeedIndexCreation(openStore, config)
 	if err != nil {
 		return err
@@ -403,7 +421,7 @@ func (p *Provider) setIndexes(openStore *store, config storage.StoreConfiguratio
 	return nil
 }
 
-func (p *Provider) determineTagNamesNeedIndexCreation(openStore *store,
+func (p *Provider) determineTagNamesNeedIndexCreation(openStore *Store,
 	config storage.StoreConfiguration) ([]string, error) {
 	existingIndexedTagNames, err := p.getExistingIndexedTagNames(openStore.coll)
 	if err != nil {
@@ -427,7 +445,7 @@ func (p *Provider) determineTagNamesNeedIndexCreation(openStore *store,
 			}
 		}
 
-		// If the new store configuration doesn't have the existing index (tag) defined, then we will delete it
+		// If the new Store configuration doesn't have the existing index (tag) defined, then we will delete it
 		if !existingTagIsInNewConfig {
 			ctxWithTimeout, cancel := context.WithTimeout(context.Background(), p.timeout)
 
@@ -515,7 +533,7 @@ func (p *Provider) getIndexesCursor(collection *mongo.Collection) (*mongo.Cursor
 	return indexesCursor, nil
 }
 
-func (p *Provider) createIndexes(openStore *store, models []mongo.IndexModel) error {
+func (p *Provider) createIndexes(openStore *Store, models []mongo.IndexModel) error {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), p.timeout)
 	defer cancel()
 
@@ -527,7 +545,8 @@ func (p *Provider) createIndexes(openStore *store, models []mongo.IndexModel) er
 	return nil
 }
 
-type store struct {
+// Store represents a MongoDB/DocumentDB implementation of the storage.Store interface.
+type Store struct {
 	name               string
 	logger             logger
 	coll               *mongo.Collection
@@ -541,7 +560,7 @@ type store struct {
 // If tag values are valid int32 or int64, they will be stored as integers in MongoDB, so we can sort numerically later.
 // If storing a JSON value, then any key names (within the JSON) cannot contain "`" characters. This is because we
 // use it as a replacement for "." characters, which are not valid in DocumentDB as JSON key names.
-func (s *store) Put(key string, value []byte, tags ...storage.Tag) error {
+func (s *Store) Put(key string, value []byte, tags ...storage.Tag) error {
 	err := validatePutInput(key, value, tags)
 	if err != nil {
 		return err
@@ -555,19 +574,21 @@ func (s *store) Put(key string, value []byte, tags ...storage.Tag) error {
 	return s.executeUpdateOneCommand(key, data)
 }
 
-func (s *store) Get(k string) ([]byte, error) {
-	if k == "" {
-		return nil, errors.New("key is mandatory")
-	}
+// PutAsJSON stores the given key and value. Value is stored directly in a MongoDB document without wrapping, with
+// key being used as the _id field. Value must be a struct or map.
+// Data stored this way must be retrieved using the GetAsRawMap method. When querying for this data, use the QueryCustom
+// method, and when retrieving from the iterator use the ValueAsRawMap method.
+func (s *Store) PutAsJSON(key string, value interface{}) error {
+	return s.executeUpdateOneCommand(key, value)
+}
 
-	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
-	defer cancel()
-
-	result := s.coll.FindOne(ctxWithTimeout, bson.M{"_id": k})
-	if errors.Is(result.Err(), mongo.ErrNoDocuments) {
-		return nil, storage.ErrDataNotFound
-	} else if result.Err() != nil {
-		return nil, fmt.Errorf("failed to run FindOne command in MongoDB: %w", result.Err())
+// Get fetches the value associated with the given key.
+// If key cannot be found, then an error wrapping ErrDataNotFound will be returned.
+// If key is empty, then an error will be returned.
+func (s *Store) Get(key string) ([]byte, error) {
+	result, err := s.runFindOneCommand(key)
+	if err != nil {
+		return nil, err
 	}
 
 	_, value, err := getKeyAndValueFromMongoDBResult(result)
@@ -578,19 +599,24 @@ func (s *store) Get(k string) ([]byte, error) {
 	return value, nil
 }
 
-func (s *store) GetTags(key string) ([]storage.Tag, error) {
-	if key == "" {
-		return nil, errors.New("key is mandatory")
+// GetAsRawMap fetches the full MongoDB JSON document stored with the given id (_id field in MongoDB).
+// The document is returned as a map (which includes the _id field).
+func (s *Store) GetAsRawMap(id string) (map[string]interface{}, error) {
+	result, err := s.runFindOneCommand(id)
+	if err != nil {
+		return nil, err
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
-	defer cancel()
+	return getValueAsRawMapFromMongoDBResult(result)
+}
 
-	result := s.coll.FindOne(ctxWithTimeout, bson.M{"_id": key})
-	if errors.Is(result.Err(), mongo.ErrNoDocuments) {
-		return nil, storage.ErrDataNotFound
-	} else if result.Err() != nil {
-		return nil, fmt.Errorf("failed to run FindOne command in MongoDB: %w", result.Err())
+// GetTags fetches all tags associated with the given key.
+// If key cannot be found, then an error wrapping ErrDataNotFound will be returned.
+// If key is empty, then an error will be returned.
+func (s *Store) GetTags(key string) ([]storage.Tag, error) {
+	result, err := s.runFindOneCommand(key)
+	if err != nil {
+		return nil, err
 	}
 
 	tags, err := getTagsFromMongoDBResult(result)
@@ -601,7 +627,12 @@ func (s *store) GetTags(key string) ([]storage.Tag, error) {
 	return tags, nil
 }
 
-func (s *store) GetBulk(keys ...string) ([][]byte, error) {
+// GetBulk fetches the values associated with the given keys.
+// If no data exists under a given key, then a nil []byte is returned for that value. It is not considered an error.
+// Depending on the implementation, this method may be faster than calling Get for each key individually.
+// If any of the given keys are empty, then an error will be returned.
+// As of writing, aries-framework-go code does not use this, but it may be useful for custom solutions.
+func (s *Store) GetBulk(keys ...string) ([][]byte, error) {
 	if len(keys) == 0 {
 		return nil, errors.New("keys slice must contain at least one key")
 	}
@@ -642,12 +673,12 @@ func (s *store) GetBulk(keys ...string) ([][]byte, error) {
 // It's recommended to set up an index using the Provider.SetStoreConfig method in order to speed up queries.
 // TODO (#146) Investigate compound indexes and see if they may be useful for queries with sorts and/or for queries
 //             with multiple tags.
-func (s *store) Query(expression string, options ...storage.QueryOption) (storage.Iterator, error) {
+func (s *Store) Query(expression string, options ...storage.QueryOption) (storage.Iterator, error) {
 	if expression == "" {
-		return &iterator{}, errInvalidQueryExpressionFormat
+		return &Iterator{}, errInvalidQueryExpressionFormat
 	}
 
-	filter, err := prepareFilter(strings.Split(expression, "&&"))
+	filter, err := prepareFilter(strings.Split(expression, "&&"), false)
 	if err != nil {
 		return nil, err
 	}
@@ -662,7 +693,7 @@ func (s *store) Query(expression string, options ...storage.QueryOption) (storag
 		return nil, fmt.Errorf("failed to run Find command in MongoDB: %w", err)
 	}
 
-	return &iterator{
+	return &Iterator{
 		cursor:  cursor,
 		coll:    s.coll,
 		filter:  filter,
@@ -670,8 +701,29 @@ func (s *store) Query(expression string, options ...storage.QueryOption) (storag
 	}, nil
 }
 
+// QueryCustom queries for data based on the given bson.D. This method allows the caller to specify almost
+// any type of query that MongoDB can support. Intended for use alongside the CreateCustomIndex, PutAsJSON,
+// and ValueAsRawMap methods.
+func (s *Store) QueryCustom(query bson.D) (storage.Iterator, error) {
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
+	defer cancel()
+
+	cursor, err := s.coll.Find(ctxWithTimeout, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run Find command in MongoDB: %w", err)
+	}
+
+	return &Iterator{
+		cursor:      cursor,
+		coll:        s.coll,
+		filter:      query,
+		timeout:     s.timeout,
+		customQuery: true,
+	}, nil
+}
+
 // Delete deletes the value (and all tags) associated with key.
-func (s *store) Delete(key string) error {
+func (s *Store) Delete(key string) error {
 	if key == "" {
 		return errors.New("key is mandatory")
 	}
@@ -693,7 +745,7 @@ func (s *store) Delete(key string) error {
 // Put operations can be sped up by making use of the storage.PutOptions.IsNewKey option for any keys that you know
 // for sure do not already exist in the database. If this option is used and the key does exist, then this method will
 // return an error.
-func (s *store) Batch(operations []storage.Operation) error {
+func (s *Store) Batch(operations []storage.Operation) error {
 	if len(operations) == 0 {
 		return errors.New("batch requires at least one operation")
 	}
@@ -726,20 +778,59 @@ func (s *store) Batch(operations []storage.Operation) error {
 	return s.executeBulkWriteCommand(models, atLeastOneInsertOneModel)
 }
 
+// BatchAsJSONOperation represents an operation to be performed in the BatchAsJSON method.
+type BatchAsJSONOperation struct {
+	Key   string      `json:"key,omitempty"`
+	Value interface{} `json:"value,omitempty"` // A nil value will result in a delete operation.
+}
+
+// BatchAsJSON is similar to Batch, but values are stored directly in MongoDB documents without wrapping, with
+// keys being used in the _id fields. Values must be structs or maps.
+func (s *Store) BatchAsJSON(operations []BatchAsJSONOperation) error {
+	if len(operations) == 0 {
+		return errors.New("batch requires at least one operation")
+	}
+
+	for _, operation := range operations {
+		if operation.Key == "" {
+			return errors.New("key cannot be empty")
+		}
+	}
+
+	models := make([]mongo.WriteModel, len(operations))
+
+	for i, operation := range operations {
+		models[i] = generateModelForBulkWriteCallAsJSON(operation)
+	}
+
+	return s.executeBulkWriteCommand(models, false)
+}
+
+func generateModelForBulkWriteCallAsJSON(operation BatchAsJSONOperation) mongo.WriteModel {
+	if operation.Value == nil {
+		return mongo.NewDeleteOneModel().SetFilter(bson.M{"_id": operation.Key})
+	}
+
+	return mongo.NewUpdateOneModel().
+		SetFilter(bson.M{"_id": operation.Key}).
+		SetUpdate(bson.M{"$set": operation.Value}).
+		SetUpsert(true)
+}
+
 // Flush doesn't do anything since this store type doesn't queue values.
-func (s *store) Flush() error {
+func (s *Store) Flush() error {
 	return nil
 }
 
-// Close removes this store from the parent Provider's list of open stores. It does not close this store's connection
+// Close removes this Store from the parent Provider's list of open stores. It does not close this Store's connection
 // to the database, since it's shared across stores. To close the connection you must call Provider.Close.
-func (s *store) Close() error {
+func (s *Store) Close() error {
 	s.close(s.name)
 
 	return nil
 }
 
-func (s *store) executeUpdateOneCommand(key string, dataWrapperToStore dataWrapper) error {
+func (s *Store) executeUpdateOneCommand(key string, value interface{}) error {
 	opts := mongooptions.UpdateOptions{}
 	opts.SetUpsert(true)
 
@@ -751,13 +842,13 @@ func (s *store) executeUpdateOneCommand(key string, dataWrapperToStore dataWrapp
 		ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
 		defer cancel()
 
-		_, err := s.coll.UpdateOne(ctxWithTimeout, bson.M{"_id": key}, bson.M{"$set": dataWrapperToStore}, &opts)
+		_, err := s.coll.UpdateOne(ctxWithTimeout, bson.M{"_id": key}, bson.M{"$set": value}, &opts)
 		if err != nil {
 			// If using MongoDB 4.0.0 (or DocumentDB 4.0.0), and this is called multiple times in parallel on the
 			// same key, then it's possible to get a transient error here. We need to retry in this case.
 			if strings.Contains(err.Error(), "duplicate key error collection") {
 				s.logger.Infof(`[Store name: %s] Attempt %d - error while storing data under key "%s". `+
-					"This can happen if there are multiple calls in parallel to store data under the same key. "+
+					"This can happen if there are multiple calls in parallel to Store data under the same key. "+
 					"If there are remaining retries, this operation will be tried again after %s. "+
 					"Underlying error message: %s", s.name, attemptsMade, key, s.timeBetweenRetries.String(),
 					err.Error())
@@ -777,7 +868,25 @@ func (s *store) executeUpdateOneCommand(key string, dataWrapperToStore dataWrapp
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(s.timeBetweenRetries), s.maxRetries))
 }
 
-func (s *store) collectBulkGetResults(keys []string, cursor *mongo.Cursor) ([][]byte, error) {
+func (s *Store) runFindOneCommand(id string) (*mongo.SingleResult, error) {
+	if id == "" {
+		return nil, errors.New("key is mandatory")
+	}
+
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
+	defer cancel()
+
+	result := s.coll.FindOne(ctxWithTimeout, bson.M{"_id": id})
+	if errors.Is(result.Err(), mongo.ErrNoDocuments) {
+		return nil, storage.ErrDataNotFound
+	} else if result.Err() != nil {
+		return nil, fmt.Errorf("failed to run FindOne command in MongoDB: %w", result.Err())
+	}
+
+	return result, nil
+}
+
+func (s *Store) collectBulkGetResults(keys []string, cursor *mongo.Cursor) ([][]byte, error) {
 	allValues := make([][]byte, len(keys))
 
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
@@ -801,7 +910,7 @@ func (s *store) collectBulkGetResults(keys []string, cursor *mongo.Cursor) ([][]
 	return allValues, nil
 }
 
-func (s *store) executeBulkWriteCommand(models []mongo.WriteModel, atLeastOneInsertOneModel bool) error {
+func (s *Store) executeBulkWriteCommand(models []mongo.WriteModel, atLeastOneInsertOneModel bool) error {
 	var attemptsMade int
 
 	return backoff.Retry(func() error {
@@ -861,7 +970,7 @@ func (s *store) executeBulkWriteCommand(models []mongo.WriteModel, atLeastOneIns
 	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(s.timeBetweenRetries), s.maxRetries))
 }
 
-func (s *store) createMongoDBFindOptions(options []storage.QueryOption) *mongooptions.FindOptions {
+func (s *Store) createMongoDBFindOptions(options []storage.QueryOption) *mongooptions.FindOptions {
 	queryOptions := getQueryOptions(options)
 
 	findOptions := mongooptions.Find()
@@ -891,21 +1000,27 @@ func (s *store) createMongoDBFindOptions(options []storage.QueryOption) *mongoop
 	return findOptions
 }
 
-type iterator struct {
-	cursor  *mongo.Cursor
-	coll    *mongo.Collection
-	filter  bson.D
-	timeout time.Duration
+// Iterator represents a MongoDB/DocumentDB implementation of the storage.Iterator interface.
+type Iterator struct {
+	cursor      *mongo.Cursor
+	coll        *mongo.Collection
+	filter      bson.D
+	timeout     time.Duration
+	customQuery bool
 }
 
-func (i *iterator) Next() (bool, error) {
+// Next moves the pointer to the next entry in the iterator.
+// Note that it must be called before accessing the first entry.
+// It returns false if the iterator is exhausted - this is not considered an error.
+func (i *Iterator) Next() (bool, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), i.timeout)
 	defer cancel()
 
 	return i.cursor.Next(ctxWithTimeout), nil
 }
 
-func (i *iterator) Key() (string, error) {
+// Key returns the key of the current entry.
+func (i *Iterator) Key() (string, error) {
 	key, _, err := getKeyAndValueFromMongoDBResult(i.cursor)
 	if err != nil {
 		return "", fmt.Errorf("failed to get key from MongoDB result: %w", err)
@@ -914,7 +1029,8 @@ func (i *iterator) Key() (string, error) {
 	return key, nil
 }
 
-func (i *iterator) Value() ([]byte, error) {
+// Value returns the value of the current entry.
+func (i *Iterator) Value() ([]byte, error) {
 	_, value, err := getKeyAndValueFromMongoDBResult(i.cursor)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get value from MongoDB result: %w", err)
@@ -923,7 +1039,15 @@ func (i *iterator) Value() ([]byte, error) {
 	return value, nil
 }
 
-func (i *iterator) Tags() ([]storage.Tag, error) {
+// ValueAsRawMap returns the full MongoDB JSON document of the current entry.
+// The document is returned as a map (which includes the _id field).
+func (i *Iterator) ValueAsRawMap() (map[string]interface{}, error) {
+	return getValueAsRawMapFromMongoDBResult(i.cursor)
+}
+
+// Tags returns the tags associated with the key of the current entry.
+// As of writing, aries-framework-go code does not use this, but it may be useful for custom solutions.
+func (i *Iterator) Tags() ([]storage.Tag, error) {
 	tags, err := getTagsFromMongoDBResult(i.cursor)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tags from MongoDB result: %w", err)
@@ -934,7 +1058,13 @@ func (i *iterator) Tags() ([]storage.Tag, error) {
 
 // TODO (#147) Investigate using aggregates to get total items without doing a separate query.
 
-func (i *iterator) TotalItems() (int, error) {
+// TotalItems returns a count of the number of entries (key + value + tags triplets) matched by the query
+// that generated this Iterator. This count is not affected by the page settings used (i.e. the count is of all
+// results as if you queried starting from the first page and with an unlimited page size).
+// Depending on the storage implementation, you may need to ensure that the TagName used in the query is in the
+// Store's StoreConfiguration before trying to call this method (or it may be optional, but recommended).
+// As of writing, aries-framework-go code does not use this, but it may be useful for custom solutions.
+func (i *Iterator) TotalItems() (int, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), i.timeout)
 	defer cancel()
 
@@ -946,7 +1076,8 @@ func (i *iterator) TotalItems() (int, error) {
 	return int(totalItems), nil
 }
 
-func (i *iterator) Close() error {
+// Close closes this iterator object, freeing resources.
+func (i *Iterator) Close() error {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), i.timeout)
 	defer cancel()
 
@@ -1127,6 +1258,16 @@ func getDataWrapperFromMongoDBResult(decoder decoder) (*dataWrapper, error) {
 	return data, nil
 }
 
+func getValueAsRawMapFromMongoDBResult(decoder decoder) (map[string]interface{}, error) {
+	data := make(map[string]interface{})
+
+	if err := decoder.Decode(data); err != nil {
+		return nil, fmt.Errorf("failed to decode data from MongoDB: %w", err)
+	}
+
+	return data, nil
+}
+
 func getQueryOptions(options []storage.QueryOption) storage.QueryOptions {
 	var queryOptions storage.QueryOptions
 
@@ -1143,11 +1284,11 @@ func getQueryOptions(options []storage.QueryOption) storage.QueryOptions {
 	return queryOptions
 }
 
-func prepareFilter(expressions []string) (bson.D, error) {
+func prepareFilter(expressions []string, isJSONQuery bool) (bson.D, error) {
 	operands := make(bson.D, len(expressions))
 
 	for i, exp := range expressions {
-		operand, err := prepareSingleOperand(exp)
+		operand, err := prepareSingleOperand(exp, isJSONQuery)
 		if err != nil {
 			return nil, err
 		}
@@ -1160,7 +1301,7 @@ func prepareFilter(expressions []string) (bson.D, error) {
 	return operands, nil
 }
 
-func prepareSingleOperand(expression string) (bson.E, error) {
+func prepareSingleOperand(expression string, isJSONQuery bool) (bson.E, error) {
 	var filterValue interface{}
 
 	operator, splitExpression, err := determineOperatorAndSplit(expression)
@@ -1179,8 +1320,16 @@ func prepareSingleOperand(expression string) (bson.E, error) {
 			{Key: operator, Value: value},
 		}
 
+		var key string
+
+		if isJSONQuery {
+			key = splitExpression[0]
+		} else {
+			key = fmt.Sprintf("tags.%s", splitExpression[0])
+		}
+
 		operand := bson.E{
-			Key:   fmt.Sprintf("tags.%s", splitExpression[0]),
+			Key:   key,
 			Value: filterValue,
 		}
 
@@ -1204,7 +1353,7 @@ func prepareSingleOperand(expression string) (bson.E, error) {
 }
 
 // determineOperatorAndSplit takes the given expression and returns the operator (in the format required by MongoDB)
-// along with the expression split by the operator (as defined in the store.Query documentation).
+// along with the expression split by the operator (as defined in the Store.Query documentation).
 func determineOperatorAndSplit(expression string) (mongoDBOperator string, expressionSplit []string, err error) {
 	expressionSplitByLessThanOrEqualTo := strings.Split(expression, "<=")
 	if len(expressionSplitByLessThanOrEqualTo) == lessThanGreaterThanExpressionLength {
