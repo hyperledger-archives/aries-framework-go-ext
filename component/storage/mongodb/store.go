@@ -44,10 +44,16 @@ const (
 	lessThanGreaterThanExpressionLength
 )
 
-var errInvalidQueryExpressionFormat = errors.New("invalid expression format. " +
-	"It must be in the following format: " +
-	"TagName:TagValue or TagName1:TagValue1&&TagName2:TagValue2. Tag values are optional. If using tag values," +
-	"<=, <, >=, or > may be used in place of the : to match a range of tag values")
+var (
+	errInvalidQueryExpressionFormat = errors.New("invalid expression format. " +
+		"It must be in the following format: " +
+		"TagName:TagValue or TagName1:TagValue1&&TagName2:TagValue2. Tag values are optional. If using tag values," +
+		"<=, <, >=, or > may be used in place of the : to match a range of tag values")
+
+	// errUnmarshalBytesIntoMap is used in the convertMarshalledValueToMap function to allow the generateDataWrapper
+	// function to differentiate between an unmarshal failure and other types of failures.
+	errUnmarshalBytesIntoMap = errors.New("failed to unmarshal bytes into map")
+)
 
 type logger interface {
 	Infof(msg string, args ...interface{})
@@ -571,15 +577,22 @@ func (s *Store) Put(key string, value []byte, tags ...storage.Tag) error {
 		return err
 	}
 
-	return s.executeUpdateOneCommand(key, data)
+	return s.executeReplaceOneCommand(key, data)
 }
 
-// PutAsJSON stores the given key and value. Value is stored directly in a MongoDB document without wrapping, with
-// key being used as the _id field. Value must be a struct or map.
-// Data stored this way must be retrieved using the GetAsRawMap method. When querying for this data, use the QueryCustom
-// method, and when retrieving from the iterator use the ValueAsRawMap method.
+// PutAsJSON stores the given key and value.
+// Value must be a struct with exported fields and proper json tags or a map. It will get marshalled before being
+// converted to the format needed by the MongoDB driver. Value is stored directly in a MongoDB document without
+// wrapping, with key being used as the _id field. Data stored this way must be retrieved using the GetAsRawMap method.
+// When querying for this data, use the QueryCustom method, and when retrieving from the Iterator use the
+// Iterator.ValueAsRawMap method.
 func (s *Store) PutAsJSON(key string, value interface{}) error {
-	return s.executeUpdateOneCommand(key, value)
+	data, err := prepareDataForBSONStorageWithoutWrapping(value)
+	if err != nil {
+		return err
+	}
+
+	return s.executeReplaceOneCommand(key, data)
 }
 
 // Get fetches the value associated with the given key.
@@ -800,21 +813,31 @@ func (s *Store) BatchAsJSON(operations []BatchAsJSONOperation) error {
 	models := make([]mongo.WriteModel, len(operations))
 
 	for i, operation := range operations {
-		models[i] = generateModelForBulkWriteCallAsJSON(operation)
+		model, err := generateModelForBulkWriteCallAsJSON(operation)
+		if err != nil {
+			return err
+		}
+
+		models[i] = model
 	}
 
 	return s.executeBulkWriteCommand(models, false)
 }
 
-func generateModelForBulkWriteCallAsJSON(operation BatchAsJSONOperation) mongo.WriteModel {
+func generateModelForBulkWriteCallAsJSON(operation BatchAsJSONOperation) (mongo.WriteModel, error) {
 	if operation.Value == nil {
-		return mongo.NewDeleteOneModel().SetFilter(bson.M{"_id": operation.Key})
+		return mongo.NewDeleteOneModel().SetFilter(bson.M{"_id": operation.Key}), nil
 	}
 
-	return mongo.NewUpdateOneModel().
+	data, err := prepareDataForBSONStorageWithoutWrapping(operation.Value)
+	if err != nil {
+		return &mongo.ReplaceOneModel{}, err
+	}
+
+	return mongo.NewReplaceOneModel().
 		SetFilter(bson.M{"_id": operation.Key}).
-		SetUpdate(bson.M{"$set": operation.Value}).
-		SetUpsert(true)
+		SetReplacement(data).
+		SetUpsert(true), nil
 }
 
 // Flush doesn't do anything since this store type doesn't queue values.
@@ -830,8 +853,8 @@ func (s *Store) Close() error {
 	return nil
 }
 
-func (s *Store) executeUpdateOneCommand(key string, value interface{}) error {
-	opts := mongooptions.UpdateOptions{}
+func (s *Store) executeReplaceOneCommand(key string, value interface{}) error {
+	opts := mongooptions.ReplaceOptions{}
 	opts.SetUpsert(true)
 
 	var attemptsMade int
@@ -842,7 +865,7 @@ func (s *Store) executeUpdateOneCommand(key string, value interface{}) error {
 		ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
 		defer cancel()
 
-		_, err := s.coll.UpdateOne(ctxWithTimeout, bson.M{"_id": key}, bson.M{"$set": value}, &opts)
+		_, err := s.coll.ReplaceOne(ctxWithTimeout, bson.M{"_id": key}, value, &opts)
 		if err != nil {
 			// If using MongoDB 4.0.0 (or DocumentDB 4.0.0), and this is called multiple times in parallel on the
 			// same key, then it's possible to get a transient error here. We need to retry in this case.
@@ -861,7 +884,7 @@ func (s *Store) executeUpdateOneCommand(key string, value interface{}) error {
 			}
 
 			// This is an unexpected error.
-			return backoff.Permanent(fmt.Errorf("failed to run UpdateOne command in MongoDB: %w", err))
+			return backoff.Permanent(fmt.Errorf("failed to run ReplaceOne command in MongoDB: %w", err))
 		}
 
 		return nil
@@ -1401,9 +1424,9 @@ func generateModelForBulkWriteCall(operation storage.Operation) (model mongo.Wri
 		return mongo.NewInsertOneModel().SetDocument(data), true, nil
 	}
 
-	return mongo.NewUpdateOneModel().
+	return mongo.NewReplaceOneModel().
 		SetFilter(bson.M{"_id": operation.Key}).
-		SetUpdate(bson.M{"$set": data}).
+		SetReplacement(data).
 		SetUpsert(true), false, nil
 }
 
@@ -1418,20 +1441,12 @@ func generateDataWrapper(key string, value []byte, tags []storage.Tag) (dataWrap
 		Tags: tagsAsMap,
 	}
 
-	var unmarshalledValue map[string]interface{}
+	dataAsMap, err := convertMarshalledValueToMap(value)
 
-	jsonDecoder := json.NewDecoder(bytes.NewReader(value))
-	jsonDecoder.UseNumber()
-
-	err = jsonDecoder.Decode(&unmarshalledValue)
-	if err == nil {
-		escapedMap, errEscape := escapeMapForDocumentDB(unmarshalledValue)
-		if errEscape != nil {
-			return dataWrapper{}, errEscape
-		}
-
-		data.Doc = escapedMap
-	} else {
+	switch {
+	case err == nil:
+		data.Doc = dataAsMap
+	case errors.Is(err, errUnmarshalBytesIntoMap):
 		var unmarshalledStringValue string
 
 		err = json.Unmarshal(value, &unmarshalledStringValue)
@@ -1440,9 +1455,39 @@ func generateDataWrapper(key string, value []byte, tags []storage.Tag) (dataWrap
 		} else {
 			data.Bin = value
 		}
+	default:
+		return dataWrapper{}, err
 	}
 
 	return data, nil
+}
+
+func prepareDataForBSONStorageWithoutWrapping(value interface{}) (map[string]interface{}, error) {
+	valueBytes, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+
+	return convertMarshalledValueToMap(valueBytes)
+}
+
+func convertMarshalledValueToMap(valueBytes []byte) (map[string]interface{}, error) {
+	var unmarshalledValue map[string]interface{}
+
+	jsonDecoder := json.NewDecoder(bytes.NewReader(valueBytes))
+	jsonDecoder.UseNumber()
+
+	err := jsonDecoder.Decode(&unmarshalledValue)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", errUnmarshalBytesIntoMap, err.Error())
+	}
+
+	escapedMap, err := escapeMapForDocumentDB(unmarshalledValue)
+	if err != nil {
+		return nil, err
+	}
+
+	return escapedMap, nil
 }
 
 // escapeMapForDocumentDB recursively travels through the given map and ensures that all keys are safe for DocumentDB.
