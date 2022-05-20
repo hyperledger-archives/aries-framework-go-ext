@@ -714,14 +714,14 @@ func (s *Store) Query(expression string, options ...storage.QueryOption) (storag
 	}, nil
 }
 
-// QueryCustom queries for data based on the given bson.D. This method allows the caller to specify almost
-// any type of query that MongoDB can support. Intended for use alongside the CreateCustomIndex, PutAsJSON,
-// and ValueAsRawMap methods.
-func (s *Store) QueryCustom(query bson.D) (storage.Iterator, error) {
+// QueryCustom queries for data using the MongoDB find command. The given filter and options are passed directly to the
+// driver. Intended for use alongside the Provider.CreateCustomIndex, Store.PutAsJSON, and
+// Iterator.ValueAsRawMap methods.
+func (s *Store) QueryCustom(filter bson.D, options ...*mongooptions.FindOptions) (storage.Iterator, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
 	defer cancel()
 
-	cursor, err := s.coll.Find(ctxWithTimeout, query)
+	cursor, err := s.coll.Find(ctxWithTimeout, filter, options...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to run Find command in MongoDB: %w", err)
 	}
@@ -729,7 +729,7 @@ func (s *Store) QueryCustom(query bson.D) (storage.Iterator, error) {
 	return &Iterator{
 		cursor:      cursor,
 		coll:        s.coll,
-		filter:      query,
+		filter:      filter,
 		timeout:     s.timeout,
 		customQuery: true,
 	}, nil
