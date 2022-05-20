@@ -117,7 +117,7 @@ func TestStore_Put_Failure(t *testing.T) {
 		require.NoError(t, err)
 
 		err = store.Put("key", []byte("value"))
-		require.EqualError(t, err, "failed to run UpdateOne command in MongoDB: server selection error: context "+
+		require.EqualError(t, err, "failed to run ReplaceOne command in MongoDB: server selection error: context "+
 			"deadline exceeded, current topology: { Type: Unknown, Servers: [{ Addr: badurl:27017, Type: Unknown }, ] }")
 	})
 	t.Run("Invalid tags", func(t *testing.T) {
@@ -178,6 +178,21 @@ func TestStore_Put_Failure(t *testing.T) {
 				"A single key-value pair cannot have multiple tags that share the same tag name")
 		})
 	})
+}
+
+func TestStore_PutAsJSON_Failure(t *testing.T) {
+	provider, err := mongodb.NewProvider("mongodb://ExampleURL")
+	require.NoError(t, err)
+
+	store, err := provider.OpenStore("StoreName")
+	require.NoError(t, err)
+
+	mongoDBStore, ok := store.(*mongodb.Store)
+	require.True(t, ok)
+
+	err = mongoDBStore.PutAsJSON("key", "value")
+	require.EqualError(t, err, "failed to unmarshal bytes into map: json: cannot unmarshal string into "+
+		"Go value of type map[string]interface {}")
 }
 
 func TestStore_Get_Failure(t *testing.T) {
@@ -280,6 +295,7 @@ func doAllTests(t *testing.T, connString string) {
 	testPing(t, connString)
 	testGetAsRawMap(t, connString)
 	testCustomIndexAndQuery(t, connString)
+	testDocumentReplacementAndMarshalling(t, connString)
 }
 
 func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) {
@@ -1363,7 +1379,7 @@ func testGetAsRawMap(t *testing.T, connString string) {
 
 	testData := map[string]interface{}{
 		"field1": "value1",
-		"field2": int32(2),
+		"field2": int64(2),
 		"field3": true,
 	}
 
@@ -1396,7 +1412,6 @@ func testCustomIndexAndQuery(t *testing.T, connString string) {
 		err = provider.CreateCustomIndex("NonExistentStore", mongo.IndexModel{})
 		require.Equal(t, err, storage.ErrStoreNotFound)
 	})
-
 	t.Run("Fail to create indexes", func(t *testing.T) {
 		provider, err := mongodb.NewProvider(connString)
 		require.NoError(t, err)
@@ -1511,6 +1526,92 @@ func doCustomIndexAndQueryTest(t *testing.T, connString string, useBatch bool) {
 		expectedValues := [][]byte{valuesToStore[1], valuesToStore[2]}
 
 		verifyExpectedIterator(t, iterator, expectedKeys, expectedValues, nil, 2, true)
+	})
+}
+
+func testDocumentReplacementAndMarshalling(t *testing.T, connString string) {
+	t.Helper()
+
+	provider, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	t.Run("Put method - switching between wrapped data types", func(t *testing.T) {
+		storeName := randomStoreName()
+
+		store, err := provider.OpenStore(storeName)
+		require.NoError(t, err)
+
+		mongoDBStore, ok := store.(*mongodb.Store)
+		require.True(t, ok)
+
+		type testStruct struct {
+			FieldNameWithCapitalLetters string `json:"fieldNameWithCapitalLetters"`
+			FieldNameWithOmitEmpty      string `json:"fieldNameWithOmitEmpty,omitempty"`
+		}
+
+		testStruct1 := testStruct{
+			FieldNameWithCapitalLetters: "SomeValue",
+			FieldNameWithOmitEmpty:      "SomeOtherValue",
+		}
+
+		testStruct1Bytes, err := json.Marshal(testStruct1)
+		require.NoError(t, err)
+
+		err = mongoDBStore.Put("TestKey", testStruct1Bytes)
+		require.NoError(t, err)
+
+		testStruct1.FieldNameWithOmitEmpty = ""
+
+		err = mongoDBStore.Put("TestKey", []byte{1, 2, 3})
+		require.NoError(t, err)
+
+		valueAsMap, err := mongoDBStore.GetAsRawMap("TestKey")
+		require.NoError(t, err)
+
+		_, found := valueAsMap["doc"]
+		require.False(t, found, "stored document was not replaced properly")
+
+		_, found = valueAsMap["bin"]
+		require.True(t, found, "stored document was not replaced properly")
+	})
+	t.Run("PutAsJSON - test JSON struct tags", func(t *testing.T) {
+		storeName := randomStoreName()
+
+		store, err := provider.OpenStore(storeName)
+		require.NoError(t, err)
+
+		mongoDBStore, ok := store.(*mongodb.Store)
+		require.True(t, ok)
+
+		type testStruct struct {
+			FieldNameWithCapitalLetters string `json:"fieldNameWithCapitalLetters"`
+			FieldNameWithOmitEmpty      string `json:"fieldNameWithOmitEmpty,omitempty"`
+		}
+
+		testStruct1 := testStruct{
+			FieldNameWithCapitalLetters: "SomeValue",
+			FieldNameWithOmitEmpty:      "SomeOtherValue",
+		}
+
+		err = mongoDBStore.PutAsJSON("TestKey", testStruct1)
+		require.NoError(t, err)
+
+		testStruct1.FieldNameWithOmitEmpty = ""
+
+		err = mongoDBStore.PutAsJSON("TestKey", testStruct1)
+		require.NoError(t, err)
+
+		valueAsMap, err := mongoDBStore.GetAsRawMap("TestKey")
+		require.NoError(t, err)
+
+		_, found := valueAsMap["fieldnamewithcapitalletters"]
+		require.False(t, found, "field name casing was not maintained")
+
+		_, found = valueAsMap["fieldNameWithCapitalLetters"]
+		require.True(t, found, "field name missing")
+
+		_, found = valueAsMap["FieldNameWithOmitEmpty"]
+		require.False(t, found, "empty field was not omitted")
 	})
 }
 
