@@ -1400,10 +1400,20 @@ func testGetAsRawMap(t *testing.T, connString string) {
 func testCustomIndexAndQuery(t *testing.T, connString string) {
 	t.Helper()
 	t.Run("Using individual PutAsJSON calls", func(t *testing.T) {
-		doCustomIndexAndQueryTest(t, connString, false)
+		t.Run("Without query options", func(t *testing.T) {
+			doCustomIndexAndQueryTest(t, connString, false)
+		})
+		t.Run("Using query options", func(t *testing.T) {
+			doCustomIndexAndQueryTest(t, connString, false, options.Find().SetBatchSize(2))
+		})
 	})
 	t.Run("Using BatchAsJSON call", func(t *testing.T) {
-		doCustomIndexAndQueryTest(t, connString, true)
+		t.Run("Without query options", func(t *testing.T) {
+			doCustomIndexAndQueryTest(t, connString, true)
+		})
+		t.Run("Using query options", func(t *testing.T) {
+			doCustomIndexAndQueryTest(t, connString, true, options.Find().SetBatchSize(2))
+		})
 	})
 	t.Run("Store not found", func(t *testing.T) {
 		provider, err := mongodb.NewProvider(connString)
@@ -1427,7 +1437,7 @@ func testCustomIndexAndQuery(t *testing.T, connString string) {
 	})
 }
 
-func doCustomIndexAndQueryTest(t *testing.T, connString string, useBatch bool) {
+func doCustomIndexAndQueryTest(t *testing.T, connString string, useBatch bool, opts ...*options.FindOptions) {
 	t.Helper()
 
 	provider, err := mongodb.NewProvider(connString)
@@ -1457,7 +1467,7 @@ func doCustomIndexAndQueryTest(t *testing.T, connString string, useBatch bool) {
 			},
 		}
 
-		iterator, err := mongoDBStore.QueryCustom(filter)
+		iterator, err := mongoDBStore.QueryCustom(filter, opts...)
 		require.NoError(t, err)
 		require.NotEmpty(t, iterator)
 
@@ -1477,7 +1487,7 @@ func doCustomIndexAndQueryTest(t *testing.T, connString string, useBatch bool) {
 			},
 		}
 
-		iterator, err := mongoDBStore.QueryCustom(filter)
+		iterator, err := mongoDBStore.QueryCustom(filter, opts...)
 		require.NoError(t, err)
 		require.NotEmpty(t, iterator)
 
@@ -1496,7 +1506,7 @@ func doCustomIndexAndQueryTest(t *testing.T, connString string, useBatch bool) {
 				},
 			},
 		}
-		iterator, err := mongoDBStore.QueryCustom(filter)
+		iterator, err := mongoDBStore.QueryCustom(filter, opts...)
 		require.NoError(t, err)
 		require.NotEmpty(t, iterator)
 
@@ -1518,7 +1528,7 @@ func doCustomIndexAndQueryTest(t *testing.T, connString string, useBatch bool) {
 				},
 			},
 		}
-		iterator, err := mongoDBStore.QueryCustom(filter)
+		iterator, err := mongoDBStore.QueryCustom(filter, opts...)
 		require.NoError(t, err)
 		require.NotEmpty(t, iterator)
 
