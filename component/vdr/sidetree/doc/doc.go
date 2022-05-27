@@ -75,9 +75,14 @@ func (doc *Doc) JSONBytes() ([]byte, error) {
 		return nil, fmt.Errorf("JSON unmarshalling of Public Key failed: %w", err)
 	}
 
+	services, err := PopulateRawServices(doc.Service)
+	if err != nil {
+		return nil, err
+	}
+
 	raw := &rawDoc{
 		PublicKey: publicKeys,
-		Service:   PopulateRawServices(doc.Service),
+		Service:   services,
 	}
 
 	byteDoc, err := json.Marshal(raw)
@@ -132,7 +137,7 @@ func populateRawPublicKey(pk *PublicKey) (map[string]interface{}, error) {
 }
 
 // PopulateRawServices populate raw services.
-func PopulateRawServices(services []docdid.Service) []map[string]interface{} {
+func PopulateRawServices(services []docdid.Service) ([]map[string]interface{}, error) {
 	rawServices := make([]map[string]interface{}, 0)
 
 	for i := range services {
@@ -151,12 +156,18 @@ func PopulateRawServices(services []docdid.Service) []map[string]interface{} {
 			rawService[jsonldRecipientKeys] = services[i].RecipientKeys
 		}
 
-		if len(services[i].ServiceEndpoint.RoutingKeys) > 0 {
+		if len(services[i].RoutingKeys) > 0 {
 			rawService[jsonldRoutingKeys] = services[i].ServiceEndpoint.RoutingKeys
+		} else {
+			r, _ := services[i].ServiceEndpoint.RoutingKeys() //nolint:errcheck
+
+			if len(r) > 0 {
+				rawService[jsonldRoutingKeys] = services[i].ServiceEndpoint.RoutingKeys
+			}
 		}
 
 		rawServices = append(rawServices, rawService)
 	}
 
-	return rawServices
+	return rawServices, nil
 }

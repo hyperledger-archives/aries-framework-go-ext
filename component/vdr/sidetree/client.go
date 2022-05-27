@@ -545,7 +545,12 @@ func createRemoveServicesPatch(updateDIDOpts *update.Opts) (patch.Patch, error) 
 }
 
 func createAddServicesPatch(updateDIDOpts *update.Opts) (patch.Patch, error) {
-	addServices, err := json.Marshal(doc.PopulateRawServices(updateDIDOpts.AddServices))
+	rawServices, err := doc.PopulateRawServices(updateDIDOpts.AddServices)
+	if err != nil {
+		return nil, err
+	}
+
+	addServices, err := json.Marshal(rawServices)
 	if err != nil {
 		return nil, err
 	}
