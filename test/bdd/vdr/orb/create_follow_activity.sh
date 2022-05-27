@@ -23,7 +23,7 @@ cli=./orb-cli-linux-amd64
 
 keyID=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
 
-if [ "$OSTYPE" == "darwin20" ]; then
+if [ "$OSTYPE" == "darwin21" ]; then
 cli=./orb-cli-darwin-amd64
 keyID=$RANDOM
 fi

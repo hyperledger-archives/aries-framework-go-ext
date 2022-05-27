@@ -224,11 +224,9 @@ func (e *Steps) updateDID(keyType, signatureSuite, resolveDID string) error {
 
 	didDoc.Service[0].Type = "typeUpdated"
 	didDoc.Service = append(didDoc.Service, ariesdid.Service{
-		ID:   service2ID,
-		Type: "type",
-		ServiceEndpoint: model.Endpoint{
-			URI: "http://example.com",
-		},
+		ID:              service2ID,
+		Type:            "type",
+		ServiceEndpoint: model.NewDIDCommV1Endpoint("http://example.com"),
 	})
 
 	sleepTime := time.Second * 1
@@ -304,11 +302,9 @@ func (e *Steps) createDID(keyType, signatureSuite, origin string, retry *orb.Res
 		ariesdid.Authentication))
 
 	didDoc.Service = []ariesdid.Service{{
-		ID:   serviceID,
-		Type: "type",
-		ServiceEndpoint: model.Endpoint{
-			URI: "http://example.com",
-		},
+		ID:              serviceID,
+		Type:            "type",
+		ServiceEndpoint: model.NewDIDCommV1Endpoint("http://example.com"),
 	}}
 
 	var opts []vdrapi.DIDMethodOption

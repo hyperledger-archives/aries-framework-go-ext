@@ -7,8 +7,8 @@ go 1.17
 
 require (
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
-	github.com/hyperledger/aries-framework-go v0.1.9-0.20220428145156-7e6cf9acbc9e
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v1.0.0-rc.1.0.20220428154356-41d198a5fade
+	github.com/hyperledger/aries-framework-go v0.1.9-0.20220526205258-18d510d84955
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v1.0.0-rc.1.0.20220527183709-a7fb291099f5
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220330140627-07042d78580c
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/piprate/json-gold v0.4.1
@@ -39,6 +39,7 @@ require (
 	github.com/kilic/bls12-381 v0.1.1-0.20210503002446-7b7597926c69 // indirect
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1 // indirect
 	github.com/minio/sha256-simd v0.1.1 // indirect
+	github.com/mitchellh/mapstructure v1.4.3 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiformats/go-base32 v0.0.3 // indirect
 	github.com/multiformats/go-base36 v0.1.0 // indirect
