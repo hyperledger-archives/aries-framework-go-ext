@@ -717,7 +717,7 @@ func (s *Store) Query(expression string, options ...storage.QueryOption) (storag
 // QueryCustom queries for data using the MongoDB find command. The given filter and options are passed directly to the
 // driver. Intended for use alongside the Provider.CreateCustomIndex, Store.PutAsJSON, and
 // Iterator.ValueAsRawMap methods.
-func (s *Store) QueryCustom(filter bson.D, options ...*mongooptions.FindOptions) (storage.Iterator, error) {
+func (s *Store) QueryCustom(filter interface{}, options ...*mongooptions.FindOptions) (*Iterator, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
 	defer cancel()
 
@@ -1027,7 +1027,7 @@ func (s *Store) createMongoDBFindOptions(options []storage.QueryOption) *mongoop
 type Iterator struct {
 	cursor      *mongo.Cursor
 	coll        *mongo.Collection
-	filter      bson.D
+	filter      interface{}
 	timeout     time.Duration
 	customQuery bool
 }
