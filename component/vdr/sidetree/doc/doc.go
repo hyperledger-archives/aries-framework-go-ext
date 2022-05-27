@@ -8,6 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 package doc
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -149,7 +150,16 @@ func PopulateRawServices(services []docdid.Service) ([]map[string]interface{}, e
 
 		rawService[jsonldID] = services[i].ID
 		rawService[jsonldType] = services[i].Type
-		rawService[jsonldServicePoint] = services[i].ServiceEndpoint
+
+		serviceEndpoint, err := services[i].ServiceEndpoint.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+
+		if !bytes.Equal(serviceEndpoint, []byte("null")) {
+			rawService[jsonldServicePoint] = json.RawMessage(serviceEndpoint)
+		}
+
 		rawService[jsonldPriority] = services[i].Priority
 
 		if len(services[i].RecipientKeys) > 0 {
