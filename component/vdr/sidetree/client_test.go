@@ -716,12 +716,10 @@ func TestClient_CreateDID(t *testing.T) {
 				Purposes: []string{doc.KeyPurposeAuthentication},
 			}),
 			create.WithService(&did.Service{
-				ID:   "srv1",
-				Type: "type",
-				ServiceEndpoint: model.Endpoint{
-					URI: "http://example.com",
-				},
-				Properties: map[string]interface{}{"priority": "1"},
+				ID:              "srv1",
+				Type:            "type",
+				ServiceEndpoint: model.NewDIDCommV1Endpoint("http://example.com"),
+				Properties:      map[string]interface{}{"priority": "1"},
 			}))
 		require.NoError(t, err)
 		require.Equal(t, "did1", didResol.DIDDocument.ID)
@@ -747,12 +745,10 @@ func TestClient_CreateDID(t *testing.T) {
 				return []string{serv.URL}, nil
 			}), create.WithUpdatePublicKey(ecUpdatePrivKey.Public()),
 			create.WithService(&did.Service{
-				ID:   "srv1",
-				Type: "type",
-				ServiceEndpoint: model.Endpoint{
-					URI: "http://example.com",
-				},
-				Properties: map[string]interface{}{"priority": "1"},
+				ID:              "srv1",
+				Type:            "type",
+				ServiceEndpoint: model.NewDIDCommV1Endpoint("http://example.com"),
+				Properties:      map[string]interface{}{"priority": "1"},
 			}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to parse document resolution")
