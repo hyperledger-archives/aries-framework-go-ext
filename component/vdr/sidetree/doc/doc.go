@@ -167,12 +167,12 @@ func PopulateRawServices(services []docdid.Service) ([]map[string]interface{}, e
 		}
 
 		if len(services[i].RoutingKeys) > 0 {
-			rawService[jsonldRoutingKeys] = services[i].ServiceEndpoint.RoutingKeys
+			rawService[jsonldRoutingKeys] = services[i].RoutingKeys
 		} else {
 			r, _ := services[i].ServiceEndpoint.RoutingKeys() //nolint:errcheck
 
 			if len(r) > 0 {
-				rawService[jsonldRoutingKeys] = services[i].ServiceEndpoint.RoutingKeys
+				rawService[jsonldRoutingKeys] = r
 			}
 		}
 
