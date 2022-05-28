@@ -716,10 +716,15 @@ func TestClient_CreateDID(t *testing.T) {
 				Purposes: []string{doc.KeyPurposeAuthentication},
 			}),
 			create.WithService(&did.Service{
-				ID:              "srv1",
-				Type:            "type",
-				ServiceEndpoint: model.NewDIDCommV1Endpoint("http://example.com"),
-				Properties:      map[string]interface{}{"priority": "1"},
+				ID:   "srv1",
+				Type: "type",
+				ServiceEndpoint: model.NewDIDCommV2Endpoint([]model.DIDCommV2Endpoint{
+					{
+						URI:         "http://example.com",
+						RoutingKeys: []string{"key1"},
+					},
+				}),
+				Properties: map[string]interface{}{"priority": "1"},
 			}))
 		require.NoError(t, err)
 		require.Equal(t, "did1", didResol.DIDDocument.ID)
