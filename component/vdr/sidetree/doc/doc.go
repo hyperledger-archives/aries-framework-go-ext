@@ -24,6 +24,7 @@ const (
 	jsonldRecipientKeys = "recipientKeys"
 	jsonldRoutingKeys   = "routingKeys"
 	jsonldPriority      = "priority"
+	jsonldAccept        = "accept"
 
 	jsonldPublicKeyJwk    = "publicKeyJwk"
 	jsonldPublicKeyBase58 = "publicKeyBase58"
@@ -168,12 +169,10 @@ func PopulateRawServices(services []docdid.Service) ([]map[string]interface{}, e
 
 		if len(services[i].RoutingKeys) > 0 {
 			rawService[jsonldRoutingKeys] = services[i].RoutingKeys
-		} else {
-			r, _ := services[i].ServiceEndpoint.RoutingKeys() //nolint:errcheck
+		}
 
-			if len(r) > 0 {
-				rawService[jsonldRoutingKeys] = r
-			}
+		if len(services[i].Accept) > 0 {
+			rawService[jsonldAccept] = services[i].Accept
 		}
 
 		rawServices = append(rawServices, rawService)
