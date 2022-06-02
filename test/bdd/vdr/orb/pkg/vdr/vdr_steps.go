@@ -304,7 +304,7 @@ func (e *Steps) createDID(keyType, signatureSuite, origin string, retry *orb.Res
 	didDoc.Service = []ariesdid.Service{{
 		ID:              serviceID,
 		Type:            "type",
-		ServiceEndpoint: model.NewDIDCommV1Endpoint("http://example.com"),
+		ServiceEndpoint: model.NewDIDCommV2Endpoint([]model.DIDCommV2Endpoint{{URI: "http://example.com"}}),
 	}}
 
 	var opts []vdrapi.DIDMethodOption
