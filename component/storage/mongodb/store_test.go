@@ -294,6 +294,7 @@ func doAllTests(t *testing.T, connString string) {
 	testBatchIsNewKeyError(t, connString)
 	testPing(t, connString)
 	testGetAsRawMap(t, connString)
+	testGetBulkAsRawMap(t, connString)
 	testCustomIndexAndQuery(t, connString)
 	testDocumentReplacementAndMarshalling(t, connString)
 }
@@ -1395,6 +1396,52 @@ func testGetAsRawMap(t *testing.T, connString string) {
 
 	require.True(t, reflect.DeepEqual(testData, retrievedTestData),
 		"unexpected retrieved test data")
+}
+
+func testGetBulkAsRawMap(t *testing.T, connString string) {
+	t.Helper()
+
+	provider, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	storeName := randomStoreName()
+
+	store, err := provider.OpenStore(storeName)
+	require.NoError(t, err)
+
+	var ok bool
+
+	mongoDBStore, ok := store.(*mongodb.Store)
+	require.True(t, ok)
+
+	_, err = mongoDBStore.GetBulkAsRawMap("TestKey1", "")
+	require.EqualError(t, err, "key cannot be empty")
+
+	testData1 := map[string]interface{}{
+		"field1": "value1",
+		"field2": int64(2),
+		"field3": true,
+	}
+
+	testData2 := map[string]interface{}{
+		"field1": "value1",
+		"field2": int64(2),
+		"field3": true,
+	}
+
+	require.NoError(t, mongoDBStore.PutAsJSON("TestKey1", testData1))
+	require.NoError(t, mongoDBStore.PutAsJSON("TestKey2", testData2))
+
+	retrievedTestData, err := mongoDBStore.GetBulkAsRawMap("TestKey1", "TestKey2")
+	require.NoError(t, err)
+	require.Len(t, retrievedTestData, 2)
+
+	// The retrieved test data should be the same as the input test data, except that there's an _id field now.
+	testData1["_id"] = "TestKey1"
+	testData2["_id"] = "TestKey2"
+
+	require.True(t, reflect.DeepEqual(testData1, retrievedTestData[0]), "unexpected retrieved test data")
+	require.True(t, reflect.DeepEqual(testData2, retrievedTestData[1]), "unexpected retrieved test data")
 }
 
 func testCustomIndexAndQuery(t *testing.T, connString string) {
