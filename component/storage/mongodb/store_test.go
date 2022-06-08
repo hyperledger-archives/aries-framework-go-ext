@@ -1903,7 +1903,7 @@ func generateJSONTestData() [][]byte {
 }
 
 // expectedKeys, expectedValues, and expectedTags are with respect to the query's page settings.
-// Since Iterator.TotalItems' count is not affected by page settings, expectedTotalItemsCount must be passed in and
+// Since iterator.TotalItems' count is not affected by page settings, expectedTotalItemsCount must be passed in and
 // can't be determined by looking at the length of expectedKeys, expectedValues, nor expectedTags.
 func verifyExpectedIterator(t *testing.T, actualResultsItr storage.Iterator, expectedKeys []string,
 	expectedValues [][]byte, expectedTags [][]storage.Tag, expectedTotalItemsCount int, isCustomQueryTest bool) {
@@ -1964,7 +1964,7 @@ func verifyIteratorAnyOrder(t *testing.T, actualResultsItr storage.Iterator, //n
 		var receivedValue []byte
 
 		if isCustomQueryTest {
-			actualMongoDBResultsItr, ok := actualResultsItr.(*mongodb.Iterator)
+			actualMongoDBResultsItr, ok := actualResultsItr.(mongodb.Iterator)
 			require.True(t, ok)
 
 			receivedValueMap, itrErr = actualMongoDBResultsItr.ValueAsRawMap()
