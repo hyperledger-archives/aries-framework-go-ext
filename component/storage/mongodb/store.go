@@ -584,8 +584,8 @@ func (s *Store) Put(key string, value []byte, tags ...storage.Tag) error {
 // Value must be a struct with exported fields and proper json tags or a map. It will get marshalled before being
 // converted to the format needed by the MongoDB driver. Value is stored directly in a MongoDB document without
 // wrapping, with key being used as the _id field. Data stored this way must be retrieved using the GetAsRawMap method.
-// When querying for this data, use the QueryCustom method, and when retrieving from the Iterator use the
-// Iterator.ValueAsRawMap method.
+// When querying for this data, use the QueryCustom method, and when retrieving from the iterator use the
+// iterator.ValueAsRawMap method.
 func (s *Store) PutAsJSON(key string, value interface{}) error {
 	data, err := prepareDataForBSONStorageWithoutWrapping(value)
 	if err != nil {
@@ -721,7 +721,7 @@ func (s *Store) GetBulkAsRawMap(keys ...string) ([]map[string]interface{}, error
 //             with multiple tags.
 func (s *Store) Query(expression string, options ...storage.QueryOption) (storage.Iterator, error) {
 	if expression == "" {
-		return &Iterator{}, errInvalidQueryExpressionFormat
+		return &iterator{}, errInvalidQueryExpressionFormat
 	}
 
 	filter, err := PrepareFilter(strings.Split(expression, "&&"), false)
@@ -739,7 +739,7 @@ func (s *Store) Query(expression string, options ...storage.QueryOption) (storag
 		return nil, fmt.Errorf("failed to run Find command in MongoDB: %w", err)
 	}
 
-	return &Iterator{
+	return &iterator{
 		cursor:  cursor,
 		coll:    s.coll,
 		filter:  filter,
@@ -747,10 +747,17 @@ func (s *Store) Query(expression string, options ...storage.QueryOption) (storag
 	}, nil
 }
 
+// Iterator represents a MongoDB/DocumentDB implementation of the storage.Iterator interface.
+type Iterator interface {
+	storage.Iterator
+
+	ValueAsRawMap() (map[string]interface{}, error)
+}
+
 // QueryCustom queries for data using the MongoDB find command. The given filter and options are passed directly to the
 // driver. Intended for use alongside the Provider.CreateCustomIndex, Store.PutAsJSON, and
-// Iterator.ValueAsRawMap methods.
-func (s *Store) QueryCustom(filter interface{}, options ...*mongooptions.FindOptions) (*Iterator, error) {
+// iterator.ValueAsRawMap methods.
+func (s *Store) QueryCustom(filter interface{}, options ...*mongooptions.FindOptions) (Iterator, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
 	defer cancel()
 
@@ -759,7 +766,7 @@ func (s *Store) QueryCustom(filter interface{}, options ...*mongooptions.FindOpt
 		return nil, fmt.Errorf("failed to run Find command in MongoDB: %w", err)
 	}
 
-	return &Iterator{
+	return &iterator{
 		cursor:      cursor,
 		coll:        s.coll,
 		filter:      filter,
@@ -1081,8 +1088,8 @@ func (s *Store) CreateMongoDBFindOptions(options []storage.QueryOption) *mongoop
 	return findOptions
 }
 
-// Iterator represents a MongoDB/DocumentDB implementation of the storage.Iterator interface.
-type Iterator struct {
+// iterator represents a MongoDB/DocumentDB implementation of the storage.Iterator interface.
+type iterator struct {
 	cursor      *mongo.Cursor
 	coll        *mongo.Collection
 	filter      interface{}
@@ -1093,7 +1100,7 @@ type Iterator struct {
 // Next moves the pointer to the next entry in the iterator.
 // Note that it must be called before accessing the first entry.
 // It returns false if the iterator is exhausted - this is not considered an error.
-func (i *Iterator) Next() (bool, error) {
+func (i *iterator) Next() (bool, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), i.timeout)
 	defer cancel()
 
@@ -1101,7 +1108,7 @@ func (i *Iterator) Next() (bool, error) {
 }
 
 // Key returns the key of the current entry.
-func (i *Iterator) Key() (string, error) {
+func (i *iterator) Key() (string, error) {
 	key, _, err := getKeyAndValueFromMongoDBResult(i.cursor)
 	if err != nil {
 		return "", fmt.Errorf("failed to get key from MongoDB result: %w", err)
@@ -1111,7 +1118,7 @@ func (i *Iterator) Key() (string, error) {
 }
 
 // Value returns the value of the current entry.
-func (i *Iterator) Value() ([]byte, error) {
+func (i *iterator) Value() ([]byte, error) {
 	_, value, err := getKeyAndValueFromMongoDBResult(i.cursor)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get value from MongoDB result: %w", err)
@@ -1122,13 +1129,13 @@ func (i *Iterator) Value() ([]byte, error) {
 
 // ValueAsRawMap returns the full MongoDB JSON document of the current entry.
 // The document is returned as a map (which includes the _id field).
-func (i *Iterator) ValueAsRawMap() (map[string]interface{}, error) {
+func (i *iterator) ValueAsRawMap() (map[string]interface{}, error) {
 	return getValueAsRawMapFromMongoDBResult(i.cursor)
 }
 
 // Tags returns the tags associated with the key of the current entry.
 // As of writing, aries-framework-go code does not use this, but it may be useful for custom solutions.
-func (i *Iterator) Tags() ([]storage.Tag, error) {
+func (i *iterator) Tags() ([]storage.Tag, error) {
 	tags, err := getTagsFromMongoDBResult(i.cursor)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tags from MongoDB result: %w", err)
@@ -1140,12 +1147,12 @@ func (i *Iterator) Tags() ([]storage.Tag, error) {
 // TODO (#147) Investigate using aggregates to get total items without doing a separate query.
 
 // TotalItems returns a count of the number of entries (key + value + tags triplets) matched by the query
-// that generated this Iterator. This count is not affected by the page settings used (i.e. the count is of all
+// that generated this iterator. This count is not affected by the page settings used (i.e. the count is of all
 // results as if you queried starting from the first page and with an unlimited page size).
 // Depending on the storage implementation, you may need to ensure that the TagName used in the query is in the
 // Store's StoreConfiguration before trying to call this method (or it may be optional, but recommended).
 // As of writing, aries-framework-go code does not use this, but it may be useful for custom solutions.
-func (i *Iterator) TotalItems() (int, error) {
+func (i *iterator) TotalItems() (int, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), i.timeout)
 	defer cancel()
 
@@ -1158,7 +1165,7 @@ func (i *Iterator) TotalItems() (int, error) {
 }
 
 // Close closes this iterator object, freeing resources.
-func (i *Iterator) Close() error {
+func (i *iterator) Close() error {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), i.timeout)
 	defer cancel()
 
