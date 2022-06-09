@@ -729,7 +729,7 @@ func (s *Store) Query(expression string, options ...storage.QueryOption) (storag
 		return nil, err
 	}
 
-	findOptions := s.CreateMongoDBFindOptions(options)
+	findOptions := s.CreateMongoDBFindOptions(options, false)
 
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
 	defer cancel()
@@ -1058,7 +1058,7 @@ func (s *Store) executeBulkWriteCommand(models []mongo.WriteModel, atLeastOneIns
 }
 
 // CreateMongoDBFindOptions converts the given storage options into MongoDB options.
-func (s *Store) CreateMongoDBFindOptions(options []storage.QueryOption) *mongooptions.FindOptions {
+func (s *Store) CreateMongoDBFindOptions(options []storage.QueryOption, isJSONQuery bool) *mongooptions.FindOptions {
 	queryOptions := getQueryOptions(options)
 
 	findOptions := mongooptions.Find()
@@ -1079,8 +1079,16 @@ func (s *Store) CreateMongoDBFindOptions(options []storage.QueryOption) *mongoop
 			mongoDBSortOrder = -1
 		}
 
+		var key string
+
+		if isJSONQuery {
+			key = queryOptions.SortOptions.TagName
+		} else {
+			key = fmt.Sprintf("tags.%s", queryOptions.SortOptions.TagName)
+		}
+
 		findOptions.SetSort(bson.D{{
-			Key:   fmt.Sprintf("tags.%s", queryOptions.SortOptions.TagName),
+			Key:   key,
 			Value: mongoDBSortOrder,
 		}})
 	}

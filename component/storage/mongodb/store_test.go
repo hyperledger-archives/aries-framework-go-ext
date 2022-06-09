@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/bsontype"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
@@ -1669,6 +1670,50 @@ func testDocumentReplacementAndMarshalling(t *testing.T, connString string) {
 
 		_, found = valueAsMap["FieldNameWithOmitEmpty"]
 		require.False(t, found, "empty field was not omitted")
+	})
+}
+
+func TestCreateMongoDBFindOptions(t *testing.T) {
+	s := &mongodb.Store{}
+
+	t.Run("isJSONQuery = false", func(t *testing.T) {
+		opts := s.CreateMongoDBFindOptions([]storage.QueryOption{
+			storage.WithPageSize(1000),
+			storage.WithInitialPageNum(10),
+			storage.WithSortOrder(&storage.SortOptions{
+				Order:   storage.SortDescending,
+				TagName: "tag1",
+			}),
+		}, false)
+		require.NotNil(t, opts)
+		require.NotNil(t, opts.BatchSize)
+		require.Equal(t, int32(1000), *opts.BatchSize)
+		require.NotNil(t, opts.Skip)
+		require.Equal(t, int64(10000), *opts.Skip)
+		require.NotNil(t, opts.Sort)
+
+		sortOpts, ok := opts.Sort.(primitive.D)
+		require.True(t, ok)
+		require.Len(t, sortOpts, 1)
+		require.Equal(t, "tags.tag1", sortOpts[0].Key)
+		require.Equal(t, -1, sortOpts[0].Value)
+	})
+
+	t.Run("isJSONQuery = true", func(t *testing.T) {
+		opts := s.CreateMongoDBFindOptions([]storage.QueryOption{
+			storage.WithSortOrder(&storage.SortOptions{
+				Order:   storage.SortAscending,
+				TagName: "tag1",
+			}),
+		}, true)
+		require.NotNil(t, opts)
+		require.NotNil(t, opts.Sort)
+
+		sortOpts, ok := opts.Sort.(primitive.D)
+		require.True(t, ok)
+		require.Len(t, sortOpts, 1)
+		require.Equal(t, "tag1", sortOpts[0].Key)
+		require.Equal(t, 1, sortOpts[0].Value)
 	})
 }
 
