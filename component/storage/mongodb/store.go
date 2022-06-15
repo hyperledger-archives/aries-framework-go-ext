@@ -367,9 +367,9 @@ func (p *Provider) Ping() error {
 	return p.client.Ping(ctxWithTimeout, nil)
 }
 
-// CreateCustomIndex allows for any custom index to be created in MongoDB based on the given index model.
-// Intended for use alongside the CreateCustomIndex, PutAsJSON, and ValueAsRawMap methods.
-func (p *Provider) CreateCustomIndex(storeName string, model mongo.IndexModel) error {
+// CreateCustomIndexes allows for any custom indexes to be created in MongoDB based on the given index models.
+// Intended for use alongside the Store.PutAsJSON, Store.GetAsRawMap and Iterator.ValueAsRawMap methods.
+func (p *Provider) CreateCustomIndexes(storeName string, models ...mongo.IndexModel) error {
 	storeName = strings.ToLower(p.dbPrefix + storeName)
 
 	store, exists := p.openStores[storeName]
@@ -377,7 +377,7 @@ func (p *Provider) CreateCustomIndex(storeName string, model mongo.IndexModel) e
 		return storage.ErrStoreNotFound
 	}
 
-	err := p.createIndexes(store, []mongo.IndexModel{model})
+	err := p.createIndexes(store, models)
 	if err != nil {
 		return fmt.Errorf(failCreateIndexesInMongoDBCollection, err)
 	}
@@ -587,7 +587,7 @@ func (s *Store) Put(key string, value []byte, tags ...storage.Tag) error {
 // When querying for this data, use the QueryCustom method, and when retrieving from the iterator use the
 // iterator.ValueAsRawMap method.
 func (s *Store) PutAsJSON(key string, value interface{}) error {
-	data, err := prepareDataForBSONStorageWithoutWrapping(value)
+	data, err := PrepareDataForBSONStorage(value)
 	if err != nil {
 		return err
 	}
@@ -755,8 +755,8 @@ type Iterator interface {
 }
 
 // QueryCustom queries for data using the MongoDB find command. The given filter and options are passed directly to the
-// driver. Intended for use alongside the Provider.CreateCustomIndex, Store.PutAsJSON, and
-// iterator.ValueAsRawMap methods.
+// driver. Intended for use alongside the Provider.CreateCustomIndexes, Store.PutAsJSON, and
+// Iterator.ValueAsRawMap methods.
 func (s *Store) QueryCustom(filter interface{}, options ...*mongooptions.FindOptions) (Iterator, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
 	defer cancel()
@@ -828,7 +828,7 @@ func (s *Store) Batch(operations []storage.Operation) error {
 		}
 	}
 
-	return s.executeBulkWriteCommand(models, atLeastOneInsertOneModel)
+	return s.executeBulkWriteCommand(models, atLeastOneInsertOneModel, nil)
 }
 
 // BatchAsJSONOperation represents an operation to be performed in the BatchAsJSON method.
@@ -861,7 +861,15 @@ func (s *Store) BatchAsJSON(operations []BatchAsJSONOperation) error {
 		models[i] = model
 	}
 
-	return s.executeBulkWriteCommand(models, false)
+	return s.executeBulkWriteCommand(models, false, nil)
+}
+
+// BulkWrite executes the mongoDB BulkWrite command using the given WriteModels and BulkWriteOptions.
+func (s *Store) BulkWrite(models []mongo.WriteModel, opts ...*mongooptions.BulkWriteOptions) error {
+	// For now, set atLeastOneInsertOneModel to false, even though these WriteModels could include InsertOne models.
+	// That bool just controls whether a more specific error message gets output in a certain scenario. The error
+	// is specific to the Batch method. In the future, consider reworking this
+	return s.executeBulkWriteCommand(models, false, opts)
 }
 
 func generateModelForBulkWriteCallAsJSON(operation BatchAsJSONOperation) (mongo.WriteModel, error) {
@@ -869,7 +877,7 @@ func generateModelForBulkWriteCallAsJSON(operation BatchAsJSONOperation) (mongo.
 		return mongo.NewDeleteOneModel().SetFilter(bson.M{"_id": operation.Key}), nil
 	}
 
-	data, err := prepareDataForBSONStorageWithoutWrapping(operation.Value)
+	data, err := PrepareDataForBSONStorage(operation.Value)
 	if err != nil {
 		return &mongo.ReplaceOneModel{}, err
 	}
@@ -997,7 +1005,8 @@ func (s *Store) collectBulkGetResultsAsRawMap(keys []string, cursor *mongo.Curso
 	return allValues, nil
 }
 
-func (s *Store) executeBulkWriteCommand(models []mongo.WriteModel, atLeastOneInsertOneModel bool) error {
+func (s *Store) executeBulkWriteCommand(models []mongo.WriteModel, atLeastOneInsertOneModel bool,
+	opts []*mongooptions.BulkWriteOptions) error {
 	var attemptsMade int
 
 	return backoff.Retry(func() error {
@@ -1006,7 +1015,7 @@ func (s *Store) executeBulkWriteCommand(models []mongo.WriteModel, atLeastOneIns
 		ctxWithTimeout, cancel := context.WithTimeout(context.Background(), s.timeout)
 		defer cancel()
 
-		_, err := s.coll.BulkWrite(ctxWithTimeout, models)
+		_, err := s.coll.BulkWrite(ctxWithTimeout, models, opts...)
 		if err != nil {
 			// If using MongoDB 4.0.0 (or DocumentDB 4.0.0), and this is called multiple times in parallel on the
 			// same key(s), then it's possible to get a transient error here. We need to retry in this case.
@@ -1555,7 +1564,9 @@ func generateDataWrapper(key string, value []byte, tags []storage.Tag) (dataWrap
 	return data, nil
 }
 
-func prepareDataForBSONStorageWithoutWrapping(value interface{}) (map[string]interface{}, error) {
+// PrepareDataForBSONStorage takes the given value and converts it to the type expected by the MongoDB driver for
+// inserting documents. The value must be a struct with exported fields and proper json tags or a map.
+func PrepareDataForBSONStorage(value interface{}) (map[string]interface{}, error) {
 	valueBytes, err := json.Marshal(value)
 	if err != nil {
 		return nil, err

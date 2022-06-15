@@ -298,6 +298,7 @@ func doAllTests(t *testing.T, connString string) {
 	testGetBulkAsRawMap(t, connString)
 	testCustomIndexAndQuery(t, connString)
 	testDocumentReplacementAndMarshalling(t, connString)
+	testBulkWrite(t, connString)
 }
 
 func testGetStoreConfigUnderlyingDatabaseCheck(t *testing.T, connString string) {
@@ -1374,8 +1375,6 @@ func testGetAsRawMap(t *testing.T, connString string) {
 	store, err := provider.OpenStore(storeName)
 	require.NoError(t, err)
 
-	var ok bool
-
 	mongoDBStore, ok := store.(*mongodb.Store)
 	require.True(t, ok)
 
@@ -1467,7 +1466,7 @@ func testCustomIndexAndQuery(t *testing.T, connString string) {
 		provider, err := mongodb.NewProvider(connString)
 		require.NoError(t, err)
 
-		err = provider.CreateCustomIndex("NonExistentStore", mongo.IndexModel{})
+		err = provider.CreateCustomIndexes("NonExistentStore", mongo.IndexModel{})
 		require.Equal(t, err, storage.ErrStoreNotFound)
 	})
 	t.Run("Fail to create indexes", func(t *testing.T) {
@@ -1479,7 +1478,7 @@ func testCustomIndexAndQuery(t *testing.T, connString string) {
 		_, err = provider.OpenStore(storeName)
 		require.NoError(t, err)
 
-		err = provider.CreateCustomIndex(storeName, mongo.IndexModel{})
+		err = provider.CreateCustomIndexes(storeName, mongo.IndexModel{})
 		require.EqualError(t, err, "failed to create indexes in MongoDB collection: failed to create "+
 			"indexes in MongoDB collection: index model keys cannot be nil")
 	})
@@ -1717,6 +1716,178 @@ func TestCreateMongoDBFindOptions(t *testing.T) {
 	})
 }
 
+func testBulkWrite(t *testing.T, connString string) {
+	t.Helper()
+
+	provider, err := mongodb.NewProvider(connString)
+	require.NoError(t, err)
+
+	storeName := randomStoreName()
+
+	store, err := provider.OpenStore(storeName)
+	require.NoError(t, err)
+
+	mongoDBStore, ok := store.(*mongodb.Store)
+	require.True(t, ok)
+
+	type testDataType struct {
+		StringValue string `json:"stringValue,omitempty"`
+		IntValue    int    `json:"intValue,omitempty"`
+	}
+
+	data1 := testDataType{
+		StringValue: "String1",
+		IntValue:    1,
+	}
+
+	preparedData1, err := mongodb.PrepareDataForBSONStorage(data1)
+	require.NoError(t, err)
+
+	data2 := testDataType{
+		StringValue: "String2",
+		IntValue:    2,
+	}
+
+	preparedData2, err := mongodb.PrepareDataForBSONStorage(data2)
+	require.NoError(t, err)
+
+	models := []mongo.WriteModel{
+		mongo.NewInsertOneModel().SetDocument(preparedData1),
+		mongo.NewInsertOneModel().SetDocument(preparedData2),
+	}
+
+	err = mongoDBStore.BulkWrite(models)
+	require.NoError(t, err)
+
+	filter := bson.D{
+		{
+			Key: "$or",
+			Value: bson.A{
+				bson.D{{Key: "stringValue", Value: "String1"}},
+				bson.D{{Key: "stringValue", Value: "String2"}},
+			},
+		},
+	}
+
+	iterator, err := mongoDBStore.QueryCustom(filter)
+	require.NoError(t, err)
+
+	more, err := iterator.Next()
+	require.NoError(t, err)
+	require.True(t, more)
+
+	retrievedData1, err := iterator.ValueAsRawMap()
+	require.NoError(t, err)
+	require.Equal(t, "String1", retrievedData1["stringValue"])
+	require.Equal(t, int64(1), retrievedData1["intValue"])
+
+	more, err = iterator.Next()
+	require.NoError(t, err)
+	require.True(t, more)
+
+	retrievedData2, err := iterator.ValueAsRawMap()
+	require.NoError(t, err)
+	require.Equal(t, "String2", retrievedData2["stringValue"])
+	require.Equal(t, int64(2), retrievedData2["intValue"])
+
+	more, err = iterator.Next()
+	require.NoError(t, err)
+	require.False(t, more)
+
+	data1New := testDataType{
+		StringValue: "String1_New",
+		IntValue:    11,
+	}
+
+	preparedData1New, err := mongodb.PrepareDataForBSONStorage(data1New)
+	require.NoError(t, err)
+
+	data2New := testDataType{
+		StringValue: "String2_New",
+		IntValue:    22,
+	}
+
+	preparedData2New, err := mongodb.PrepareDataForBSONStorage(data2New)
+	require.NoError(t, err)
+
+	models = []mongo.WriteModel{
+		mongo.NewReplaceOneModel().SetFilter(bson.M{"stringValue": "String1"}).SetReplacement(preparedData1New),
+		mongo.NewReplaceOneModel().SetFilter(bson.M{"stringValue": "String2"}).SetReplacement(preparedData2New),
+	}
+
+	err = mongoDBStore.BulkWrite(models)
+	require.NoError(t, err)
+
+	filter = bson.D{
+		{
+			Key: "$or",
+			Value: bson.A{
+				bson.D{{Key: "stringValue", Value: "String1_New"}},
+				bson.D{{Key: "stringValue", Value: "String2_New"}},
+			},
+		},
+	}
+
+	iterator, err = mongoDBStore.QueryCustom(filter)
+	require.NoError(t, err)
+
+	more, err = iterator.Next()
+	require.NoError(t, err)
+	require.True(t, more)
+
+	retrievedData1New, err := iterator.ValueAsRawMap()
+	require.NoError(t, err)
+	require.Equal(t, "String1_New", retrievedData1New["stringValue"])
+	require.Equal(t, int64(11), retrievedData1New["intValue"])
+
+	more, err = iterator.Next()
+	require.NoError(t, err)
+	require.True(t, more)
+
+	retrievedData2New, err := iterator.ValueAsRawMap()
+	require.NoError(t, err)
+	require.Equal(t, "String2_New", retrievedData2New["stringValue"])
+	require.Equal(t, int64(22), retrievedData2New["intValue"])
+
+	more, err = iterator.Next()
+	require.NoError(t, err)
+	require.False(t, more)
+
+	models = []mongo.WriteModel{
+		mongo.NewDeleteOneModel().SetFilter(bson.M{"stringValue": "String1_New"}),
+		mongo.NewDeleteOneModel().SetFilter(bson.M{"stringValue": "DoesNotExist"}),
+	}
+
+	err = mongoDBStore.BulkWrite(models)
+	require.NoError(t, err)
+
+	filter = bson.D{
+		{
+			Key: "$or",
+			Value: bson.A{
+				bson.D{{Key: "stringValue", Value: "String1_New"}},
+				bson.D{{Key: "stringValue", Value: "String2_New"}},
+			},
+		},
+	}
+
+	iterator, err = mongoDBStore.QueryCustom(filter)
+	require.NoError(t, err)
+
+	more, err = iterator.Next()
+	require.NoError(t, err)
+	require.True(t, more)
+
+	retrievedData2NewAgain, err := iterator.ValueAsRawMap()
+	require.NoError(t, err)
+	require.Equal(t, "String2_New", retrievedData2NewAgain["stringValue"])
+	require.Equal(t, int64(22), retrievedData2NewAgain["intValue"])
+
+	more, err = iterator.Next()
+	require.NoError(t, err)
+	require.False(t, more)
+}
+
 func getTestData() (testKeys []string, testValues [][]byte, testTags [][]storage.Tag) {
 	testKeys = []string{
 		"Cassie",
@@ -1799,7 +1970,7 @@ func createCustomIndexForCustomQueryTests(t *testing.T, provider *mongodb.Provid
 		Options: indexOptions,
 	}
 
-	err := provider.CreateCustomIndex(storeName, model)
+	err := provider.CreateCustomIndexes(storeName, model)
 	require.NoError(t, err)
 }
 
