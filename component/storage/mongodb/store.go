@@ -831,61 +831,20 @@ func (s *Store) Batch(operations []storage.Operation) error {
 	return s.executeBulkWriteCommand(models, atLeastOneInsertOneModel, nil)
 }
 
-// BatchAsJSONOperation represents an operation to be performed in the BatchAsJSON method.
-type BatchAsJSONOperation struct {
-	Key   string      `json:"key,omitempty"`
-	Value interface{} `json:"value,omitempty"` // A nil value will result in a delete operation.
-}
-
-// BatchAsJSON is similar to Batch, but values are stored directly in MongoDB documents without wrapping, with
-// keys being used in the _id fields. Values must be structs or maps.
-func (s *Store) BatchAsJSON(operations []BatchAsJSONOperation) error {
-	if len(operations) == 0 {
-		return errors.New("batch requires at least one operation")
-	}
-
-	for _, operation := range operations {
-		if operation.Key == "" {
-			return errors.New("key cannot be empty")
-		}
-	}
-
-	models := make([]mongo.WriteModel, len(operations))
-
-	for i, operation := range operations {
-		model, err := generateModelForBulkWriteCallAsJSON(operation)
-		if err != nil {
-			return err
-		}
-
-		models[i] = model
-	}
-
-	return s.executeBulkWriteCommand(models, false, nil)
-}
-
 // BulkWrite executes the mongoDB BulkWrite command using the given WriteModels and BulkWriteOptions.
 func (s *Store) BulkWrite(models []mongo.WriteModel, opts ...*mongooptions.BulkWriteOptions) error {
-	// For now, set atLeastOneInsertOneModel to false, even though these WriteModels could include InsertOne models.
-	// That bool just controls whether a more specific error message gets output in a certain scenario. The error
-	// is specific to the Batch method. In the future, consider reworking this
-	return s.executeBulkWriteCommand(models, false, opts)
-}
+	var atLeastOneInsertOneModel bool
 
-func generateModelForBulkWriteCallAsJSON(operation BatchAsJSONOperation) (mongo.WriteModel, error) {
-	if operation.Value == nil {
-		return mongo.NewDeleteOneModel().SetFilter(bson.M{"_id": operation.Key}), nil
+	for _, model := range models {
+		_, isInsertOneModel := model.(*mongo.InsertOneModel)
+		if isInsertOneModel {
+			atLeastOneInsertOneModel = true
+
+			break
+		}
 	}
 
-	data, err := PrepareDataForBSONStorage(operation.Value)
-	if err != nil {
-		return &mongo.ReplaceOneModel{}, err
-	}
-
-	return mongo.NewReplaceOneModel().
-		SetFilter(bson.M{"_id": operation.Key}).
-		SetReplacement(data).
-		SetUpsert(true), nil
+	return s.executeBulkWriteCommand(models, atLeastOneInsertOneModel, opts)
 }
 
 // Flush doesn't do anything since this store type doesn't queue values.
@@ -1028,7 +987,7 @@ func (s *Store) executeBulkWriteCommand(models []mongo.WriteModel, atLeastOneIns
 				var errDuplicateKey error
 
 				if atLeastOneInsertOneModel {
-					errorReason = "Either the IsNewKey optimization flag has been set to true for a key that " +
+					errorReason = "Either an InsertOne model is being used for a key that " +
 						"already exists in the database, or, if using MongoDB 4.0.0, then this may be a transient " +
 						"error due to another call storing data under the same key at the same time."
 
@@ -1565,7 +1524,9 @@ func generateDataWrapper(key string, value []byte, tags []storage.Tag) (dataWrap
 }
 
 // PrepareDataForBSONStorage takes the given value and converts it to the type expected by the MongoDB driver for
-// inserting documents. The value must be a struct with exported fields and proper json tags or a map.
+// inserting documents. The value must be a struct with exported fields and proper json tags or a map. To use the
+// MongoDB primary key (_id), you must have an _id field in either the struct or map. Alternatively, add it to the
+// map returned by this function. If no _id field is set, then MongoDB will generate one for you.
 func PrepareDataForBSONStorage(value interface{}) (map[string]interface{}, error) {
 	valueBytes, err := json.Marshal(value)
 	if err != nil {

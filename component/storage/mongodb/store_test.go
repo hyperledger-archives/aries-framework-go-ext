@@ -1342,8 +1342,8 @@ func testBatchIsNewKeyError(t *testing.T, connString string) {
 
 	err = store.Batch(operations)
 
-	expectedErrMsgPrefix := "failed to perform batch operations after 4 attempts: duplicate key. Either the " +
-		"IsNewKey optimization flag has been set to true for a key that already exists in the database, or, if " +
+	expectedErrMsgPrefix := "failed to perform batch operations after 4 attempts: duplicate key. Either an " +
+		"InsertOne model is being used for a key that already exists in the database, or, if " +
 		"using MongoDB 4.0.0, then this may be a transient error due to another call storing data under the same " +
 		"key at the same time. Underlying error message: bulk write exception: write errors: [E11000 duplicate key " +
 		"error"
@@ -1454,7 +1454,7 @@ func testCustomIndexAndQuery(t *testing.T, connString string) {
 			doCustomIndexAndQueryTest(t, connString, false, options.Find().SetBatchSize(2))
 		})
 	})
-	t.Run("Using BatchAsJSON call", func(t *testing.T) {
+	t.Run("Using BulkWrite call", func(t *testing.T) {
 		t.Run("Without query options", func(t *testing.T) {
 			doCustomIndexAndQueryTest(t, connString, true)
 		})
@@ -1502,7 +1502,7 @@ func doCustomIndexAndQueryTest(t *testing.T, connString string, useBatch bool, o
 
 	valuesToStore := generateJSONTestData()
 
-	storeDataAsJSON(t, mongoDBStore, valuesToStore, useBatch)
+	storeDataWithoutWrapping(t, mongoDBStore, valuesToStore, useBatch)
 
 	createCustomIndexForCustomQueryTests(t, provider, storeName)
 
@@ -1974,11 +1974,11 @@ func createCustomIndexForCustomQueryTests(t *testing.T, provider *mongodb.Provid
 	require.NoError(t, err)
 }
 
-func storeDataAsJSON(t *testing.T, store *mongodb.Store, values [][]byte, useBatch bool) {
+func storeDataWithoutWrapping(t *testing.T, store *mongodb.Store, values [][]byte, useBatch bool) {
 	t.Helper()
 
 	if useBatch {
-		operations := make([]mongodb.BatchAsJSONOperation, len(values))
+		insertOneModels := make([]mongo.WriteModel, len(values))
 
 		for i, value := range values {
 			var valueAsMap map[string]interface{}
@@ -1986,13 +1986,15 @@ func storeDataAsJSON(t *testing.T, store *mongodb.Store, values [][]byte, useBat
 			err := json.Unmarshal(value, &valueAsMap)
 			require.NoError(t, err)
 
-			operations[i] = mongodb.BatchAsJSONOperation{
-				Key:   fmt.Sprintf("Document%d", i+1),
-				Value: valueAsMap,
-			}
+			preparedData, err := mongodb.PrepareDataForBSONStorage(valueAsMap)
+			require.NoError(t, err)
+
+			preparedData["_id"] = fmt.Sprintf("Document%d", i+1)
+
+			insertOneModels[i] = mongo.NewInsertOneModel().SetDocument(preparedData)
 		}
 
-		err := store.BatchAsJSON(operations)
+		err := store.BulkWrite(insertOneModels)
 		require.NoError(t, err)
 
 		return
