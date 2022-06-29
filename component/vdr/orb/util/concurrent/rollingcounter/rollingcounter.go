@@ -8,7 +8,8 @@ SPDX-License-Identifier: Apache-2.0
 package rollingcounter
 
 import (
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"sync/atomic"
 
 	"github.com/hyperledger/aries-framework-go/pkg/common/log"
@@ -42,7 +43,12 @@ func (c *Counter) Next(n int) int {
 		i := int(current)
 		if i == -1 {
 			// Choose a random index the first time
-			i = rand.Intn(n) //nolint: gosec
+			result, err := rand.Int(rand.Reader, big.NewInt(int64(n)))
+			if err != nil {
+				panic(err.Error())
+			}
+
+			i = int(result.Int64())
 		} else {
 			i++
 			if i >= n {
