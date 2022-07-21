@@ -10,7 +10,7 @@ require (
 	github.com/hyperledger/aries-framework-go v0.1.9-0.20220526205258-18d510d84955
 	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693
 	github.com/stretchr/testify v1.7.0
-	github.com/trustbloc/sidetree-core-go v1.0.0-rc2
+	github.com/trustbloc/sidetree-core-go v1.0.0-rc2.0.20220721143952-577302c8aca8
 )
 
 require (
