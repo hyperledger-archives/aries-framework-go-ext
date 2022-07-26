@@ -528,7 +528,11 @@ func (v *VDR) verifyDID(didRes *docdid.DocResolution) error { // nolint:gocognit
 			return err
 		}
 
-		docRes.Context = didRes.Context[0]
+		if ctx, ok := didRes.Context.(string); ok {
+			docRes.Context = ctx
+		} else {
+			docRes.Context = didRes.Context.([]string)[0]
+		}
 
 		if err := v.verifier.Verify(docRes); err != nil {
 			return err
