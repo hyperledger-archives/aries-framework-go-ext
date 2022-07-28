@@ -83,6 +83,7 @@ const validDocResolutionCachedUpdate = `
 const validDoc = `{
   "@context": ["https://w3id.org/did/v1"],
   "id": "did:example:21tDAKCERh95uGgKbJNHYp",
+  "alsoKnownAs": ["https://myblog.example/"],
   "verificationMethod": [
     {
       "id": "did:example:123456789abcdefghi#keys-1",
@@ -180,6 +181,7 @@ func TestVDRI_Create(t *testing.T) {
 			Service: []did.Service{
 				{ID: "svc"},
 			},
+			AlsoKnownAs: []string{"https://myblog.example/"},
 			Authentication: []did.Verification{
 				*ver,
 				*ver2,
@@ -492,6 +494,7 @@ func TestVDRI_Update(t *testing.T) {
 		ver1 := did.NewReferencedVerification(vm1, did.Authentication)
 
 		err = v.Update(&did.Doc{
+			AlsoKnownAs: []string{"https://other-blog.example/"},
 			Service: []did.Service{
 				{ID: "svc"},
 			},
@@ -756,6 +759,7 @@ func TestVDRI_Recover(t *testing.T) {
 		ver := did.NewReferencedVerification(vm, did.Authentication)
 
 		err = v.Update(&did.Doc{
+			AlsoKnownAs: []string{"https://recover.example/"},
 			Service: []did.Service{
 				{ID: "svc"},
 			},

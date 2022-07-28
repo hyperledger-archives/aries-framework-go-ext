@@ -328,6 +328,11 @@ func (v *VDR) Create(did *docdid.Doc,
 		}
 	}
 
+	// get also known as
+	for i := range did.AlsoKnownAs {
+		createOpt = append(createOpt, create.WithAlsoKnownAs(did.AlsoKnownAs[i]))
+	}
+
 	// get services
 	for i := range did.Service {
 		createOpt = append(createOpt, create.WithService(&did.Service[i]))
@@ -638,6 +643,10 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 	updateOpt = append(updateOpt, updatedPKKeysID...)
 
+	updatedAlsoKnownAsOpts := getUpdatedAlsoKnownAs(docResolution.DIDDocument.AlsoKnownAs, didDoc.AlsoKnownAs)
+
+	updateOpt = append(updateOpt, updatedAlsoKnownAsOpts...)
+
 	updateOpt = append(updateOpt, update.WithSidetreeEndpoint(func() ([]string, error) {
 		var endpoint *models.Endpoint
 
@@ -710,6 +719,11 @@ func (v *VDR) recover(didDoc *docdid.Doc, getEndpoints func() ([]string, error),
 
 	for k := range pks {
 		recoveryOpt = append(recoveryOpt, recovery.WithPublicKey(pks[k].publicKey))
+	}
+
+	// get also known as
+	for i := range didDoc.AlsoKnownAs {
+		recoveryOpt = append(recoveryOpt, recovery.WithAlsoKnownAs(didDoc.AlsoKnownAs[i]))
 	}
 
 	// get keys
@@ -902,6 +916,40 @@ func getRemovedSvcKeysID(currentService, updatedService []docdid.Service) []upda
 	}
 
 	return updateOpt
+}
+
+func getUpdatedAlsoKnownAs(current, updated []string) []update.Option {
+	var updateOpt []update.Option
+
+	currentMap := sliceToMap(current)
+	updatedMap := sliceToMap(updated)
+
+	for _, val := range updated {
+		_, ok := currentMap[val]
+		if !ok {
+			// new URI - append it to add URIs
+			updateOpt = append(updateOpt, update.WithAddAlsoKnownAs(val))
+		}
+	}
+
+	for _, val := range current {
+		_, ok := updatedMap[val]
+		if !ok {
+			// missing URI - append it to remove URIs
+			updateOpt = append(updateOpt, update.WithRemoveAlsoKnownAs(val))
+		}
+	}
+
+	return updateOpt
+}
+
+func sliceToMap(values []string) map[string]bool {
+	m := make(map[string]bool)
+	for _, value := range values {
+		m[value] = true
+	}
+
+	return m
 }
 
 func getUpdatedPKKeysID(currentDID, updatedDID *docdid.Doc) ([]update.Option, error) { //nolint:gocognit,gocyclo
