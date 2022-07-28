@@ -292,8 +292,9 @@ func validateDeactivateReq(deactivateDIDOpts *deactivate.Opts) error {
 // buildCreateRequest request builder for sidetree public DID creation.
 func buildCreateRequest(multiHashAlgorithm uint, createDIDOpts *create.Opts) ([]byte, error) {
 	didDoc := &doc.Doc{
-		PublicKey: createDIDOpts.PublicKeys,
-		Service:   createDIDOpts.Services,
+		PublicKey:   createDIDOpts.PublicKeys,
+		Service:     createDIDOpts.Services,
+		AlsoKnownAs: createDIDOpts.AlsoKnownAs,
 	}
 
 	docBytes, err := didDoc.JSONBytes()
@@ -384,8 +385,9 @@ func (c *Client) buildUpdateRequest(did string, multiHashAlgorithm uint,
 // buildRecoverRequest request builder for sidetree public DID recovery.
 func buildRecoverRequest(did string, multiHashAlgorithm uint, recoverDIDOpts *recovery.Opts) ([]byte, error) {
 	didDoc := &doc.Doc{
-		PublicKey: recoverDIDOpts.PublicKeys,
-		Service:   recoverDIDOpts.Services,
+		PublicKey:   recoverDIDOpts.PublicKeys,
+		Service:     recoverDIDOpts.Services,
+		AlsoKnownAs: recoverDIDOpts.AlsoKnownAs,
 	}
 
 	docBytes, err := didDoc.JSONBytes()
@@ -484,8 +486,17 @@ func (c *Client) sendRequest(req []byte, endpointURL string) ([]byte, error) {
 	return responseBytes, nil
 }
 
-func createUpdatePatches(updateDIDOpts *update.Opts) ([]patch.Patch, error) {
+func createUpdatePatches(updateDIDOpts *update.Opts) ([]patch.Patch, error) { //nolint: gocyclo
 	var patches []patch.Patch
+
+	if len(updateDIDOpts.RemoveAlsoKnownAs) != 0 {
+		p, err := createRemoveAlsoKnownAsPatch(updateDIDOpts)
+		if err != nil {
+			return nil, err
+		}
+
+		patches = append(patches, p)
+	}
 
 	if len(updateDIDOpts.RemovePublicKeys) != 0 {
 		p, err := createRemovePublicKeysPatch(updateDIDOpts)
@@ -498,6 +509,15 @@ func createUpdatePatches(updateDIDOpts *update.Opts) ([]patch.Patch, error) {
 
 	if len(updateDIDOpts.RemoveServices) != 0 {
 		p, err := createRemoveServicesPatch(updateDIDOpts)
+		if err != nil {
+			return nil, err
+		}
+
+		patches = append(patches, p)
+	}
+
+	if len(updateDIDOpts.AddAlsoKnownAs) != 0 {
+		p, err := createAddAlsoKnownAsPatch(updateDIDOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -542,6 +562,26 @@ func createRemoveServicesPatch(updateDIDOpts *update.Opts) (patch.Patch, error) 
 	}
 
 	return patch.NewRemoveServiceEndpointsPatch(string(removeServices))
+}
+
+func createRemoveAlsoKnownAsPatch(updateDIDOpts *update.Opts) (patch.Patch, error) {
+	removeAlsoKnownAs, err := json.Marshal(updateDIDOpts.RemoveAlsoKnownAs)
+	if err != nil {
+		return nil, err
+	}
+
+	return patch.NewRemoveAlsoKnownAs(string(removeAlsoKnownAs))
+}
+
+func createAddAlsoKnownAsPatch(updateDIDOpts *update.Opts) (patch.Patch, error) {
+	rawAlsoKnownAs := doc.PopulateRawAlsoKnownAs(updateDIDOpts.AddAlsoKnownAs)
+
+	addAlsoKnownAs, err := json.Marshal(rawAlsoKnownAs)
+	if err != nil {
+		return nil, err
+	}
+
+	return patch.NewAddAlsoKnownAs(string(addAlsoKnownAs))
 }
 
 func createAddServicesPatch(updateDIDOpts *update.Opts) (patch.Patch, error) {

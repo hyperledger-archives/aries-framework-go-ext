@@ -51,14 +51,16 @@ const (
 )
 
 type rawDoc struct {
-	PublicKey []map[string]interface{} `json:"publicKey,omitempty"`
-	Service   []map[string]interface{} `json:"service,omitempty"`
+	PublicKey   []map[string]interface{} `json:"publicKey,omitempty"`
+	Service     []map[string]interface{} `json:"service,omitempty"`
+	AlsoKnownAs []interface{}            `json:"alsoKnownAs,omitempty"`
 }
 
 // Doc DID Document definition.
 type Doc struct {
-	PublicKey []PublicKey
-	Service   []docdid.Service
+	PublicKey   []PublicKey
+	Service     []docdid.Service
+	AlsoKnownAs []string
 }
 
 // PublicKey struct.
@@ -82,9 +84,12 @@ func (doc *Doc) JSONBytes() ([]byte, error) {
 		return nil, err
 	}
 
+	alsoKnownAs := PopulateRawAlsoKnownAs(doc.AlsoKnownAs)
+
 	raw := &rawDoc{
-		PublicKey: publicKeys,
-		Service:   services,
+		PublicKey:   publicKeys,
+		Service:     services,
+		AlsoKnownAs: alsoKnownAs,
 	}
 
 	byteDoc, err := json.Marshal(raw)
@@ -179,4 +184,14 @@ func PopulateRawServices(services []docdid.Service) ([]map[string]interface{}, e
 	}
 
 	return rawServices, nil
+}
+
+// PopulateRawAlsoKnownAs populates raw also known as.
+func PopulateRawAlsoKnownAs(alsoKnownAs []string) []interface{} {
+	values := make([]interface{}, len(alsoKnownAs))
+	for i, v := range alsoKnownAs {
+		values[i] = v
+	}
+
+	return values
 }

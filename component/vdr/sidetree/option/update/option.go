@@ -23,8 +23,10 @@ type Option func(opts *Opts)
 type Opts struct {
 	AddPublicKeys       []doc.PublicKey
 	AddServices         []docdid.Service
+	AddAlsoKnownAs      []string
 	RemovePublicKeys    []string
 	RemoveServices      []string
+	RemoveAlsoKnownAs   []string
 	GetEndpoints        func() ([]string, error)
 	NextUpdatePublicKey crypto.PublicKey
 	Signer              api.Signer
@@ -43,6 +45,20 @@ func WithAddPublicKey(publicKey *doc.PublicKey) Option {
 func WithAddService(service *docdid.Service) Option {
 	return func(opts *Opts) {
 		opts.AddServices = append(opts.AddServices, *service)
+	}
+}
+
+// WithAddAlsoKnownAs adds also known as.
+func WithAddAlsoKnownAs(uri string) Option {
+	return func(opts *Opts) {
+		opts.AddAlsoKnownAs = append(opts.AddAlsoKnownAs, uri)
+	}
+}
+
+// WithRemoveAlsoKnownAs removes also known as.
+func WithRemoveAlsoKnownAs(uri string) Option {
+	return func(opts *Opts) {
+		opts.RemoveAlsoKnownAs = append(opts.RemoveAlsoKnownAs, uri)
 	}
 }
 

@@ -397,7 +397,9 @@ func TestClient_RecoverDID(t *testing.T) {
 				Type: doc.Ed25519VerificationKey2018,
 				JWK:  jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
 			}),
-			recovery.WithService(&did.Service{ID: "svc3"}))
+			recovery.WithService(&did.Service{ID: "svc3"}),
+			recovery.WithAlsoKnownAs("firstIdentityURI"),
+			recovery.WithAlsoKnownAs("secondIdentityURI"))
 		require.NoError(t, err)
 	})
 }
@@ -599,7 +601,10 @@ func TestClient_UpdateDID(t *testing.T) {
 				Type:   doc.Ed25519VerificationKey2018,
 				B58Key: base58.Encode(pubKey),
 			}),
-			update.WithAddService(&did.Service{ID: "svc3"}))
+			update.WithAddService(&did.Service{ID: "svc3"}),
+			update.WithAddAlsoKnownAs("firstIdentityURI"),
+			update.WithAddAlsoKnownAs("secondIdentityURI"),
+			update.WithRemoveAlsoKnownAs("removeIdentityURI"))
 		require.NoError(t, err)
 	})
 }
@@ -703,6 +708,8 @@ func TestClient_CreateDID(t *testing.T) {
 			create.WithSidetreeEndpoint(func() ([]string, error) {
 				return []string{serv.URL}, nil
 			}), create.WithUpdatePublicKey(ecUpdatePrivKey.Public()),
+			create.WithAlsoKnownAs("https://first.blog.example"),
+			create.WithAlsoKnownAs("https://second.blog.example"),
 			create.WithPublicKey(&doc.PublicKey{
 				ID:       "key1",
 				Type:     doc.JWSVerificationKey2020,
