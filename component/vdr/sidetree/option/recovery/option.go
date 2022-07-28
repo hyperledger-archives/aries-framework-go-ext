@@ -20,6 +20,7 @@ import (
 type Opts struct {
 	PublicKeys            []doc.PublicKey
 	Services              []docdid.Service
+	AlsoKnownAs           []string
 	GetEndpoints          func() ([]string, error)
 	NextRecoveryPublicKey crypto.PublicKey
 	NextUpdatePublicKey   crypto.PublicKey
@@ -43,6 +44,13 @@ func WithPublicKey(publicKey *doc.PublicKey) Option {
 func WithService(service *docdid.Service) Option {
 	return func(opts *Opts) {
 		opts.Services = append(opts.Services, *service)
+	}
+}
+
+// WithAlsoKnownAs adds also known as URI.
+func WithAlsoKnownAs(uri string) Option {
+	return func(opts *Opts) {
+		opts.AlsoKnownAs = append(opts.AlsoKnownAs, uri)
 	}
 }
 
