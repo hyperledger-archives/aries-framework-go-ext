@@ -83,6 +83,7 @@ const (
 	ipfsPrefix     = "ipfs://"
 	httpsProtocol  = "https"
 	httpProtocol   = "http"
+	retry          = 3
 )
 
 var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
@@ -567,7 +568,7 @@ func (v *VDR) verifyDID(didRes *docdid.DocResolution) error { // nolint:gocognit
 }
 
 // Update did doc.
-func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error { //nolint:funlen,gocyclo
+func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error { //nolint:funlen,gocyclo,gocognit
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
 
 	// Apply options
@@ -648,12 +649,28 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 	updateOpt = append(updateOpt, updatedAlsoKnownAsOpts...)
 
 	updateOpt = append(updateOpt, update.WithSidetreeEndpoint(func() ([]string, error) {
-		var endpoint *models.Endpoint
+		endpoint, errGet := v.discoveryService.GetEndpoint(docResolution.DocumentMetadata.Method.AnchorOrigin)
+		if errGet != nil {
+			logger.Warnf("failed to get anchor origin %s endpoints will choose random domain: %w",
+				docResolution.DocumentMetadata.Method.AnchorOrigin, errGet)
 
-		// TODO make sure it's latest anchor origin
-		endpoint, err = v.discoveryService.GetEndpoint(docResolution.DocumentMetadata.Method.AnchorOrigin)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get endpoints: %w", err)
+			for i := 1; i <= retry; i++ {
+				domain, errChoose := v.selectDomainSvc.Choose(v.domains)
+				if err != nil {
+					return nil, errChoose
+				}
+
+				domainEndpoint, errEndpoint := v.discoveryService.GetEndpoint(domain)
+				if err != nil {
+					if i == retry {
+						return nil, fmt.Errorf("failed to get endpoints: %w", errEndpoint)
+					}
+
+					continue
+				}
+
+				return domainEndpoint.OperationEndpoints, nil
+			}
 		}
 
 		return endpoint.OperationEndpoints, nil
