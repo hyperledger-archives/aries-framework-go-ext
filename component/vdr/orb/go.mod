@@ -7,13 +7,13 @@ go 1.17
 
 require (
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
-	github.com/hyperledger/aries-framework-go v0.1.9-0.20220725145110-78317f6d44d8
+	github.com/hyperledger/aries-framework-go v0.1.9-0.20220811152045-03f747c09617
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v1.0.0-rc2.0.20220729203359-da1de2fa21ce
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220428211718-66cc046674a1
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/piprate/json-gold v0.4.1
 	github.com/stretchr/testify v1.7.2
-	github.com/trustbloc/orb v1.0.0-rc2.0.20220729193203-d83f3ce77a0c
+	github.com/trustbloc/orb v1.0.0-rc2.0.20220811160855-64ffb892b32b
 	github.com/trustbloc/sidetree-core-go v1.0.0-rc2.0.20220729143551-6cda4cea3bf5
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd
 )
@@ -39,6 +39,7 @@ require (
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/hyperledger/aries-framework-go-ext/component/storage/mongodb v0.0.0-20220615170242-cda5092b4faf // indirect
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220614152730-3d817acfa48b // indirect
+	github.com/hyperledger/ursa-wrapper-go v0.3.1 // indirect
 	github.com/ipfs/go-cid v0.0.7 // indirect
 	github.com/jinzhu/copier v0.0.0-20190924061706-b57f9002281a // indirect
 	github.com/kilic/bls12-381 v0.1.1-0.20210503002446-7b7597926c69 // indirect
