@@ -12,9 +12,9 @@ import (
 	"fmt"
 
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
-	ariescontext "github.com/hyperledger/aries-framework-go/pkg/framework/context"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/hyperledger/aries-framework-go/pkg/kms/localkms"
+	"github.com/hyperledger/aries-framework-go/pkg/secretlock"
 	"github.com/hyperledger/aries-framework-go/pkg/secretlock/noop"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
@@ -46,15 +46,33 @@ func NewBDDContext(caCertPaths ...string) (*BDDContext, error) {
 func createKMS(s storage.Provider) (kms.KeyManager, error) {
 	sl := &noop.NoLock{} // for bdd tests, using no lock
 
-	kmsProvider, err := ariescontext.New(ariescontext.WithStorageProvider(s), ariescontext.WithSecretLock(sl))
+	kmsStore, err := kms.NewAriesProviderWrapper(s)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new kms provider: %w", err)
+		return nil, fmt.Errorf("create Aries KMS store wrapper: %w", err)
 	}
 
-	km, err := localkms.New(masterKeyURI, kmsProvider)
+	kmsProv := &kmsProvider{
+		storageProvider:   kmsStore,
+		secretLockService: sl,
+	}
+
+	km, err := localkms.New(masterKeyURI, kmsProv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new kms: %w", err)
 	}
 
 	return km, nil
+}
+
+type kmsProvider struct {
+	storageProvider   kms.Store
+	secretLockService secretlock.Service
+}
+
+func (k *kmsProvider) StorageProvider() kms.Store {
+	return k.storageProvider
+}
+
+func (k *kmsProvider) SecretLock() secretlock.Service {
+	return k.secretLockService
 }
