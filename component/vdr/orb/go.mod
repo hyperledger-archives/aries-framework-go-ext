@@ -13,7 +13,7 @@ require (
 	github.com/opentracing/opentracing-go v1.1.0
 	github.com/piprate/json-gold v0.4.1
 	github.com/stretchr/testify v1.7.5
-	github.com/trustbloc/orb v1.0.0-rc2.0.20220822191829-17aec9f17352
+	github.com/trustbloc/orb v1.0.0-rc2.0.20220826005428-b08eed04243a
 	github.com/trustbloc/sidetree-core-go v1.0.0-rc2.0.20220729143551-6cda4cea3bf5
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd
 )
@@ -65,7 +65,7 @@ require (
 	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693 // indirect
 	github.com/teserakt-io/golang-ed25519 v0.0.0-20210104091850-3888c087a4c8 // indirect
 	github.com/trustbloc/edge-core v0.1.8 // indirect
-	github.com/trustbloc/vct v1.0.0-rc2.0.20220820075241-03b2f1075dbc // indirect
+	github.com/trustbloc/vct v1.0.0-rc2.0.20220825171642-c395321b4820 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.1 // indirect
