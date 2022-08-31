@@ -30,6 +30,7 @@ var (
 
 // GetAll returns all predefined contexts.
 func GetAll() ([]ldcontext.Document, error) {
+	// remove once
 	once.Do(func() {
 		var entries []os.DirEntry
 
