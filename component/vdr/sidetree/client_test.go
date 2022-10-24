@@ -106,7 +106,7 @@ func TestClient_DeactivateDID(t *testing.T) {
 		}))
 		defer serv.Close()
 
-		v := sidetree.New(sidetree.WithAuthToken("tk1"))
+		v := sidetree.New(sidetree.WithAuthTokenProvider(&tokenProvider{}))
 
 		pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
@@ -862,4 +862,10 @@ func (s *signerMock) Headers() jws.Headers {
 
 func (s *signerMock) PublicKeyJWK() *jws.JWK {
 	return s.publicKey
+}
+
+type tokenProvider struct{}
+
+func (t *tokenProvider) AuthToken() (string, error) {
+	return "newTK", nil
 }

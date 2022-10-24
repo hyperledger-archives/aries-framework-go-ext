@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package sidetree implements sidetree client
-//
 package sidetree
 
 import (
@@ -39,10 +38,15 @@ const (
 
 var logger = log.New("aries-framework-ext/vdr/sidetree/client") //nolint: gochecknoglobals
 
+type authTokenProvider interface {
+	AuthToken() (string, error)
+}
+
 // Client sidetree client.
 type Client struct {
-	client    *http.Client
-	authToken string
+	client            *http.Client
+	authToken         string
+	authTokenProvider authTokenProvider
 }
 
 // New return did bloc client.
@@ -462,8 +466,19 @@ func (c *Client) sendRequest(req []byte, endpointURL string) ([]byte, error) {
 
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	if c.authToken != "" {
-		httpReq.Header.Add("Authorization", c.authToken)
+	authToken := c.authToken
+
+	if c.authTokenProvider != nil {
+		v, errToken := c.authTokenProvider.AuthToken()
+		if errToken != nil {
+			return nil, errToken
+		}
+
+		authToken = "Bearer " + v
+	}
+
+	if authToken != "" {
+		httpReq.Header.Add("Authorization", authToken)
 	}
 
 	resp, err := c.client.Do(httpReq)
