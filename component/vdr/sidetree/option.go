@@ -25,3 +25,10 @@ func WithAuthToken(authToken string) Option {
 		opts.authToken = "Bearer " + authToken
 	}
 }
+
+// WithAuthTokenProvider add auth token provider.
+func WithAuthTokenProvider(p authTokenProvider) Option {
+	return func(opts *Client) {
+		opts.authTokenProvider = p
+	}
+}
