@@ -23,8 +23,6 @@ linters-settings:
     check-blank: true
   govet:
     check-shadowing: true
-  golint:
-    min-confidence: 0.6
   gofmt:
     simplify: true
   goimports:
@@ -84,6 +82,7 @@ linters:
     - ifshort # TODO enable
     - wrapcheck # TODO enable
     - forbidigo # TODO enable
+    - typecheck
 
 issues:
   exclude-use-default: false
@@ -93,6 +92,9 @@ issues:
         - dupl
         - funlen
         - gomnd
+    - path: /
+      linters:
+        - typecheck
 
   exclude:
     -  Line contains TODO/BUG/FIXME
