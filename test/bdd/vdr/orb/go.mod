@@ -9,13 +9,13 @@ go 1.17
 require (
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.9-0.20220819134023-730ac301c3c0
+	github.com/hyperledger/aries-framework-go v0.1.9-0.20221025163359-bee1ddf86975
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.0.0
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v1.0.0-rc2.0.20220729203359-da1de2fa21ce
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v1.0.0-rc3.0.20221024123052-9b275fb1ccb3
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220610133818-119077b0ec85
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220614152730-3d817acfa48b
 	github.com/trustbloc/edge-core v0.1.8
-	github.com/trustbloc/sidetree-core-go v1.0.0-rc2.0.20220729143551-6cda4cea3bf5
+	github.com/trustbloc/sidetree-core-go v1.0.0-rc3.0.20221011173557-7c4f13946f96
 )
 
 require (
@@ -88,8 +88,8 @@ require (
 	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693 // indirect
 	github.com/stretchr/testify v1.7.5 // indirect
 	github.com/teserakt-io/golang-ed25519 v0.0.0-20210104091850-3888c087a4c8 // indirect
-	github.com/trustbloc/orb v1.0.0-rc2.0.20220826005428-b08eed04243a // indirect
-	github.com/trustbloc/vct v1.0.0-rc2.0.20220825171642-c395321b4820 // indirect
+	github.com/trustbloc/orb v1.0.0-rc3.0.20221025070315-0c36510a0b88 // indirect
+	github.com/trustbloc/vct v1.0.0-rc3.0.20221005225741-acba00018d6b // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.1 // indirect
@@ -100,6 +100,9 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20201027041543-1326539a0a0a // indirect
 	go.mongodb.org/mongo-driver v1.9.1 // indirect
 	go.opencensus.io v0.23.0 // indirect
+	go.uber.org/atomic v1.7.0 // indirect
+	go.uber.org/multierr v1.6.0 // indirect
+	go.uber.org/zap v1.17.0 // indirect
 	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e // indirect
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd // indirect
 	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f // indirect

@@ -3,7 +3,7 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-//nolint: testpackage
+// nolint: testpackage
 package orb
 
 import (
@@ -31,7 +31,7 @@ import (
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/update"
 )
 
-//nolint: lll
+// nolint: lll
 const validDocResolution = `
 {
    "@context":"https://w3id.org/did-resolution/v1",
@@ -55,7 +55,7 @@ const validDocResolution = `
 }
 `
 
-//nolint: lll
+// nolint: lll
 const validDocResolutionCachedUpdate = `
 {
    "@context":"https://w3id.org/did-resolution/v1",
@@ -918,7 +918,7 @@ func TestVDRI_Read(t *testing.T) {
 	})
 
 	t.Run("test error from get endpoint from ipns", func(t *testing.T) {
-		v, err := New(nil)
+		v, err := New(nil, WithAuthTokenProvider(&tokenProvider{}))
 		require.NoError(t, err)
 
 		v.discoveryService = &mockDiscoveryService{getEndpointAnchorOriginFunc: func(did string) (*models.Endpoint, error) {
@@ -1187,4 +1187,10 @@ type mockVerifierResolutionResult struct{}
 
 func (m *mockVerifierResolutionResult) Verify(input *document.ResolutionResult) error {
 	return nil
+}
+
+type tokenProvider struct{}
+
+func (t *tokenProvider) AuthToken() (string, error) {
+	return "newTK", nil
 }

@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package orb implement orb vdr
-//
 package orb
 
 import (
@@ -145,12 +144,17 @@ type SelectDomainService interface {
 	Choose(domains []string) (string, error)
 }
 
+type authTokenProvider interface {
+	AuthToken() (string, error)
+}
+
 // VDR bloc.
 type VDR struct {
 	getHTTPVDR                 func(url string) (vdr, error) // needed for unit test
 	tlsConfig                  *tls.Config
 	unanchoredMaxLifeTime      *time.Duration
 	authToken                  string
+	authTokenProvider          authTokenProvider
 	domains                    []string
 	disableProofCheck          bool
 	sidetreeClient             sidetreeClient
@@ -206,12 +210,13 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 		}
 	}
 
-	v.sidetreeClient = sidetree.New(sidetree.WithAuthToken(v.authToken), sidetree.WithHTTPClient(v.httpClient))
+	v.sidetreeClient = sidetree.New(sidetree.WithAuthToken(v.authToken), sidetree.WithHTTPClient(v.httpClient),
+		sidetree.WithAuthTokenProvider(v.authTokenProvider))
 
 	v.getHTTPVDR = func(url string) (vdr, error) {
 		return httpbinding.New(url,
 			httpbinding.WithHTTPClient(v.httpClient), httpbinding.WithResolveAuthToken(v.authToken),
-			httpbinding.WithTimeout(httpTimeOut))
+			httpbinding.WithTimeout(httpTimeOut), httpbinding.WithResolveAuthTokenProvider(v.authTokenProvider))
 	}
 
 	v.discoveryService, err = client.New(v.documentLoader, &casReader{
@@ -220,7 +225,8 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 		ipfsEndpoint: v.ipfsEndpoint,
 		authToken:    v.authToken,
 	},
-		client.WithDisableProofCheck(v.disableProofCheck), client.WithHTTPClient(v.httpClient))
+		client.WithDisableProofCheck(v.disableProofCheck), client.WithHTTPClient(v.httpClient),
+		client.WithAuthToken(v.authToken), client.WithAuthTokenProvider(v.authTokenProvider))
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +377,7 @@ func (v *VDR) Create(did *docdid.Doc,
 }
 
 // Read Orb DID.
-//nolint: funlen,gocyclo,gocognit
+// nolint: funlen,gocyclo,gocognit
 func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
 
@@ -1139,6 +1145,13 @@ func WithAuthToken(authToken string) Option {
 	}
 }
 
+// WithAuthTokenProvider add auth token provider.
+func WithAuthTokenProvider(p authTokenProvider) Option {
+	return func(opts *VDR) {
+		opts.authTokenProvider = p
+	}
+}
+
 // WithDomain option is setting domain.
 // to set multiple domains call this option multiple times.
 func WithDomain(domain string) Option {
@@ -1170,10 +1183,11 @@ func WithIPFSEndpoint(endpoint string) Option {
 
 // casReader.
 type casReader struct {
-	httpClient   httpClient
-	hl           *hashlink.HashLink
-	ipfsEndpoint string
-	authToken    string
+	httpClient        httpClient
+	hl                *hashlink.HashLink
+	ipfsEndpoint      string
+	authToken         string
+	authTokenProvider authTokenProvider
 }
 
 func (c *casReader) Read(cidWithPossibleHint string) ([]byte, error) {
@@ -1192,16 +1206,17 @@ func (c *casReader) Read(cidWithPossibleHint string) ([]byte, error) {
 
 		if c.ipfsEndpoint != "" {
 			return send(c.httpClient, nil,
-				http.MethodPost, fmt.Sprintf("%s/cat?arg=%s", c.ipfsEndpoint, cid), "")
+				http.MethodPost, fmt.Sprintf("%s/cat?arg=%s", c.ipfsEndpoint, cid), "", nil)
 		}
 
-		return send(c.httpClient, nil, http.MethodGet, fmt.Sprintf("%s/%s/%s", ipfsGlobal, "ipfs", cid), "")
+		return send(c.httpClient, nil, http.MethodGet, fmt.Sprintf("%s/%s/%s", ipfsGlobal, "ipfs", cid), "",
+			nil)
 	}
 
 	var errMsgs []string
 
 	for _, webCASEndpoint := range webcasLinks {
-		data, err := send(c.httpClient, nil, http.MethodGet, webCASEndpoint, c.authToken)
+		data, err := send(c.httpClient, nil, http.MethodGet, webCASEndpoint, c.authToken, c.authTokenProvider)
 		if err != nil {
 			errMsg := fmt.Sprintf("endpoint[%s]: %s", webCASEndpoint, err.Error())
 
@@ -1255,7 +1270,7 @@ func (c *casReader) getResourceHashWithPossibleLinks(hashWithPossibleHint string
 	return links, nil
 }
 
-func send(httpClient httpClient, req []byte, method, endpointURL, authToken string) ([]byte, error) {
+func send(httpClient httpClient, req []byte, method, endpointURL, token string, p authTokenProvider) ([]byte, error) {
 	var httpReq *http.Request
 
 	var err error
@@ -1275,6 +1290,17 @@ func send(httpClient httpClient, req []byte, method, endpointURL, authToken stri
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+
+	authToken := token
+
+	if p != nil {
+		v, errToken := p.AuthToken()
+		if errToken != nil {
+			return nil, errToken
+		}
+
+		authToken = "Bearer " + v
+	}
 
 	if authToken != "" {
 		httpReq.Header.Add("Authorization", "Bearer "+authToken)
