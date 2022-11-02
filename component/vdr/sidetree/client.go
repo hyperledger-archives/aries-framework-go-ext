@@ -47,11 +47,14 @@ type Client struct {
 	client            *http.Client
 	authToken         string
 	authTokenProvider authTokenProvider
+	sendRequest       func(req []byte, getEndpoints func() ([]string, error)) ([]byte, error)
 }
 
-// New return did bloc client.
+// New return sidetree client.
 func New(opts ...Option) *Client {
 	c := &Client{client: &http.Client{}}
+
+	c.sendRequest = c.defaultSendRequest
 
 	// Apply options
 	for _, opt := range opts {
@@ -74,21 +77,12 @@ func (c *Client) CreateDID(opts ...create.Option) (*docdid.DocResolution, error)
 		return nil, err
 	}
 
-	// TODO add logic for using different sidetree endpoint
-	// for now will use the first one
-	endpoints, err := createDIDOpts.GetEndpoints()
-	if err != nil {
-		return nil, err
-	}
-
-	sidetreeEndpoint := endpoints[0]
-
 	req, err := buildCreateRequest(createDIDOpts.MultiHashAlgorithm, createDIDOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build sidetree request: %w", err)
 	}
 
-	responseBytes, err := c.sendRequest(req, sidetreeEndpoint)
+	responseBytes, err := c.sendRequest(req, createDIDOpts.GetEndpoints)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send create sidetree request: %w", err)
 	}
@@ -109,6 +103,7 @@ func (c *Client) CreateDID(opts ...create.Option) (*docdid.DocResolution, error)
 		return nil, fmt.Errorf("failed to parse did document: %w", err)
 	}
 
+	// TODO: Talk to Firas about not including document metadata in create
 	return &docdid.DocResolution{DIDDocument: didDoc}, nil
 }
 
@@ -125,21 +120,12 @@ func (c *Client) UpdateDID(did string, opts ...update.Option) error {
 		return err
 	}
 
-	// TODO add logic for using different sidetree endpoint
-	// for now will use the first one
-	endpoints, err := updateDIDOpts.GetEndpoints()
-	if err != nil {
-		return err
-	}
-
-	sidetreeEndpoint := endpoints[0]
-
 	req, err := c.buildUpdateRequest(did, updateDIDOpts.MultiHashAlgorithm, updateDIDOpts)
 	if err != nil {
 		return fmt.Errorf("failed to build update request: %w", err)
 	}
 
-	_, err = c.sendRequest(req, sidetreeEndpoint)
+	_, err = c.sendRequest(req, updateDIDOpts.GetEndpoints)
 	if err != nil {
 		return fmt.Errorf("failed to send update did request: %w", err)
 	}
@@ -160,21 +146,12 @@ func (c *Client) RecoverDID(did string, opts ...recovery.Option) error {
 		return err
 	}
 
-	// TODO add logic for using different sidetree endpoint
-	// for now will use the first one
-	endpoints, err := recoverDIDOpts.GetEndpoints()
-	if err != nil {
-		return err
-	}
-
-	sidetreeEndpoint := endpoints[0]
-
 	req, err := buildRecoverRequest(did, recoverDIDOpts.MultiHashAlgorithm, recoverDIDOpts)
 	if err != nil {
 		return fmt.Errorf("failed to build sidetree request: %w", err)
 	}
 
-	_, err = c.sendRequest(req, sidetreeEndpoint)
+	_, err = c.sendRequest(req, recoverDIDOpts.GetEndpoints)
 	if err != nil {
 		return fmt.Errorf("failed to send recover sidetree request: %w", err)
 	}
@@ -195,21 +172,12 @@ func (c *Client) DeactivateDID(did string, opts ...deactivate.Option) error {
 		return err
 	}
 
-	// TODO add logic for using different sidetree endpoint
-	// for now will use the first one
-	endpoints, err := deactivateDIDOpts.GetEndpoints()
-	if err != nil {
-		return err
-	}
-
-	sidetreeEndpoint := endpoints[0]
-
 	req, err := buildDeactivateRequest(did, deactivateDIDOpts)
 	if err != nil {
 		return fmt.Errorf("failed to build sidetree request: %w", err)
 	}
 
-	_, err = c.sendRequest(req, sidetreeEndpoint)
+	_, err = c.sendRequest(req, deactivateDIDOpts.GetEndpoints)
 	if err != nil {
 		return fmt.Errorf("failed to send deactivate sidetree request: %w", err)
 	}
@@ -226,10 +194,6 @@ func validateCreateReq(createDIDOpts *create.Opts) error {
 		return fmt.Errorf("update public key is required")
 	}
 
-	if createDIDOpts.GetEndpoints == nil {
-		return fmt.Errorf("sidetree get endpoints func is required")
-	}
-
 	return nil
 }
 
@@ -244,10 +208,6 @@ func validateUpdateReq(updateDIDOpts *update.Opts) error {
 
 	if updateDIDOpts.OperationCommitment == "" {
 		return fmt.Errorf("operation commitment is required")
-	}
-
-	if updateDIDOpts.GetEndpoints == nil {
-		return fmt.Errorf("sidetree get endpoints func is required")
 	}
 
 	return nil
@@ -270,10 +230,6 @@ func validateRecoverReq(recoverDIDOpts *recovery.Opts) error {
 		return fmt.Errorf("operation commitment is required")
 	}
 
-	if recoverDIDOpts.GetEndpoints == nil {
-		return fmt.Errorf("sidetree get endpoints func is required")
-	}
-
 	return nil
 }
 
@@ -284,10 +240,6 @@ func validateDeactivateReq(deactivateDIDOpts *deactivate.Opts) error {
 
 	if deactivateDIDOpts.OperationCommitment == "" {
 		return fmt.Errorf("operation commitment is required")
-	}
-
-	if deactivateDIDOpts.GetEndpoints == nil {
-		return fmt.Errorf("sidetree get endpoints func is required")
 	}
 
 	return nil
@@ -457,7 +409,20 @@ func buildDeactivateRequest(did string, deactivateDIDOpts *deactivate.Opts) ([]b
 	})
 }
 
-func (c *Client) sendRequest(req []byte, endpointURL string) ([]byte, error) {
+func (c *Client) defaultSendRequest(req []byte, getEndpoints func() ([]string, error)) ([]byte, error) {
+	if getEndpoints == nil {
+		return nil, fmt.Errorf("sidetree get endpoints func is required")
+	}
+
+	endpoints, err := getEndpoints()
+	if err != nil {
+		return nil, fmt.Errorf("sidetree get endpoints: %w", err)
+	}
+
+	// TODO add logic for using different sidetree endpoint
+	// for now will use the first one
+	endpointURL := endpoints[0]
+
 	httpReq, err := http.NewRequestWithContext(context.Background(),
 		http.MethodPost, endpointURL, bytes.NewReader(req))
 	if err != nil {
