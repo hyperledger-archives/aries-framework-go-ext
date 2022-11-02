@@ -68,15 +68,23 @@ func TestClient_DeactivateDID(t *testing.T) {
 	t.Run("test error from get endpoints", func(t *testing.T) {
 		v := sidetree.New()
 
-		_, privKey, err := ed25519.GenerateKey(rand.Reader)
+		pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		err = v.DeactivateDID("did:ex:123", deactivate.WithSigner(newSignerMock(t, privKey)),
-			deactivate.WithOperationCommitment("value"))
+		signingPubKeyJWK, err := pubkey.GetPublicKeyJWK(pubKey)
+		require.NoError(t, err)
+
+		rv, err := commitment.GetRevealValue(signingPubKeyJWK, 18)
+		require.NoError(t, err)
+
+		err = v.DeactivateDID("did:ex:123",
+			deactivate.WithSigner(newSignerMock(t, privKey)),
+			deactivate.WithOperationCommitment(rv))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "sidetree get endpoints func is required")
 
-		err = v.DeactivateDID("did:ex:123", deactivate.WithOperationCommitment("value"),
+		err = v.DeactivateDID("did:ex:123",
+			deactivate.WithOperationCommitment(rv),
 			deactivate.WithSigner(newSignerMock(t, privKey)),
 			deactivate.WithSidetreeEndpoint(func() ([]string, error) {
 				return nil, fmt.Errorf("failed to get endpoint")
@@ -213,20 +221,41 @@ func TestClient_RecoverDID(t *testing.T) {
 	t.Run("test error from get endpoints", func(t *testing.T) {
 		v := sidetree.New()
 
-		pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+		pubKey, _, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		err = v.RecoverDID("did:ex:123", recovery.WithOperationCommitment("value"),
-			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithNextRecoveryPublicKey(pubKey),
-			recovery.WithSigner(newSignerMock(t, privKey)))
+		signingKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+
+		signingPubKeyJWK, err := pubkey.GetPublicKeyJWK(&signingKey.PublicKey)
+		require.NoError(t, err)
+
+		rv, err := commitment.GetRevealValue(signingPubKeyJWK, 18)
+		require.NoError(t, err)
+
+		err = v.RecoverDID("did:ex:123",
+			recovery.WithSigner(newSignerMock(t, signingKey)), recovery.WithOperationCommitment(rv),
+			recovery.WithNextRecoveryPublicKey(pubKey),
+			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&doc.PublicKey{
+				ID:   "key3",
+				Type: doc.Ed25519VerificationKey2018,
+				JWK:  jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
+			}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "sidetree get endpoints func is required")
 
-		err = v.RecoverDID("did:ex:123", recovery.WithOperationCommitment("value"),
-			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithNextRecoveryPublicKey(pubKey),
-			recovery.WithSigner(newSignerMock(t, privKey)), recovery.WithSidetreeEndpoint(func() ([]string, error) {
+		err = v.RecoverDID("did:ex:123",
+			recovery.WithSigner(newSignerMock(t, signingKey)), recovery.WithOperationCommitment(rv),
+			recovery.WithNextRecoveryPublicKey(pubKey),
+			recovery.WithNextUpdatePublicKey(pubKey), recovery.WithPublicKey(&doc.PublicKey{
+				ID:   "key3",
+				Type: doc.Ed25519VerificationKey2018,
+				JWK:  jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: pubKey}},
+			}),
+			recovery.WithSidetreeEndpoint(func() ([]string, error) {
 				return nil, fmt.Errorf("failed to get endpoint")
 			}))
+
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get endpoint")
 	})
@@ -438,18 +467,34 @@ func TestClient_UpdateDID(t *testing.T) {
 	t.Run("test error from get endpoints", func(t *testing.T) {
 		v := sidetree.New()
 
-		pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+		pubKey, _, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		err = v.UpdateDID("did:ex:123", update.WithOperationCommitment("value"), update.WithNextUpdatePublicKey(pubKey),
-			update.WithSigner(newSignerMock(t, privKey)))
+		signingKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+
+		signingPubKeyJWK, err := pubkey.GetPublicKeyJWK(&signingKey.PublicKey)
+		require.NoError(t, err)
+
+		rv, err := commitment.GetRevealValue(signingPubKeyJWK, 18)
+		require.NoError(t, err)
+
+		err = v.UpdateDID("did:ex:123",
+			update.WithSigner(newSignerMock(t, signingKey)),
+			update.WithOperationCommitment(rv),
+			update.WithNextUpdatePublicKey(pubKey),
+			update.WithRemoveService("svc1"))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "sidetree get endpoints func is required")
 
-		err = v.UpdateDID("did:ex:123", update.WithOperationCommitment("value"), update.WithNextUpdatePublicKey(pubKey),
-			update.WithSigner(newSignerMock(t, privKey)), update.WithSidetreeEndpoint(func() ([]string, error) {
+		err = v.UpdateDID("did:ex:123",
+			update.WithSigner(newSignerMock(t, signingKey)),
+			update.WithOperationCommitment(rv),
+			update.WithNextUpdatePublicKey(pubKey),
+			update.WithSidetreeEndpoint(func() ([]string, error) {
 				return nil, fmt.Errorf("failed to get endpoints")
-			}))
+			}),
+			update.WithRemoveService("svc1"))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get endpoints")
 	})
@@ -613,18 +658,36 @@ func TestClient_CreateDID(t *testing.T) {
 	t.Run("test error from get endpoints", func(t *testing.T) {
 		v := sidetree.New()
 
-		pubKey, _, err := ed25519.GenerateKey(rand.Reader)
+		ed25519RecoveryPubKey, _, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		didResol, err := v.CreateDID(create.WithUpdatePublicKey(pubKey), create.WithRecoveryPublicKey(pubKey))
-		require.Error(t, err)
+		ecUpdatePrivKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+
+		didResol, err := v.CreateDID(create.WithRecoveryPublicKey(ed25519RecoveryPubKey),
+			create.WithUpdatePublicKey(ecUpdatePrivKey.Public()),
+			create.WithPublicKey(&doc.PublicKey{
+				ID:       "key1",
+				Type:     doc.JWSVerificationKey2020,
+				JWK:      jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: ed25519RecoveryPubKey}},
+				Purposes: []string{doc.KeyPurposeAuthentication},
+			}))
+
 		require.Contains(t, err.Error(), "sidetree get endpoints func is required")
 		require.Nil(t, didResol)
 
-		didResol, err = v.CreateDID(create.WithUpdatePublicKey(pubKey), create.WithRecoveryPublicKey(pubKey),
+		didResol, err = v.CreateDID(create.WithRecoveryPublicKey(ed25519RecoveryPubKey),
+			create.WithUpdatePublicKey(ecUpdatePrivKey.Public()),
+			create.WithPublicKey(&doc.PublicKey{
+				ID:       "key1",
+				Type:     doc.JWSVerificationKey2020,
+				JWK:      jwk.JWK{JSONWebKey: gojose.JSONWebKey{Key: ed25519RecoveryPubKey}},
+				Purposes: []string{doc.KeyPurposeAuthentication},
+			}),
 			create.WithSidetreeEndpoint(func() ([]string, error) {
 				return nil, fmt.Errorf("failed to get endpoints")
 			}))
+
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get endpoints")
 		require.Nil(t, didResol)
@@ -676,6 +739,26 @@ func TestClient_CreateDID(t *testing.T) {
 			}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to parse did document")
+		require.Nil(t, didResol)
+	})
+
+	t.Run("test error from sidetree operation request function", func(t *testing.T) {
+		v := sidetree.New(sidetree.WithSidetreeOperationRequestFnc(func(req []byte, getEndpoints func() ([]string, error)) ([]byte, error) {
+			return nil, fmt.Errorf("send operation request error")
+		}))
+
+		ed25519RecoveryPubKey, _, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		ed25519UpdatePubKey, _, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		didResol, err := v.CreateDID(create.WithRecoveryPublicKey(ed25519RecoveryPubKey),
+			create.WithUpdatePublicKey(ed25519UpdatePubKey), create.WithSidetreeEndpoint(func() ([]string, error) {
+				return []string{"https://www.domain.com"}, nil
+			}))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to send create sidetree request: send operation request error")
 		require.Nil(t, didResol)
 	})
 
