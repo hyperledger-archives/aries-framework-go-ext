@@ -103,7 +103,6 @@ func (c *Client) CreateDID(opts ...create.Option) (*docdid.DocResolution, error)
 		return nil, fmt.Errorf("failed to parse did document: %w", err)
 	}
 
-	// TODO: Talk to Firas about not including document metadata in create
 	return &docdid.DocResolution{DIDDocument: didDoc}, nil
 }
 
@@ -283,7 +282,10 @@ func buildCreateRequest(multiHashAlgorithm uint, createDIDOpts *create.Opts) ([]
 		RecoveryCommitment: recoveryCommitment,
 		UpdateCommitment:   updateCommitment,
 		MultihashCode:      multiHashAlgorithm,
-		AnchorOrigin:       createDIDOpts.AnchorOrigin,
+	}
+
+	if createDIDOpts.AnchorOrigin != "" {
+		createRequestInfo.AnchorOrigin = createDIDOpts.AnchorOrigin
 	}
 
 	req, err := client.NewCreateRequest(createRequestInfo)
@@ -371,12 +373,18 @@ func buildRecoverRequest(did string, multiHashAlgorithm uint, recoverDIDOpts *re
 		return nil, err
 	}
 
-	req, err := client.NewRecoverRequest(&client.RecoverRequestInfo{
+	recoverRequestInfo := &client.RecoverRequestInfo{
 		DidSuffix: didSuffix, RevealValue: rv, OpaqueDocument: string(docBytes),
 		RecoveryCommitment: nextRecoveryCommitment, UpdateCommitment: nextUpdateCommitment,
 		MultihashCode: multiHashAlgorithm, Signer: recoverDIDOpts.Signer,
-		RecoveryKey: recoverDIDOpts.Signer.PublicKeyJWK(), AnchorOrigin: recoverDIDOpts.AnchorOrigin,
-	})
+		RecoveryKey: recoverDIDOpts.Signer.PublicKeyJWK(),
+	}
+
+	if recoverDIDOpts.AnchorOrigin != "" {
+		recoverRequestInfo.AnchorOrigin = recoverDIDOpts.AnchorOrigin
+	}
+
+	req, err := client.NewRecoverRequest(recoverRequestInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sidetree request: %w", err)
 	}
