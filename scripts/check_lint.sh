@@ -28,13 +28,6 @@ fi
 
 DOCKER_CMD=${DOCKER_CMD:-docker}
 
-if [ -z "${EXCLUDE_LINT_PATH}" ]; then
-  exclude=""
-else
-  exclude="-path ${EXCLUDE_LINT_PATH} -prune -o"
-fi
-
-
 if [ -z "${GOLANGCI_LINT_IMAGE}" ]; then
   lint_image="golangci/golangci-lint:v1.39.0"
 else
@@ -57,7 +50,7 @@ function clean ()
 trap exit INT
 trap clean EXIT
 
-for i in $(find $lint_path $exclude -name "go.mod")
+for i in $(find $lint_path -name "go.mod")
 do
   pushd "$(dirname $i)" > /dev/null
   if [ -z $(go list 2> /dev/null) ]; then
