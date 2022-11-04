@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -461,7 +460,7 @@ func (c *Client) defaultSendRequest(req []byte, getEndpoints func() ([]string, e
 
 	defer closeResponseBody(resp.Body)
 
-	responseBytes, err := ioutil.ReadAll(resp.Body)
+	responseBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response : %w", err)
 	}
@@ -474,7 +473,7 @@ func (c *Client) defaultSendRequest(req []byte, getEndpoints func() ([]string, e
 	return responseBytes, nil
 }
 
-func createUpdatePatches(updateDIDOpts *update.Opts) ([]patch.Patch, error) { //nolint: gocyclo
+func createUpdatePatches(updateDIDOpts *update.Opts) ([]patch.Patch, error) {
 	var patches []patch.Patch
 
 	if len(updateDIDOpts.RemoveAlsoKnownAs) != 0 {

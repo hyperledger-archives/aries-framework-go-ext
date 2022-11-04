@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package api include interface
-//
 package api
 
 import "github.com/trustbloc/sidetree-core-go/pkg/jws"

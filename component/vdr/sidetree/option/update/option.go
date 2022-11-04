@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package update implements sidetree update did option
-//
 package update
 
 import (
