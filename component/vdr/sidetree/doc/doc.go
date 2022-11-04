@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package doc implements sidetree document
-//
 package doc
 
 import (
@@ -166,7 +165,9 @@ func PopulateRawServices(services []docdid.Service) ([]map[string]interface{}, e
 			rawService[jsonldServicePoint] = json.RawMessage(serviceEndpoint)
 		}
 
-		rawService[jsonldPriority] = services[i].Priority
+		if services[i].Priority != nil {
+			rawService[jsonldPriority] = services[i].Priority
+		}
 
 		if len(services[i].RecipientKeys) > 0 {
 			rawService[jsonldRecipientKeys] = services[i].RecipientKeys

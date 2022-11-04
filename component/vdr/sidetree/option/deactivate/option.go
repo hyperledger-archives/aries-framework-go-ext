@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package deactivate implements sidetree deactivate did option
-//
 package deactivate
 
 import (

@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package recovery implements sidetree recovery did option
-//
 package recovery
 
 import (
