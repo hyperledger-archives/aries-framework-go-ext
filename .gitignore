@@ -16,3 +16,4 @@ test/bdd/vdr/orb/fixtures/orb/export
 *.log
 
 .build
+**/vendor
