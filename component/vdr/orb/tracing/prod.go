@@ -1,3 +1,4 @@
+//go:build !trace
 // +build !trace
 
 /*
@@ -6,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package tracing implement trace
-//
 package tracing
 
 import (

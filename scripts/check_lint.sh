@@ -10,8 +10,10 @@ set -e
 echo "Running $0"
 
 echo "Run specific linter by setting LINT_PATH and GOLANGCI_LINT_IMAGE environment variables before running make lint"
-echo "Sample #1: export LINT_PATH=./component/vdr/orb"
+echo "Sample #1: export LINT_PATH=./component/vdr/trustbloc"
 echo "Sample #1: export GOLANGCI_LINT_IMAGE="golangci/golangci-lint:v1.39.0""
+echo "Sample #1: export LINT_PATH=./component/vdr/orb"
+echo "Sample #1: export GOLANGCI_LINT_IMAGE="golangci/golangci-lint:v1.50.0""
 echo "Sample #2: export LINT_PATH=./component/vdr/longform"
 echo "Sample #2: export GOLANGCI_LINT_IMAGE="golangci/golangci-lint:v1.50.0""
 echo "Sample #3: export LINT_PATH=./component/vdr/sidetree"

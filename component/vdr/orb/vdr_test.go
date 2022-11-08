@@ -3,7 +3,6 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-// nolint: testpackage
 package orb
 
 import (
@@ -31,7 +30,6 @@ import (
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/update"
 )
 
-// nolint: lll
 const validDocResolution = `
 {
    "@context":"https://w3id.org/did-resolution/v1",
@@ -55,7 +53,6 @@ const validDocResolution = `
 }
 `
 
-// nolint: lll
 const validDocResolutionCachedUpdate = `
 {
    "@context":"https://w3id.org/did-resolution/v1",
@@ -79,7 +76,6 @@ const validDocResolutionCachedUpdate = `
 }
 `
 
-//nolint:lll
 const validDoc = `{
   "@context": ["https://w3id.org/did/v1"],
   "id": "did:example:21tDAKCERh95uGgKbJNHYp",
