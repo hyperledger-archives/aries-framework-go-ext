@@ -43,7 +43,7 @@ func (d *dockerCmdlineHelper) issueDockerCommand(cmdArgs []string) (string, erro
 
 	var err error
 
-	cmd := exec.Command("docker", cmdArgs...) //nolint: gosec
+	cmd := exec.Command("docker", cmdArgs...)
 	cmdOut, err = cmd.CombinedOutput()
 
 	return string(cmdOut), err
@@ -112,7 +112,7 @@ func (d *dockerCmdlineHelper) RemoveContainersWithNamePrefix(namePrefix string) 
 // GenerateSplitLogs generates a log file named logName, formatted similarly to docker-compose logs,
 // but without all the output from all the containers being mixed in together.
 // Each container has all its output in one section of the log, for easy reading.
-func GenerateSplitLogs(logName string) error { // nolint:funlen
+func GenerateSplitLogs(logName string) error { //nolint:funlen
 	helper := dockerCmdlineHelper{}
 
 	containerNames, err := helper.issueDockerCommand([]string{
@@ -130,7 +130,7 @@ func GenerateSplitLogs(logName string) error { // nolint:funlen
 	noColor, colorList := ansiColors()
 	colorIdx := 0
 
-	f, err := os.OpenFile(logName, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600) // nolint: gosec
+	f, err := os.OpenFile(logName, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
@@ -155,13 +155,13 @@ func GenerateSplitLogs(logName string) error { // nolint:funlen
 
 		var logLines []string
 
-		rawLog, _ := helper.issueDockerCommand([]string{"logs", name}) // nolint:errcheck
+		rawLog, _ := helper.issueDockerCommand([]string{"logs", name})
 		logLines = splitDockerCommandResults(rawLog)
 
 		for _, line := range logLines {
-			_, _ = out.WriteString(formattedName) // nolint:errcheck
-			_, _ = out.WriteString(line)          // nolint:errcheck
-			_ = out.WriteByte('\n')               // nolint:errcheck
+			_, _ = out.WriteString(formattedName)
+			_, _ = out.WriteString(line)
+			_ = out.WriteByte('\n')
 		}
 
 		colorIdx++
@@ -179,7 +179,7 @@ func GenerateSplitLogs(logName string) error { // nolint:funlen
 }
 
 // returns the ansi terminal format reset code and a list of ansi color codes.
-func ansiColors() (string, []string) { //nolint:gocritic
+func ansiColors() (string, []string) {
 	return "\033[0m", []string{
 		"\033[31m", // red
 		"\033[32m", // green

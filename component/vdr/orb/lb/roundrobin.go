@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package lb implement load balancer
-//
 package lb
 
 import (

@@ -46,7 +46,7 @@ func TestCounter(t *testing.T) {
 		for g := 0; g < concurrency; g++ {
 			go func() {
 				defer wg.Done()
-				n := rand.Intn(maxN) + 1 //nolint: gosec
+				n := rand.Intn(maxN) + 1
 				for j := 0; j < iterations; j++ {
 					i := counter.Next(n)
 					require.True(t, i < n, "index should be less than %d but was %d", n, i)

@@ -1,3 +1,4 @@
+//go:build trace
 // +build trace
 
 /*

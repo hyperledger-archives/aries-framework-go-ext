@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package ldcontext implement ld context
-//
 package ldcontext
 
 import (
@@ -18,7 +17,6 @@ import (
 
 const dataDir = "data"
 
-// nolint: gochecknoglobals
 var (
 	//go:embed data/*.json
 	fs embed.FS
@@ -26,7 +24,7 @@ var (
 	contexts []ldcontext.Document
 	once     sync.Once
 	errOnce  error
-)
+) //nolint: gochecknoglobals
 
 // GetAll returns all predefined contexts.
 func GetAll() ([]ldcontext.Document, error) {

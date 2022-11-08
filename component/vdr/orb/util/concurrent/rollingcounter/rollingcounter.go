@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package rollingcounter implement rolling counter
-//
 package rollingcounter
 
 import (

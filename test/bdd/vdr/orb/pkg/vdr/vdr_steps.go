@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package vdr implements vdr steps
-//
 package vdr
 
 import (
@@ -195,7 +194,7 @@ func (e *Steps) recoverDID(keyType, signatureSuite string) error {
 }
 
 func (e *Steps) updateDID(keyType, signatureSuite, resolveDID string) error {
-	time.Sleep(30 * time.Second) //nolint:gomnd
+	time.Sleep(30 * time.Second)
 
 	kid, pubKey, err := e.getPublicKey(keyType)
 	if err != nil {
@@ -354,7 +353,7 @@ func (e *Steps) resolveDIDWithHTTPSHint() error {
 }
 
 func (e *Steps) resolveDIDWithoutDomain(did string) (*ariesdid.DocResolution, error) {
-	time.Sleep(3 * time.Second) //nolint: gomnd
+	time.Sleep(3 * time.Second)
 
 	var docResolution *ariesdid.DocResolution
 
@@ -385,7 +384,7 @@ func (e *Steps) resolveDIDWithoutDomain(did string) (*ariesdid.DocResolution, er
 }
 
 func (e *Steps) resolveDID(did string) (*ariesdid.DocResolution, error) {
-	time.Sleep(3 * time.Second) //nolint: gomnd
+	time.Sleep(3 * time.Second)
 
 	var docResolution *ariesdid.DocResolution
 
@@ -469,11 +468,11 @@ func (e *Steps) resolveUpdatedDID() error {
 			docResolution.DIDDocument.ID, e.createdDoc.DIDDocument.ID)
 	}
 
-	if len(docResolution.DIDDocument.Service) != 2 { //nolint:gomnd
+	if len(docResolution.DIDDocument.Service) != 2 {
 		return fmt.Errorf("resolved updated did service count is not equal to %d", 2)
 	}
 
-	if len(docResolution.DIDDocument.Authentication) != 2 { //nolint:gomnd
+	if len(docResolution.DIDDocument.Authentication) != 2 {
 		return fmt.Errorf("resolved updated did authentication count is not equal to %d", 2)
 	}
 
@@ -495,11 +494,11 @@ func (e *Steps) resolveUpdatedDIDFromCache() error {
 			docResolution.DIDDocument.ID, e.createdDoc.DIDDocument.ID)
 	}
 
-	if len(docResolution.DIDDocument.Service) != 2 { //nolint:gomnd
+	if len(docResolution.DIDDocument.Service) != 2 {
 		return fmt.Errorf("resolved updated did service count is not equal to %d", 2)
 	}
 
-	if len(docResolution.DIDDocument.Authentication) != 2 { //nolint:gomnd
+	if len(docResolution.DIDDocument.Authentication) != 2 {
 		return fmt.Errorf("resolved updated did authentication count is not equal to %d", 2)
 	}
 
@@ -574,7 +573,7 @@ func (e *Steps) resolveCreatedDID(keyType, signatureSuite string) error {
 	return nil
 }
 
-func (e *Steps) getPublicKey(keyType string) (string, []byte, error) { //nolint:gocritic
+func (e *Steps) getPublicKey(keyType string) (string, []byte, error) {
 	var kt kms.KeyType
 
 	switch keyType {
@@ -638,7 +637,7 @@ func (e *Steps) verifyPublicKeyAndType(didDoc *ariesdid.Doc, signatureSuite stri
 }
 
 func (e *Steps) executeScript(scriptPath string) error {
-	_, err := exec.Command(scriptPath).CombinedOutput() //nolint: gosec
+	_, err := exec.Command(scriptPath).CombinedOutput()
 	if err != nil {
 		return err
 	}

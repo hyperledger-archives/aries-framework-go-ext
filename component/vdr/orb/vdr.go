@@ -15,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
@@ -203,7 +202,7 @@ func New(keyRetriever KeyRetriever, opts ...Option) (*VDR, error) {
 
 	if v.httpClient == nil {
 		v.httpClient = &http.Client{
-			Timeout: 20 * time.Second, //nolint: gomnd
+			Timeout: 20 * time.Second,
 			Transport: &http2.Transport{
 				TLSClientConfig: v.tlsConfig,
 			},
@@ -287,8 +286,7 @@ func (v *VDR) Close() error {
 }
 
 // Create did doc.
-// nolint: gocyclo,funlen
-func (v *VDR) Create(did *docdid.Doc,
+func (v *VDR) Create(did *docdid.Doc, //nolint:gocyclo
 	opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
 
@@ -377,8 +375,8 @@ func (v *VDR) Create(did *docdid.Doc,
 }
 
 // Read Orb DID.
-// nolint: funlen,gocyclo,gocognit
-func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
+
+func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) { //nolint: funlen,gocyclo
 	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
 
 	// Apply options
@@ -505,7 +503,7 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 	return docResolution, nil
 }
 
-func (v *VDR) verifyDID(didRes *docdid.DocResolution) error { // nolint:gocognit,gocyclo,funlen
+func (v *VDR) verifyDID(didRes *docdid.DocResolution) error { //nolint:gocognit,gocyclo
 	check := false
 
 	// verify resolution result
@@ -817,7 +815,7 @@ type pk struct {
 	publicKey *doc.PublicKey
 }
 
-func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*pk, error) { // nolint:funlen,gocyclo
+func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*pk, error) {
 	pksMap := make(map[string]*pk)
 
 	ver := make([]docdid.Verification, 0)
@@ -975,7 +973,7 @@ func sliceToMap(values []string) map[string]bool {
 	return m
 }
 
-func getUpdatedPKKeysID(currentDID, updatedDID *docdid.Doc) ([]update.Option, error) { //nolint:gocognit,gocyclo
+func getUpdatedPKKeysID(currentDID, updatedDID *docdid.Doc) ([]update.Option, error) {
 	var updateOpt []update.Option
 
 	existKeys := make(map[string]struct{})
@@ -1060,7 +1058,6 @@ func (v *VDR) sidetreeResolve(ctx context.Context, url, did string,
 	return docResolution, nil
 }
 
-// nolint: gocyclo
 func (v *VDR) checkDID(did string, resolveDIDRetry *ResolveDIDRetry, updateCommitment string,
 	checkAnchored bool, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
 	if resolveDIDRetry.MaxNumber < 1 {
@@ -1277,7 +1274,7 @@ func send(httpClient httpClient, req []byte, method, endpointURL, token string, 
 
 	if len(req) == 0 {
 		httpReq, err = http.NewRequestWithContext(context.Background(),
-			method, endpointURL, nil)
+			method, endpointURL, http.NoBody)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create http request: %w", err)
 		}
@@ -1313,7 +1310,7 @@ func send(httpClient httpClient, req []byte, method, endpointURL, token string, 
 
 	defer closeResponseBody(resp.Body)
 
-	responseBytes, err := ioutil.ReadAll(resp.Body)
+	responseBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response : %w", err)
 	}

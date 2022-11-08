@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 // Package bdd test
-//
 package bdd_test
 
 import (
