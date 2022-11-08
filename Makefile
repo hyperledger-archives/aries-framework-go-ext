@@ -26,8 +26,7 @@ license:
 
 .PHONY: lint
 lint:
-	@EXCLUDE_LINT_PATH=./component/vdr/indy scripts/check_lint.sh
-	@LINT_PATH=./component/vdr/indy GOLANGCI_LINT_IMAGE="canislabs/golangci-lint:latest" scripts/check_lint.sh
+	scripts/check_lint.sh
 
 .PHONY: generate-vdr-trustbloc-test-keys
 generate-vdr-trustbloc-test-keys:
