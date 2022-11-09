@@ -48,7 +48,7 @@ func TestVDRI_Accept(t *testing.T) {
 	t.Run("test return false", func(t *testing.T) {
 		v, err := New()
 		require.NoError(t, err)
-		require.False(t, v.Accept("did:different"))
+		require.False(t, v.Accept("different"))
 	})
 }
 
@@ -67,10 +67,10 @@ func TestVDRI_Options(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
 		docLoader := createTestDocLoader(t)
 
-		v, err := New(WithDIDMethod("did:different"), WithDocumentLoader(docLoader))
+		v, err := New(WithDIDMethod("different"), WithDocumentLoader(docLoader))
 		require.NoError(t, err)
 		require.False(t, v.Accept(defaultDIDMethod))
-		require.True(t, v.Accept("did:different"))
+		require.True(t, v.Accept("different"))
 
 		err = v.Close()
 		require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestVDRI_Read(t *testing.T) {
 		v, err := New()
 		require.NoError(t, err)
 
-		longFormDID := fmt.Sprintf("%s:%s:%s", defaultDIDMethod, didSuffix, requestJCS)
+		longFormDID := fmt.Sprintf("did:%s:%s:%s", defaultDIDMethod, didSuffix, requestJCS)
 
 		docResolution, err := v.Read(longFormDID)
 		require.NoError(t, err)
@@ -104,7 +104,7 @@ func TestVDRI_Read(t *testing.T) {
 		require.Equal(t, 1, len(didDoc.CapabilityDelegation))
 		require.Equal(t, 1, len(didDoc.KeyAgreement))
 
-		require.Equal(t, docResolution.DocumentMetadata.EquivalentID[0], fmt.Sprintf("%s:%s", defaultDIDMethod, didSuffix))
+		require.Equal(t, docResolution.DocumentMetadata.EquivalentID[0], fmt.Sprintf("did:%s:%s", defaultDIDMethod, didSuffix))
 	})
 
 	t.Run("test sidetree document handler error", func(t *testing.T) {
@@ -113,7 +113,7 @@ func TestVDRI_Read(t *testing.T) {
 
 		v.sidetreeDocHandler = &mockDocHandler{Err: fmt.Errorf("document handler error")}
 
-		longFormDID := fmt.Sprintf("%s:%s:%s", defaultDIDMethod, didSuffix, requestJCS)
+		longFormDID := fmt.Sprintf("did:%s:%s:%s", defaultDIDMethod, didSuffix, requestJCS)
 
 		docResolution, err := v.Read(longFormDID)
 		require.Error(t, err)
@@ -127,7 +127,7 @@ func TestVDRI_Read(t *testing.T) {
 
 		v.sidetreeDocHandler = &mockDocHandler{ResolutionResult: &document.ResolutionResult{}}
 
-		longFormDID := fmt.Sprintf("%s:%s:%s", defaultDIDMethod, didSuffix, requestJCS)
+		longFormDID := fmt.Sprintf("did:%s:%s:%s", defaultDIDMethod, didSuffix, requestJCS)
 
 		docResolution, err := v.Read(longFormDID)
 		require.Error(t, err)

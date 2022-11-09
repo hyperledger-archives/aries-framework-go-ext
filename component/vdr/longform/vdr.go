@@ -35,7 +35,7 @@ const (
 	RecoveryPublicKeyOpt = "recoveryPublicKey"
 
 	sha2_256         = 18
-	defaultDIDMethod = "did:ion"
+	defaultDIDMethod = "ion"
 )
 
 type sidetreeClient interface {
@@ -76,7 +76,7 @@ func New(opts ...Option) (*VDR, error) {
 
 	var err error
 
-	v.sidetreeDocHandler, err = dochandler.New(v.method)
+	v.sidetreeDocHandler, err = dochandler.New(fmt.Sprintf("did:%s", v.method))
 	if err != nil {
 		return nil, err
 	}
