@@ -88,7 +88,7 @@ require (
 	github.com/square/go-jose/v3 v3.0.0-20200630053402-0a67ce9b0693 // indirect
 	github.com/stretchr/testify v1.8.1 // indirect
 	github.com/teserakt-io/golang-ed25519 v0.0.0-20210104091850-3888c087a4c8 // indirect
-	github.com/trustbloc/orb v1.0.0-rc3.0.20221110183921-dc5feded4796 // indirect
+	github.com/trustbloc/orb v1.0.0-rc4.0.20221129223433-07e05f2f6e0a // indirect
 	github.com/trustbloc/vct v1.0.0-rc4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
