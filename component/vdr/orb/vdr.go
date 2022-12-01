@@ -276,7 +276,7 @@ func createJSONLDDocumentLoader() (jsonld.DocumentLoader, error) {
 }
 
 // Accept did method.
-func (v *VDR) Accept(method string) bool {
+func (v *VDR) Accept(method string, opts ...vdrapi.DIDMethodOption) bool {
 	return method == DIDMethod
 }
 

@@ -36,6 +36,12 @@ const (
 
 	sha2_256         = 18
 	defaultDIDMethod = "ion"
+
+	// DIDAcceptOpt is DID accept option.
+	DIDAcceptOpt = "didAcceptOpt"
+
+	// VDRAcceptOpt is VDR accept option.
+	VDRAcceptOpt = "vdrAcceptOpt"
 )
 
 type sidetreeClient interface {
@@ -124,8 +130,39 @@ func createJSONLDDocumentLoader() (jsonld.DocumentLoader, error) {
 }
 
 // Accept did method.
-func (v *VDR) Accept(method string) bool {
-	return method == v.method
+func (v *VDR) Accept(method string, opts ...vdrapi.DIDMethodOption) bool {
+	if method != v.method {
+		return false
+	}
+
+	// method is valid; now check additional info (if present)
+	acceptOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
+
+	// apply options
+	for _, opt := range opts {
+		opt(acceptOpts)
+	}
+
+	// vdr accept option can be provided as additional clue for choosing (or rejecting) VDR
+	vdrAcceptObj, ok := acceptOpts.Values[VDRAcceptOpt]
+	if ok {
+		vdrAccept, strOk := vdrAcceptObj.(string)
+		if strOk {
+			return vdrAccept == "long-form"
+		}
+	}
+
+	// DID accept option is always provided by registry for read, update and deactivate.
+	didObj, ok := acceptOpts.Values[DIDAcceptOpt]
+	if ok {
+		did, strOk := didObj.(string)
+		if strOk {
+			didParts := strings.Split(did, ":")
+			return len(didParts) > 3
+		}
+	}
+
+	return false
 }
 
 // Close vdr.

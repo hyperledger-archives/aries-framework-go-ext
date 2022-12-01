@@ -39,16 +39,52 @@ const (
 )
 
 func TestVDRI_Accept(t *testing.T) {
-	t.Run("test success", func(t *testing.T) {
+	t.Run("test success - did accept option", func(t *testing.T) {
 		v, err := New()
 		require.NoError(t, err)
-		require.True(t, v.Accept(defaultDIDMethod))
+		require.True(t, v.Accept(defaultDIDMethod,
+			vdrapi.WithOption(DIDAcceptOpt, "did:ion:suffix:request")))
 	})
 
-	t.Run("test return false", func(t *testing.T) {
+	t.Run("test success - vdr accept option", func(t *testing.T) {
+		v, err := New()
+		require.NoError(t, err)
+		require.True(t, v.Accept(defaultDIDMethod,
+			vdrapi.WithOption(VDRAcceptOpt, "long-form")))
+	})
+
+	t.Run("test success - vdr accept option and did accept option (vdr accept is processed first)", func(t *testing.T) {
+		v, err := New()
+		require.NoError(t, err)
+		require.True(t, v.Accept(defaultDIDMethod,
+			vdrapi.WithOption(VDRAcceptOpt, "long-form"),
+			vdrapi.WithOption(DIDAcceptOpt, "did:ion:suffix")))
+	})
+
+	t.Run("test return false - different method", func(t *testing.T) {
 		v, err := New()
 		require.NoError(t, err)
 		require.False(t, v.Accept("different"))
+	})
+
+	t.Run("test return false - short form did", func(t *testing.T) {
+		v, err := New()
+		require.NoError(t, err)
+		require.False(t, v.Accept(defaultDIDMethod,
+			vdrapi.WithOption(DIDAcceptOpt, "did:ion:suffix")))
+	})
+
+	t.Run("test return false - vdr accept option different", func(t *testing.T) {
+		v, err := New()
+		require.NoError(t, err)
+		require.False(t, v.Accept(defaultDIDMethod,
+			vdrapi.WithOption(VDRAcceptOpt, "different")))
+	})
+
+	t.Run("test return false - no options provided", func(t *testing.T) {
+		v, err := New()
+		require.NoError(t, err)
+		require.False(t, v.Accept(defaultDIDMethod))
 	})
 }
 
@@ -56,7 +92,6 @@ func TestVDRI_Close(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
 		v, err := New()
 		require.NoError(t, err)
-		require.True(t, v.Accept(defaultDIDMethod))
 
 		err = v.Close()
 		require.NoError(t, err)
@@ -69,8 +104,6 @@ func TestVDRI_Options(t *testing.T) {
 
 		v, err := New(WithDIDMethod("different"), WithDocumentLoader(docLoader))
 		require.NoError(t, err)
-		require.False(t, v.Accept(defaultDIDMethod))
-		require.True(t, v.Accept("different"))
 
 		err = v.Close()
 		require.NoError(t, err)
