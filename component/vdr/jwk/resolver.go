@@ -18,7 +18,7 @@ import (
 
 const (
 	schemaResV1    = "https://w3id.org/did-resolution/v1"
-	schemaDIDV1    = "https://w3id.org/did/v1"
+	schemaDIDV1    = "https://www.w3.org/ns/did/v1"
 	jwsSuiteV1     = "https://w3id.org/security/suites/jws-2020/v1"
 	jsonWebKey2020 = "JsonWebKey2020"
 )
@@ -39,23 +39,18 @@ func (v *VDR) Read(didJWK string, _ ...vdrapi.DIDMethodOption) (*did.DocResoluti
 		return nil, fmt.Errorf("jwk-vdr read: failed to get key: %w", err)
 	}
 
-	didDoc, err := createJSONWebKey2020DIDDoc(didJWK, key)
-	if err != nil {
-		return nil, fmt.Errorf("jwk-vdr read: creating did document from JWK key failed: %w", err)
-	}
-
-	return &did.DocResolution{Context: []string{schemaResV1}, DIDDocument: didDoc}, nil //nolint:exhaustruct
+	return createJWKResolutionResult(didJWK, key)
 }
 
-func createJSONWebKey2020DIDDoc(didJWK string, key *jwk.JWK) (*did.Doc, error) {
+func createJWKResolutionResult(didJWK string, key *jwk.JWK) (*did.DocResolution, error) {
 	vm, err := did.NewVerificationMethodFromJWK(fmt.Sprintf("%s#0", didJWK), jsonWebKey2020, didJWK, key)
 	if err != nil {
-		return nil, fmt.Errorf("error creating verification method %w", err)
+		return nil, fmt.Errorf("generate resolution result: error creating verification method: %w", err)
 	}
 
 	didDoc := createDoc(vm, didJWK)
 
-	return didDoc, nil
+	return &did.DocResolution{Context: []string{schemaResV1}, DIDDocument: didDoc}, nil
 }
 
 func createDoc(pubKey *did.VerificationMethod, didJWK string) *did.Doc {
