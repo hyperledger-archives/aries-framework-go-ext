@@ -13,6 +13,7 @@ import (
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/stretchr/testify/require"
+	"github.com/trustbloc/sidetree-core-go/pkg/canonicalizer"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/jwk"
 )
@@ -92,6 +93,13 @@ func TestReadP256(t *testing.T) {
 		require.Equal(t, expectedDoc.CapabilityInvocation[0], didDoc.CapabilityInvocation[0])
 		require.Equal(t, 1, len(didDoc.KeyAgreement))
 		require.Equal(t, expectedDoc.KeyAgreement[0], didDoc.KeyAgreement[0])
+
+		canonicalDIDDoc, err := canonicalizer.MarshalCanonical(didDoc)
+		require.NoError(t, err)
+		canonicalExpectedDoc, err := canonicalizer.MarshalCanonical(expectedDoc)
+		require.NoError(t, err)
+
+		require.Equal(t, string(canonicalExpectedDoc), string(canonicalDIDDoc))
 	})
 }
 
@@ -127,6 +135,13 @@ func TestReadX25519(t *testing.T) {
 		require.Equal(t, 0, len(didDoc.CapabilityInvocation))
 		require.Equal(t, 1, len(didDoc.KeyAgreement))
 		require.Equal(t, expectedDoc.KeyAgreement[0], didDoc.KeyAgreement[0])
+
+		canonicalDIDDoc, err := canonicalizer.MarshalCanonical(didDoc)
+		require.NoError(t, err)
+		canonicalExpectedDoc, err := canonicalizer.MarshalCanonical(expectedDoc)
+		require.NoError(t, err)
+
+		require.Equal(t, string(canonicalExpectedDoc), string(canonicalDIDDoc))
 	})
 }
 
