@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcutil/base58"
+	"github.com/hyperledger/aries-framework-go/pkg/common/model"
 	diddoc "github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
@@ -60,7 +61,7 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*diddoc.DocResol
 		s := diddoc.Service{
 			ID:              "#agent",
 			Type:            vdrapi.DIDCommServiceType,
-			ServiceEndpoint: serviceEndpoint,
+			ServiceEndpoint: model.NewDIDCommV1Endpoint(serviceEndpoint),
 			Priority:        0,
 			RecipientKeys:   []string{res.verkey},
 		}
