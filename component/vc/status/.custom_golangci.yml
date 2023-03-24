@@ -1,0 +1,109 @@
+#
+# Copyright Gen Digital Inc. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+run:
+  concurrency: 4
+  deadline: 3m
+  issues-exit-code: 1
+  tests: true
+  build-tags: [""]
+  skip-dirs:  [""]
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  govet:
+    check-shadowing: true
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/hyperledger/aries-framework-go-ext
+  gci:
+    sections:
+      - standard
+      - default
+      - prefix(github.com/hyperledger/aries-framework-go-ext)
+      - dot
+  gocyclo:
+    min-complexity: 10
+  dupl:
+    threshold: 500
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+  misspell:
+    # default locale is a neutral variety of English.
+    locale:
+    ignore-words: []
+  lll:
+    line-length: 120
+    tab-width: 1
+  unused:
+    check-exported: false
+  unparam:
+    check-exported: false
+  nakedret:
+    max-func-lines: 0
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+      - opinionated
+    disabled-checks:
+      - whyNoLint # TODO enable.
+  funlen:
+    lines: 60
+    statements: 40
+  wsl:
+    strict-append: true
+    allow-assign-and-call: true
+    allow-multiline-assign: true
+    allow-case-traling-whitespace: true
+    allow-cuddle-declarations: false
+  godot:
+    check-all: false
+  gomoddirectives:
+    replace-local: true
+
+linters:
+  enable-all: true
+  disable:
+    - goerr113
+    - paralleltest
+    - exhaustivestruct
+    - exhaustruct
+    - interfacer # deprecated by the author https://github.com/mvdan/interfacer#interfacer
+    - scopelint # deprecated by the author https://github.com/kyoh86/scopelint#obsoleted
+    - maligned # deprecated by the author https://github.com/mdempsky/maligned
+    - cyclop # TODO consider replacing gocyclo with cyclop
+    - ifshort # TODO enable
+    - wrapcheck # TODO enable
+    - forbidigo # TODO enable
+    - typecheck
+
+issues:
+  exclude-use-default: false
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - dupl
+        - funlen
+        - gomnd
+    - path: /
+      linters:
+        - exhaustruct
+        - typecheck
+
+  exclude:
+    - Line contains TODO/BUG/FIXME
+    - unnamedResult

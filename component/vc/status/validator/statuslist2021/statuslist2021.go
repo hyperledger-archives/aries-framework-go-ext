@@ -36,7 +36,8 @@ const (
 
 // Validator validates a Verifiable Credential's Status field against the VC Status List 2021 specification, and
 // returns fields for status verification.
-// 	Spec: https://w3c.github.io/vc-status-list-2021/#statuslist2021entry
+//
+// Implements spec: https://w3c.github.io/vc-status-list-2021/#statuslist2021entry
 type Validator struct{}
 
 // ValidateStatus validates that a Verifiable Credential's Status field matches the VC Status List 2021 specification.
