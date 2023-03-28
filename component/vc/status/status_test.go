@@ -1,5 +1,6 @@
 /*
 Copyright Avast Software. All Rights Reserved.
+Copyright Gen Digital Inc. All Rights Reserved.
 
 SPDX-License-Identifier: Apache-2.0
 */
@@ -13,14 +14,16 @@ import (
 	"testing"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	"github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/stretchr/testify/require"
 
-	. "github.com/hyperledger/aries-framework-go-ext/component/vc/status"
 	"github.com/hyperledger/aries-framework-go-ext/component/vc/status/api"
 	"github.com/hyperledger/aries-framework-go-ext/component/vc/status/internal/bitstring"
 	"github.com/hyperledger/aries-framework-go-ext/component/vc/status/resolver"
 	"github.com/hyperledger/aries-framework-go-ext/component/vc/status/validator"
 	"github.com/hyperledger/aries-framework-go-ext/component/vc/status/validator/statuslist2021"
+
+	. "github.com/hyperledger/aries-framework-go-ext/component/vc/status"
 )
 
 const issuerID = "issuer-id"
@@ -29,7 +32,7 @@ func TestClient_VerifyStatus(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		client := Client{
 			ValidatorGetter: validator.GetValidator,
-			Resolver:        resolver.NewResolver(http.DefaultClient, ""),
+			Resolver:        resolver.NewResolver(http.DefaultClient, &vdr.MockVDRegistry{}, ""),
 		}
 
 		statusServer := httptest.NewServer(mockStatusResponseHandler(t, mockStatusVC(t, issuerID, isRevoked{false, true})))

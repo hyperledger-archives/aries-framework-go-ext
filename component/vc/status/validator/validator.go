@@ -16,7 +16,7 @@ import (
 )
 
 // GetValidator returns the VC status list validator for the given status type.
-func GetValidator(statusType string) (api.Validator, error) {
+func GetValidator(statusType string) (api.Validator, error) { //nolint:ireturn
 	switch statusType {
 	case statuslist2021.StatusList2021Type:
 		return &statuslist2021.Validator{}, nil

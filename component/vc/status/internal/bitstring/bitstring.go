@@ -29,13 +29,13 @@ func Decode(src string) ([]byte, error) {
 
 	b := bytes.NewReader(decodedBits)
 
-	r, err := gzip.NewReader(b)
+	zipReader, err := gzip.NewReader(b)
 	if err != nil {
 		return nil, err
 	}
 
 	buf := new(bytes.Buffer)
-	if _, err := buf.ReadFrom(r); err != nil {
+	if _, err := buf.ReadFrom(zipReader); err != nil {
 		return nil, err
 	}
 
