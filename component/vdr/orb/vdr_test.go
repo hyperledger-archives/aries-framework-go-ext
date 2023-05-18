@@ -1002,7 +1002,7 @@ func TestVDRI_Read(t *testing.T) {
 			return &models.Endpoint{ResolutionEndpoints: []string{"url1", "url2"}, MinResolvers: 2}, nil
 		}}
 
-		_, err = v.Read("did:ex:domain:1234")
+		_, err = v.Read("did:ex:domain:1234", vdrapi.WithOption(RetryOptions, &ResolveDIDRetry{MaxNumber: 1}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to fetch correct did from min resolvers")
 	})
@@ -1093,9 +1093,9 @@ func TestVDRI_Read(t *testing.T) {
 		v, err := New(nil, WithDomain("d1"))
 		require.NoError(t, err)
 
-		_, err = v.Read("did:orb:domain:123")
+		_, err = v.Read("did:orb:domain:123", vdrapi.WithOption(RetryOptions, &ResolveDIDRetry{MaxNumber: maxRetries}))
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to get endpoints: failed to get key[d1] from endpoints cache")
+		require.Contains(t, err.Error(), "failed to get key[d1] from endpoints cache")
 	})
 
 	t.Run("test wrong type OperationEndpointsOpt", func(t *testing.T) {
