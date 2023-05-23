@@ -38,9 +38,6 @@ import (
 	"github.com/trustbloc/sidetree-core-go/pkg/util/pubkey"
 	"golang.org/x/net/http2"
 
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/internal/ldcontext"
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/lb"
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/tracing"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/api"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
@@ -48,6 +45,10 @@ import (
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/deactivate"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/recovery"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/update"
+
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/internal/ldcontext"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/lb"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb/tracing"
 )
 
 const (
@@ -71,6 +72,8 @@ const (
 	CheckDIDUpdated = "checkDIDUpdated"
 	// TracingCtxOpt tracing opt.
 	TracingCtxOpt = "tracingCtxOpt"
+	// RetryOptions sets retry options.
+	RetryOptions = "retryOptions"
 	// VersionIDOpt version id opt this option is not mandatory.
 	VersionIDOpt = httpbinding.VersionIDOpt
 	// VersionTimeOpt version time opt this option is not mandatory.
@@ -81,7 +84,7 @@ const (
 	ipfsPrefix     = "ipfs://"
 	httpsProtocol  = "https"
 	httpProtocol   = "http"
-	retry          = 3
+	maxRetries     = 3
 )
 
 var logger = log.New("aries-framework-ext/vdr/orb") //nolint: gochecknoglobals
@@ -112,6 +115,12 @@ const (
 type ResolveDIDRetry struct {
 	MaxNumber int
 	SleepTime *time.Duration
+}
+
+func (r *ResolveDIDRetry) sleep() {
+	if r != nil && r.SleepTime != nil {
+		time.Sleep(*r.SleepTime)
+	}
 }
 
 type sidetreeClient interface {
@@ -377,12 +386,7 @@ func (v *VDR) Create(did *docdid.Doc, //nolint:gocyclo
 // Read Orb DID.
 
 func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) { //nolint: funlen,gocyclo
-	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
-
-	// Apply options
-	for _, opt := range opts {
-		opt(didMethodOpts)
-	}
+	didMethodOpts := applyOptions(opts...)
 
 	var ctx context.Context
 
@@ -413,10 +417,12 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 		strings.HasPrefix(did, fmt.Sprintf("did:%s:%s", DIDMethod, httpProtocol)):
 		hintDomain := strings.Split(did, ":")[3]
 
+		logger.Debugf("Resolving DID with HTTP hint: %s", did)
+
 		endpoint, err = v.discoveryService.GetEndpoint(
 			fmt.Sprintf("%s://%s", strings.Split(did, ":")[2], hintDomain))
 		if err != nil {
-			return nil, fmt.Errorf("failed to get endpoints: %w", err)
+			return nil, fmt.Errorf("failed to get endpoints using hint domain %s: %w", hintDomain, err)
 		}
 
 		for _, e := range endpoint.ResolutionEndpoints {
@@ -436,23 +442,76 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 
 		return nil, fmt.Errorf("discovery did not return hint domain")
 	case len(v.domains) != 0:
-		// Select domain
-		domain, errChoose := v.selectDomainSvc.Choose(v.domains)
-		if errChoose != nil {
-			return nil, errChoose
-		}
+		logger.Debugf("Resolving DID from one of %d domains: %s", len(v.domains), did)
 
-		endpoint, err = v.discoveryService.GetEndpoint(domain)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get endpoints: %w", err)
-		}
+		return v.resolveFromDomains(ctx, did, opts...)
 	default:
+		logger.Debugf("Resolving DID from anchor origin: %s", did)
+
 		endpoint, err = v.discoveryService.GetEndpointFromAnchorOrigin(did)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get endpoints: %w", err)
+			return nil, fmt.Errorf("failed to get endpoints from anchor origin: %w", err)
+		}
+
+		return v.resolveFromEndpoint(ctx, endpoint, did, opts...)
+	}
+}
+
+func (v *VDR) resolveFromDomains(ctx context.Context, did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
+	didMethodOpts := applyOptions(opts...)
+
+	resolveDIDRetry := &ResolveDIDRetry{MaxNumber: maxRetries}
+
+	retryOpt, ok := didMethodOpts.Values[RetryOptions]
+	if ok {
+		resolveDIDRetry, ok = retryOpt.(*ResolveDIDRetry)
+		if !ok {
+			return nil, fmt.Errorf("retryOptions does not comtain valid *ResolveDIDRetry struct")
 		}
 	}
 
+	var errCause error
+
+	logger.Debugf("Resolving DID from one of the %d domains: %s", len(v.domains), did)
+
+	for i := 1; i <= resolveDIDRetry.MaxNumber; i++ {
+		docResolution, err := v.resolveFromRandomDomain(ctx, did, opts...)
+		if err == nil {
+			return docResolution, nil
+		}
+
+		if i == resolveDIDRetry.MaxNumber {
+			return nil, fmt.Errorf("failed to resolve DID from random domain - %s: %w", did, err)
+		}
+
+		errCause = err
+
+		logger.Infof("Error resolving DID on attempt %d of %d. Retrying on another node - %s: %s",
+			i, resolveDIDRetry.MaxNumber, did, err)
+
+		resolveDIDRetry.sleep()
+	}
+
+	return nil, fmt.Errorf("resolve from domains: %w", errCause)
+}
+
+func (v *VDR) resolveFromRandomDomain(ctx context.Context, did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
+	domain, err := v.selectDomainSvc.Choose(v.domains)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Debugf("Resolving DID from %s: %s", domain, did)
+
+	endpoint, err := v.discoveryService.GetEndpoint(domain)
+	if err != nil {
+		return nil, fmt.Errorf("resolve from domain %s: %w", domain, err)
+	}
+
+	return v.resolveFromEndpoint(ctx, endpoint, did, opts...)
+}
+
+func (v *VDR) resolveFromEndpoint(ctx context.Context, endpoint *models.Endpoint, did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
 	var docResolution *docdid.DocResolution
 
 	var docBytes []byte
@@ -464,9 +523,11 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 	// In case of a mismatch, additional links may need to be chosen until the client has n matches.
 
 	for _, e := range endpoint.ResolutionEndpoints {
+		logger.Debugf("Resolving DID from endpoint %s: %s", e, did)
+
 		resp, err := v.sidetreeResolve(ctx, e, did, opts...)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("sidetree resolve: %w", err)
 		}
 
 		respBytes, err := canonicalizeDoc(resp.DIDDocument, v.documentLoader)
@@ -475,7 +536,7 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 		}
 
 		if docResolution != nil && !bytes.Equal(docBytes, respBytes) {
-			logger.Warnf("mismatch in document contents for did %s. Doc 1: %s, Doc 2: %s",
+			logger.Warnf("Mismatch in document contents for DID %s. Doc 1: %s, Doc 2: %s",
 				did, string(docBytes), string(respBytes))
 
 			continue
@@ -658,7 +719,7 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 			logger.Warnf("failed to get anchor origin %s endpoints will choose random domain: %w",
 				docResolution.DocumentMetadata.Method.AnchorOrigin, errGet)
 
-			for i := 1; i <= retry; i++ {
+			for i := 1; i <= maxRetries; i++ {
 				domain, errChoose := v.selectDomainSvc.Choose(v.domains)
 				if err != nil {
 					return nil, errChoose
@@ -666,8 +727,8 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 				domainEndpoint, errEndpoint := v.discoveryService.GetEndpoint(domain)
 				if err != nil {
-					if i == retry {
-						return nil, fmt.Errorf("failed to get endpoints: %w", errEndpoint)
+					if i == maxRetries {
+						return nil, fmt.Errorf("failed to get endpoints from random domain %s: %w", domain, errEndpoint)
 					}
 
 					continue
@@ -893,7 +954,7 @@ func (v *VDR) getSidetreeOperationEndpoints(didMethodOpts *vdrapi.DIDMethodOpts,
 		return func() ([]string, error) {
 			endpoint, err := v.discoveryService.GetEndpoint(domain)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get endpoints: %w", err)
+				return nil, fmt.Errorf("failed to get Sidetree endpoints from domain %s: %w", domain, err)
 			}
 
 			return endpoint.OperationEndpoints, nil
@@ -1098,7 +1159,7 @@ func (v *VDR) checkDID(did string, resolveDIDRetry *ResolveDIDRetry, updateCommi
 			return nil, err
 		}
 
-		time.Sleep(*resolveDIDRetry.SleepTime)
+		resolveDIDRetry.sleep()
 	}
 
 	return docResolution, nil
@@ -1347,4 +1408,15 @@ func canonicalizeDoc(didDoc *docdid.Doc, docLoader jsonld.DocumentLoader) ([]byt
 	proc := ldprocessor.Default()
 
 	return proc.GetCanonicalDocument(docMap, ldprocessor.WithDocumentLoader(docLoader))
+}
+
+func applyOptions(opts ...vdrapi.DIDMethodOption) *vdrapi.DIDMethodOpts {
+	didMethodOpts := &vdrapi.DIDMethodOpts{Values: make(map[string]interface{})}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(didMethodOpts)
+	}
+
+	return didMethodOpts
 }
