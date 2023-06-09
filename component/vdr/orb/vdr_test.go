@@ -7,8 +7,10 @@ package orb
 
 import (
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +24,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/orb/pkg/discovery/endpoint/client/models"
 	"github.com/trustbloc/sidetree-core-go/pkg/document"
+	"github.com/trustbloc/sidetree-core-go/pkg/jws"
+	"github.com/trustbloc/sidetree-core-go/pkg/util/ecsigner"
+	"github.com/trustbloc/sidetree-core-go/pkg/util/edsigner"
+	"github.com/trustbloc/sidetree-core-go/pkg/util/pubkey"
+	"github.com/trustbloc/sidetree-core-go/pkg/versions/1_0/client"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/api"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/create"
@@ -415,6 +422,121 @@ func TestVDRI_Create(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "anchorOrigin is not string")
 	})
+
+	t.Run("test endpoint down", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(&mockKeyRetriever{}, WithHTTPClient(&http.Client{}), WithDomain("domain1.com"), WithDomain("domain2.com"))
+		require.NoError(t, err)
+
+		v.getHTTPVDR = httpVdrFunc(&did.DocResolution{
+			DIDDocument:      &did.Doc{ID: "did"},
+			DocumentMetadata: &did.DocumentMetadata{Method: &did.MethodMetadata{Published: true}},
+		}, nil)
+
+		_, pk, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		jwk, err := jwksupport.JWKFromKey(pk)
+		require.NoError(t, err)
+
+		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
+		require.NoError(t, err)
+
+		vm2 := did.NewVerificationMethodFromBytes("id2", "", "", pk)
+
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+		ver2 := did.NewReferencedVerification(vm2, did.AssertionMethod)
+
+		verAssertionMethod := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"}, did.AssertionMethod)
+		verKeyAgreement := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"}, did.KeyAgreement)
+		verCapabilityDelegation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id"},
+			did.CapabilityDelegation)
+		verCapabilityInvocation := did.NewReferencedVerification(&did.VerificationMethod{ID: "id2"},
+			did.CapabilityInvocation)
+
+		sleepTime := 1 * time.Second
+
+		recovPubKey, _, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		updatePubKey, _, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		auth := []did.Verification{
+			*ver,
+			*ver2,
+			*verAssertionMethod,
+			*verKeyAgreement,
+			*verCapabilityDelegation,
+			*verCapabilityInvocation,
+		}
+
+		opts := []vdrapi.DIDMethodOption{
+			vdrapi.WithOption(UpdatePublicKeyOpt, updatePubKey),
+			vdrapi.WithOption(RecoveryPublicKeyOpt, recovPubKey),
+			vdrapi.WithOption(AnchorOriginOpt, "origin.com"),
+			vdrapi.WithOption(CheckDIDAnchored, &ResolveDIDRetry{MaxNumber: 2, SleepTime: &sleepTime}),
+			vdrapi.WithOption(ResolutionEndpointsOpt, []string{"url"}),
+		}
+
+		t.Run("success after endpoint retry", func(t *testing.T) {
+			errExpected := errors.New("injected get endpoint error")
+
+			i := 0
+
+			v.discoveryService = &mockDiscoveryService{
+				getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+					i++
+
+					if i == 1 {
+						return nil, errExpected
+					}
+
+					return &models.Endpoint{
+						OperationEndpoints: []string{cServ.URL},
+						MinResolvers:       2,
+					}, nil
+				},
+			}
+
+			docResolution, err := v.Create(&did.Doc{
+				Service: []did.Service{
+					{ID: "svc"},
+				},
+				AlsoKnownAs:    []string{"https://myblog.example/"},
+				Authentication: auth,
+			}, opts...)
+			require.NoError(t, err)
+			require.Equal(t, "did", docResolution.DIDDocument.ID)
+		})
+
+		t.Run("fail after endpoint retry", func(t *testing.T) {
+			errExpected := errors.New("injected get endpoint error")
+
+			v.discoveryService = &mockDiscoveryService{
+				getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+					return nil, errExpected
+				},
+			}
+
+			docResolution, err := v.Create(&did.Doc{
+				Service: []did.Service{
+					{ID: "svc"},
+				},
+				AlsoKnownAs:    []string{"https://myblog.example/"},
+				Authentication: auth,
+			}, opts...)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), errExpected.Error())
+			require.Nil(t, docResolution)
+		})
+	})
 }
 
 func TestVDRI_Deactivate(t *testing.T) {
@@ -727,6 +849,99 @@ func TestVDRI_Update(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get signing key")
 	})
+
+	t.Run("test endpoints downe", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(&mockKeyRetriever{
+			getSigner: func(didID string, ot OperationType, commitment string) (api.Signer, error) {
+				_, privKey, err := ed25519.GenerateKey(rand.Reader)
+				require.NoError(t, err)
+
+				return newSignerMock(t, privKey), nil
+			},
+			getNextUpdatePublicKey: func(didID, commitment string) (crypto.PublicKey, error) {
+				pubKey, _, err := ed25519.GenerateKey(rand.Reader)
+				require.NoError(t, err)
+
+				return pubKey, err
+			},
+		}, WithHTTPClient(&http.Client{}), WithDomain("domain1.com"), WithDomain("domain2.com"))
+		require.NoError(t, err)
+
+		_, pk, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		jwk, err := jwksupport.JWKFromKey(pk)
+		require.NoError(t, err)
+
+		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
+		require.NoError(t, err)
+
+		vm1, err := did.NewVerificationMethodFromJWK("did:example:123456789abcdefghi#keys-1", "k1", "", jwk)
+		require.NoError(t, err)
+
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+
+		ver1 := did.NewReferencedVerification(vm1, did.Authentication)
+
+		t.Run("retry succeeds", func(t *testing.T) {
+			errExpected := errors.New("injected get endpoint error")
+
+			i := 0
+
+			v.discoveryService = &mockDiscoveryService{
+				getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+					i++
+
+					if i == 1 {
+						return nil, errExpected
+					}
+
+					return &models.Endpoint{
+						OperationEndpoints: []string{cServ.URL},
+						MinResolvers:       2,
+					}, nil
+				},
+			}
+
+			err = v.Update(&did.Doc{
+				ID:          "did:ex:123",
+				AlsoKnownAs: []string{"https://other-blog.example/"},
+				Service: []did.Service{
+					{ID: "svc"},
+				},
+				Authentication: []did.Verification{*ver, *ver1},
+			}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
+			require.NoError(t, err)
+		})
+
+		t.Run("exhausted retry attempts", func(t *testing.T) {
+			errExpected := errors.New("injected get endpoint error")
+
+			v.discoveryService = &mockDiscoveryService{
+				getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+					return nil, errExpected
+				},
+			}
+
+			err = v.Update(&did.Doc{
+				ID:          "did:ex:123",
+				AlsoKnownAs: []string{"https://other-blog.example/"},
+				Service: []did.Service{
+					{ID: "svc"},
+				},
+				Authentication: []did.Verification{*ver, *ver1},
+			}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), errExpected.Error())
+		})
+	})
 }
 
 func TestVDRI_Recover(t *testing.T) {
@@ -881,6 +1096,102 @@ func TestVDRI_Recover(t *testing.T) {
 			vdrapi.WithOption(AnchorOriginOpt, "origin.com"))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get signing key")
+	})
+
+	t.Run("test endpoints down", func(t *testing.T) {
+		cServ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-type", "application/did+ld+json")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, validDocResolution)
+		}))
+		defer cServ.Close()
+
+		v, err := New(&mockKeyRetriever{
+			getSigner: func(didID string, ot OperationType, commitment string) (api.Signer, error) {
+				_, privKey, err := ed25519.GenerateKey(rand.Reader)
+				require.NoError(t, err)
+
+				return newSignerMock(t, privKey), nil
+			},
+			getNextUpdatePublicKey: func(didID, commitment string) (crypto.PublicKey, error) {
+				pubKey, _, err := ed25519.GenerateKey(rand.Reader)
+				require.NoError(t, err)
+
+				return pubKey, err
+			},
+			getNextRecoveryPublicKeyFunc: func(didID, commitment string) (crypto.PublicKey, error) {
+				pubKey, _, err := ed25519.GenerateKey(rand.Reader)
+				require.NoError(t, err)
+
+				return pubKey, err
+			},
+		}, WithHTTPClient(&http.Client{}), WithDomain("domain1.com"), WithDomain("domain2.com"))
+		require.NoError(t, err)
+
+		_, pk, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		jwk, err := jwksupport.JWKFromKey(pk)
+		require.NoError(t, err)
+
+		vm, err := did.NewVerificationMethodFromJWK("id", "", "", jwk)
+		require.NoError(t, err)
+
+		ver := did.NewReferencedVerification(vm, did.Authentication)
+
+		t.Run("retry succeeds", func(t *testing.T) {
+			errExpected := errors.New("injected get endpoint error")
+
+			i := 0
+
+			v.discoveryService = &mockDiscoveryService{
+				getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+					i++
+
+					if i <= 2 {
+						return nil, errExpected
+					}
+
+					return &models.Endpoint{
+						OperationEndpoints: []string{cServ.URL},
+						MinResolvers:       2,
+					}, nil
+				},
+			}
+
+			err = v.Update(&did.Doc{
+				ID:          "did:ex:123",
+				AlsoKnownAs: []string{"https://other-blog.example/"},
+				Service: []did.Service{
+					{ID: "svc"},
+				},
+				Authentication: []did.Verification{*ver},
+			}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
+				vdrapi.WithOption(RecoverOpt, true))
+			require.NoError(t, err)
+		})
+
+		t.Run("exhausted retry attempts", func(t *testing.T) {
+			errExpected := errors.New("injected get endpoint error")
+
+			v.discoveryService = &mockDiscoveryService{
+				getEndpointFunc: func(domain string) (*models.Endpoint, error) {
+					return nil, errExpected
+				},
+			}
+
+			err = v.Update(&did.Doc{
+				ID:          "did:ex:123",
+				AlsoKnownAs: []string{"https://other-blog.example/"},
+				Service: []did.Service{
+					{ID: "svc"},
+				},
+				Authentication: []did.Verification{*ver},
+			}, vdrapi.WithOption(ResolutionEndpointsOpt, []string{cServ.URL}),
+				vdrapi.WithOption(RecoverOpt, true))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), errExpected.Error())
+		})
 	})
 }
 
@@ -1171,6 +1482,10 @@ func (m *mockDiscoveryService) GetEndpoint(domain string) (*models.Endpoint, err
 	return nil, nil
 }
 
+func (m *mockDiscoveryService) GetEndpointNoCache(domain string) (*models.Endpoint, error) {
+	return m.GetEndpoint(domain)
+}
+
 func (m *mockDiscoveryService) GetEndpointFromAnchorOrigin(didURI string) (*models.Endpoint, error) {
 	if m.getEndpointAnchorOriginFunc != nil {
 		return m.getEndpointAnchorOriginFunc(didURI)
@@ -1189,4 +1504,40 @@ type tokenProvider struct{}
 
 func (t *tokenProvider) AuthToken() (string, error) {
 	return "newTK", nil
+}
+
+type signerMock struct {
+	signer    client.Signer
+	publicKey *jws.JWK
+}
+
+func newSignerMock(t *testing.T, signingkey crypto.PrivateKey) *signerMock {
+	t.Helper()
+
+	switch key := signingkey.(type) {
+	case *ecdsa.PrivateKey:
+		updateKey, err := pubkey.GetPublicKeyJWK(key.Public())
+		require.NoError(t, err)
+
+		return &signerMock{signer: ecsigner.New(key, "ES256", "k1"), publicKey: updateKey}
+	case ed25519.PrivateKey:
+		updateKey, err := pubkey.GetPublicKeyJWK(key.Public())
+		require.NoError(t, err)
+
+		return &signerMock{signer: edsigner.New(key, "EdDSA", "k1"), publicKey: updateKey}
+	}
+
+	return nil
+}
+
+func (s *signerMock) Sign(data []byte) ([]byte, error) {
+	return s.signer.Sign(data)
+}
+
+func (s *signerMock) Headers() jws.Headers {
+	return s.signer.Headers()
+}
+
+func (s *signerMock) PublicKeyJWK() *jws.JWK {
+	return s.publicKey
 }
