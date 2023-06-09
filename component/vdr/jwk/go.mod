@@ -8,7 +8,7 @@ go 1.19
 require (
 	github.com/hyperledger/aries-framework-go v0.1.9-0.20221201073943-47b08f16c301
 	github.com/stretchr/testify v1.8.1
-	github.com/trustbloc/sidetree-core-go v1.0.0-rc3.0.20221028171319-8d44bd1cace7
+	github.com/trustbloc/sidetree-core-go v1.0.0-rc5.0.20230609191801-793cbea60692
 )
 
 require (
