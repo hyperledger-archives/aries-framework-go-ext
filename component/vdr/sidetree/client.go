@@ -41,12 +41,15 @@ type authTokenProvider interface {
 	AuthToken() (string, error)
 }
 
+// GetEndpointsFunc retrieves sidetree endpoints.
+type GetEndpointsFunc = func(disableCache bool) ([]string, error)
+
 // Client sidetree client.
 type Client struct {
 	client            *http.Client
 	authToken         string
 	authTokenProvider authTokenProvider
-	sendRequest       func(req []byte, getEndpoints func() ([]string, error)) ([]byte, error)
+	sendRequest       func(req []byte, getEndpoints GetEndpointsFunc) ([]byte, error)
 }
 
 // New return sidetree client.
@@ -64,7 +67,7 @@ func New(opts ...Option) *Client {
 }
 
 // CreateDID create did doc.
-func (c *Client) CreateDID(opts ...create.Option) (*docdid.DocResolution, error) { //
+func (c *Client) CreateDID(opts ...create.Option) (*docdid.DocResolution, error) {
 	createDIDOpts := &create.Opts{MultiHashAlgorithm: defaultHashAlgorithm}
 	// Apply options
 	for _, opt := range opts {
@@ -416,15 +419,31 @@ func buildDeactivateRequest(did string, deactivateDIDOpts *deactivate.Opts) ([]b
 	})
 }
 
-func (c *Client) defaultSendRequest(req []byte, getEndpoints func() ([]string, error)) ([]byte, error) {
+func (c *Client) defaultSendRequest(req []byte, getEndpoints GetEndpointsFunc) ([]byte, error) {
 	if getEndpoints == nil {
 		return nil, fmt.Errorf("sidetree get endpoints func is required")
 	}
 
-	endpoints, err := getEndpoints()
+	responseBytes, err := c.doSendRequest(req, getEndpoints, false)
+	if err != nil {
+		logger.Warnf("Error sending request. Trying again with endpoint cache disabled.: %s", err)
+
+		responseBytes, err = c.doSendRequest(req, getEndpoints, true)
+		if err != nil {
+			return nil, fmt.Errorf("sidetree get endpoints: %w", err)
+		}
+	}
+
+	return responseBytes, nil
+}
+
+func (c *Client) doSendRequest(req []byte, getEndpoints GetEndpointsFunc, disableCache bool) ([]byte, error) {
+	endpoints, err := getEndpoints(disableCache)
 	if err != nil {
 		return nil, fmt.Errorf("sidetree get endpoints: %w", err)
 	}
+
+	logger.Debugf("Got sidetree endpoints: %s", endpoints)
 
 	// TODO add logic for using different sidetree endpoint
 	// for now will use the first one

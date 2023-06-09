@@ -20,7 +20,7 @@ type Opts struct {
 	PublicKeys            []doc.PublicKey
 	Services              []docdid.Service
 	AlsoKnownAs           []string
-	GetEndpoints          func() ([]string, error)
+	GetEndpoints          func(disableCache bool) ([]string, error)
 	NextRecoveryPublicKey crypto.PublicKey
 	NextUpdatePublicKey   crypto.PublicKey
 	Signer                api.Signer
@@ -54,7 +54,7 @@ func WithAlsoKnownAs(uri string) Option {
 }
 
 // WithSidetreeEndpoint get sidetree endpoints.
-func WithSidetreeEndpoint(getEndpoints func() ([]string, error)) Option {
+func WithSidetreeEndpoint(getEndpoints func(disableCache bool) ([]string, error)) Option {
 	return func(opts *Opts) {
 		opts.GetEndpoints = getEndpoints
 	}

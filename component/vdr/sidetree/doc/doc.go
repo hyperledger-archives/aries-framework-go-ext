@@ -93,7 +93,7 @@ func (doc *Doc) JSONBytes() ([]byte, error) {
 
 	byteDoc, err := json.Marshal(raw)
 	if err != nil {
-		return nil, fmt.Errorf("JSON unmarshalling of document failed: %w", err)
+		return nil, fmt.Errorf("JSON marshalling of document failed: %w", err)
 	}
 
 	return byteDoc, nil

@@ -34,7 +34,7 @@ func WithAuthTokenProvider(p authTokenProvider) Option {
 }
 
 // WithSidetreeOperationRequestFnc overrides default sidetree operation request.
-func WithSidetreeOperationRequestFnc(fnc func(req []byte, getEndpoints func() ([]string, error)) ([]byte, error)) Option {
+func WithSidetreeOperationRequestFnc(fnc func(req []byte, getEndpoints GetEndpointsFunc) ([]byte, error)) Option {
 	return func(opts *Client) {
 		opts.sendRequest = fnc
 	}
