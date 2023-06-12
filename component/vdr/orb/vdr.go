@@ -144,6 +144,7 @@ type httpClient interface {
 
 type discoveryService interface {
 	GetEndpoint(domain string) (*models.Endpoint, error)
+	GetEndpointNoCache(domain string) (*models.Endpoint, error)
 	GetEndpointFromAnchorOrigin(did string) (*models.Endpoint, error)
 }
 
@@ -306,13 +307,26 @@ func (v *VDR) Create(did *docdid.Doc, //nolint:gocyclo
 
 	createOpt := make([]create.Option, 0)
 
-	// Select domain
-	domain, err := v.selectDomainSvc.Choose(v.domains)
-	if err != nil {
-		return nil, err
+	var anchorOrigin string
+
+	if didMethodOpts.Values[AnchorOriginOpt] != nil {
+		var ok bool
+
+		anchorOrigin, ok = didMethodOpts.Values[AnchorOriginOpt].(string)
+		if !ok {
+			return nil, fmt.Errorf("anchorOrigin is not string")
+		}
+	} else {
+		// Choose a random domain to be the anchor origin.
+		var err error
+
+		anchorOrigin, err = v.selectDomainSvc.Choose(v.domains)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	getEndpoints := v.getSidetreeOperationEndpoints(didMethodOpts, domain)
+	getEndpoints := v.getSidetreeOperationEndpointsFromDomain(didMethodOpts, anchorOrigin)
 
 	// get keys
 	if didMethodOpts.Values[UpdatePublicKeyOpt] == nil {
@@ -331,15 +345,6 @@ func (v *VDR) Create(did *docdid.Doc, //nolint:gocyclo
 	recoveryPublicKey, ok := didMethodOpts.Values[RecoveryPublicKeyOpt].(crypto.PublicKey)
 	if !ok {
 		return nil, fmt.Errorf("recoveryPublicKey is not  crypto.PublicKey")
-	}
-
-	anchorOrigin := domain
-
-	if didMethodOpts.Values[AnchorOriginOpt] != nil {
-		anchorOrigin, ok = didMethodOpts.Values[AnchorOriginOpt].(string)
-		if !ok {
-			return nil, fmt.Errorf("anchorOrigin is not string")
-		}
 	}
 
 	// get also known as
@@ -460,14 +465,9 @@ func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResol
 func (v *VDR) resolveFromDomains(ctx context.Context, did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
 	didMethodOpts := applyOptions(opts...)
 
-	resolveDIDRetry := &ResolveDIDRetry{MaxNumber: maxRetries}
-
-	retryOpt, ok := didMethodOpts.Values[RetryOptions]
-	if ok {
-		resolveDIDRetry, ok = retryOpt.(*ResolveDIDRetry)
-		if !ok {
-			return nil, fmt.Errorf("retryOptions does not comtain valid *ResolveDIDRetry struct")
-		}
+	resolveDIDRetry, err := getRetryOptions(didMethodOpts)
+	if err != nil {
+		return nil, err
 	}
 
 	var errCause error
@@ -508,7 +508,12 @@ func (v *VDR) resolveFromRandomDomain(ctx context.Context, did string, opts ...v
 		return nil, fmt.Errorf("resolve from domain %s: %w", domain, err)
 	}
 
-	return v.resolveFromEndpoint(ctx, endpoint, did, opts...)
+	doc, err := v.resolveFromEndpoint(ctx, endpoint, did, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("resolve from endpoint %s: %w", endpoint.ResolutionEndpoints, err)
+	}
+
+	return doc, nil
 }
 
 func (v *VDR) resolveFromEndpoint(ctx context.Context, endpoint *models.Endpoint, did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
@@ -641,8 +646,6 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 		opt(didMethodOpts)
 	}
 
-	updateOpt := make([]update.Option, 0)
-
 	docResolution, err := v.Read(didDoc.ID, opts...)
 	if err != nil {
 		return err
@@ -650,12 +653,6 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 	// check recover option
 	if didMethodOpts.Values[RecoverOpt] != nil {
-		// Select domain
-		domain, errChoose := v.selectDomainSvc.Choose(v.domains)
-		if errChoose != nil {
-			return errChoose
-		}
-
 		anchorOrigin := docResolution.DocumentMetadata.Method.AnchorOrigin
 
 		if didMethodOpts.Values[AnchorOriginOpt] != nil {
@@ -667,9 +664,11 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 			}
 		}
 
-		return v.recover(didDoc, v.getSidetreeOperationEndpoints(didMethodOpts, domain),
+		return v.recover(didDoc, v.getSidetreeOperationEndpoints(didMethodOpts),
 			docResolution.DocumentMetadata.Method.RecoveryCommitment, anchorOrigin)
 	}
+
+	var updateOpt []update.Option
 
 	// get services
 	for i := range didDoc.Service {
@@ -713,37 +712,23 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 
 	updateOpt = append(updateOpt, updatedAlsoKnownAsOpts...)
 
-	updateOpt = append(updateOpt, update.WithSidetreeEndpoint(func() ([]string, error) {
-		endpoint, errGet := v.discoveryService.GetEndpoint(docResolution.DocumentMetadata.Method.AnchorOrigin)
-		if errGet != nil {
-			logger.Warnf("failed to get anchor origin %s endpoints will choose random domain: %w",
-				docResolution.DocumentMetadata.Method.AnchorOrigin, errGet)
-
-			for i := 1; i <= maxRetries; i++ {
-				domain, errChoose := v.selectDomainSvc.Choose(v.domains)
-				if err != nil {
-					return nil, errChoose
-				}
-
-				domainEndpoint, errEndpoint := v.discoveryService.GetEndpoint(domain)
-				if err != nil {
-					if i == maxRetries {
-						return nil, fmt.Errorf("failed to get endpoints from random domain %s: %w", domain, errEndpoint)
-					}
-
-					continue
-				}
-
-				return domainEndpoint.OperationEndpoints, nil
-			}
-		}
-
-		return endpoint.OperationEndpoints, nil
-	}),
+	updateOpt = append(updateOpt,
 		update.WithNextUpdatePublicKey(nextUpdatePublicKey),
 		update.WithMultiHashAlgorithm(sha2_256),
 		update.WithSigner(signer),
-		update.WithOperationCommitment(docResolution.DocumentMetadata.Method.UpdateCommitment))
+		update.WithOperationCommitment(docResolution.DocumentMetadata.Method.UpdateCommitment),
+		update.WithSidetreeEndpoint(
+			func(disableCache bool) ([]string, error) {
+				anchorOrigin := docResolution.DocumentMetadata.Method.AnchorOrigin
+
+				if disableCache {
+					return v.getEndpoints(anchorOrigin, true, didMethodOpts, v.discoveryService.GetEndpointNoCache)
+				}
+
+				return v.getEndpoints(anchorOrigin, true, didMethodOpts, v.discoveryService.GetEndpoint)
+			},
+		),
+	)
 
 	if errUpdateDID := v.sidetreeClient.UpdateDID(didDoc.ID, updateOpt...); errUpdateDID != nil {
 		return errUpdateDID
@@ -773,7 +758,7 @@ func (v *VDR) Update(didDoc *docdid.Doc, opts ...vdrapi.DIDMethodOption) error {
 	return err
 }
 
-func (v *VDR) recover(didDoc *docdid.Doc, getEndpoints func() ([]string, error),
+func (v *VDR) recover(didDoc *docdid.Doc, getEndpoints sidetree.GetEndpointsFunc,
 	recoveryCommitment, anchorOrigin string) error {
 	recoveryOpt := make([]recovery.Option, 0)
 
@@ -857,14 +842,8 @@ func (v *VDR) Deactivate(didID string, opts ...vdrapi.DIDMethodOption) error {
 		return err
 	}
 
-	// Select domain
-	domain, err := v.selectDomainSvc.Choose(v.domains)
-	if err != nil {
-		return err
-	}
-
 	deactivateOpt = append(deactivateOpt,
-		deactivate.WithSidetreeEndpoint(v.getSidetreeOperationEndpoints(didMethodOpts, domain)),
+		deactivate.WithSidetreeEndpoint(v.getSidetreeOperationEndpoints(didMethodOpts)),
 		deactivate.WithSigner(signer),
 		deactivate.WithOperationCommitment(docResolution.DocumentMetadata.Method.RecoveryCommitment))
 
@@ -948,10 +927,30 @@ func getSidetreePublicKeys(didDoc *docdid.Doc) (map[string]*pk, error) {
 	return pksMap, nil
 }
 
-func (v *VDR) getSidetreeOperationEndpoints(didMethodOpts *vdrapi.DIDMethodOpts,
-	domain string) func() ([]string, error) {
+func (v *VDR) getSidetreeOperationEndpoints(didMethodOpts *vdrapi.DIDMethodOpts) sidetree.GetEndpointsFunc {
 	if didMethodOpts.Values[OperationEndpointsOpt] == nil {
-		return func() ([]string, error) {
+		return func(disableCache bool) ([]string, error) {
+			if disableCache {
+				return v.getEndpointsFromRandomDomain(didMethodOpts, v.discoveryService.GetEndpointNoCache)
+			}
+
+			return v.getEndpointsFromRandomDomain(didMethodOpts, v.discoveryService.GetEndpoint)
+		}
+	}
+
+	return func(bool) ([]string, error) {
+		v, ok := didMethodOpts.Values[OperationEndpointsOpt].([]string)
+		if !ok {
+			return nil, fmt.Errorf("operationEndpointsOpt not array of string")
+		}
+
+		return v, nil
+	}
+}
+
+func (v *VDR) getSidetreeOperationEndpointsFromDomain(didMethodOpts *vdrapi.DIDMethodOpts, domain string) sidetree.GetEndpointsFunc {
+	if didMethodOpts.Values[OperationEndpointsOpt] == nil {
+		return func(bool) ([]string, error) {
 			endpoint, err := v.discoveryService.GetEndpoint(domain)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get Sidetree endpoints from domain %s: %w", domain, err)
@@ -961,7 +960,7 @@ func (v *VDR) getSidetreeOperationEndpoints(didMethodOpts *vdrapi.DIDMethodOpts,
 		}
 	}
 
-	return func() ([]string, error) {
+	return func(bool) ([]string, error) {
 		v, ok := didMethodOpts.Values[OperationEndpointsOpt].([]string)
 		if !ok {
 			return nil, fmt.Errorf("operationEndpointsOpt not array of string")
@@ -1163,6 +1162,54 @@ func (v *VDR) checkDID(did string, resolveDIDRetry *ResolveDIDRetry, updateCommi
 	}
 
 	return docResolution, nil
+}
+
+func (v *VDR) getEndpoints(preferredDomain string, retryOnOtherDomains bool, didMethodOpts *vdrapi.DIDMethodOpts,
+	resolveEndpoint func(domain string) (*models.Endpoint, error)) ([]string, error) {
+	endpoint, err := resolveEndpoint(preferredDomain)
+	if err == nil {
+		return endpoint.OperationEndpoints, nil
+	}
+
+	if !retryOnOtherDomains {
+		return nil, err
+	}
+
+	logger.Warnf("Failed to get endpoints from preferred domain %s. will choose random domain: %s",
+		preferredDomain, err)
+
+	return v.getEndpointsFromRandomDomain(didMethodOpts, resolveEndpoint)
+}
+
+func (v *VDR) getEndpointsFromRandomDomain(didMethodOpts *vdrapi.DIDMethodOpts,
+	resolveEndpoint func(domain string) (*models.Endpoint, error)) ([]string, error) {
+	retryOptions, err := getRetryOptions(didMethodOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	var lastErr error
+
+	for i := 1; i <= retryOptions.MaxNumber; i++ {
+		domain, err := v.selectDomainSvc.Choose(v.domains)
+		if err != nil {
+			return nil, err
+		}
+
+		domainEndpoint, err := resolveEndpoint(domain)
+		if err == nil {
+			return domainEndpoint.OperationEndpoints, nil
+		}
+
+		logger.Warnf("Failed to get endpoints from %s on attempt #%d of %d. Will choose another domain: %s",
+			domain, i, retryOptions.MaxNumber, err)
+
+		lastErr = err
+
+		retryOptions.sleep()
+	}
+
+	return nil, fmt.Errorf("failed to get endpoints from random domain %s: %w", v.domains, lastErr)
 }
 
 // Option configures the bloc vdr.
@@ -1419,4 +1466,18 @@ func applyOptions(opts ...vdrapi.DIDMethodOption) *vdrapi.DIDMethodOpts {
 	}
 
 	return didMethodOpts
+}
+
+func getRetryOptions(opts *vdrapi.DIDMethodOpts) (*ResolveDIDRetry, error) {
+	retryOptions := &ResolveDIDRetry{MaxNumber: maxRetries}
+
+	retryOpt, ok := opts.Values[RetryOptions]
+	if ok {
+		retryOptions, ok = retryOpt.(*ResolveDIDRetry)
+		if !ok {
+			return nil, fmt.Errorf("retryOptions does not comtain valid *ResolveDIDRetry struct")
+		}
+	}
+
+	return retryOptions, nil
 }
