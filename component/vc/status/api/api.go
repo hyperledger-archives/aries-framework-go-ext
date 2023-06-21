@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 package api
 
 import (
-	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	"github.com/hyperledger/aries-framework-go/component/models/verifiable"
 )
 
 // Validator holds handlers for validating a particular format of Status(Revocation) List VC.

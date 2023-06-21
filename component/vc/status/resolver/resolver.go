@@ -19,8 +19,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
-	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	"github.com/hyperledger/aries-framework-go/component/models/verifiable"
+	vdrapi "github.com/hyperledger/aries-framework-go/component/vdr/api"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vc/status/internal/identityhub"
 )
@@ -29,11 +29,11 @@ import (
 type Resolver struct {
 	client      *http.Client
 	bearerToken string
-	didResolver vdr.Registry
+	didResolver vdrapi.Registry
 }
 
 // NewResolver creates a Resolver.
-func NewResolver(client *http.Client, didResolver vdr.Registry, bearerToken string) *Resolver {
+func NewResolver(client *http.Client, didResolver vdrapi.Registry, bearerToken string) *Resolver {
 	return &Resolver{
 		client:      client,
 		bearerToken: bearerToken,

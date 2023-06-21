@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/hyperledger/aries-framework-go/pkg/common/model"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/component/models/did"
+	model "github.com/hyperledger/aries-framework-go/component/models/did/endpoint"
 	"github.com/stretchr/testify/require"
 
 	. "github.com/hyperledger/aries-framework-go-ext/component/vc/status/internal/identityhub"

@@ -10,7 +10,7 @@ package status
 import (
 	"fmt"
 
-	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	"github.com/hyperledger/aries-framework-go/component/models/verifiable"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vc/status/api"
 	"github.com/hyperledger/aries-framework-go-ext/component/vc/status/internal/bitstring"

@@ -10,8 +10,8 @@ package jwk
 import (
 	"fmt"
 
-	diddoc "github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	diddoc "github.com/hyperledger/aries-framework-go/component/models/did"
+	vdrapi "github.com/hyperledger/aries-framework-go/component/vdr/api"
 )
 
 const (

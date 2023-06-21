@@ -15,8 +15,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/hyperledger/aries-framework-go/pkg/common/model"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/component/models/did"
+	model "github.com/hyperledger/aries-framework-go/component/models/did/endpoint"
 )
 
 // Request contains an identity hub query.

@@ -15,10 +15,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/hyperledger/aries-framework-go/pkg/common/model"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
-	"github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
+	"github.com/hyperledger/aries-framework-go/component/models/did"
+	model "github.com/hyperledger/aries-framework-go/component/models/did/endpoint"
+	"github.com/hyperledger/aries-framework-go/component/models/verifiable"
+	mockvdr "github.com/hyperledger/aries-framework-go/component/vdr/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vc/status/internal/identityhub"
@@ -48,7 +48,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 	const objectID = "object-id"
 
 	t.Run("success: resolve http status VC URI", func(t *testing.T) {
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{}, "")
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{}, "")
 
 		statusServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			_, err := w.Write(srcVCBytes)
@@ -96,7 +96,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 			statusServer.Close()
 		}()
 
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{
 			ResolveValue: &did.Doc{
 				Context: []string{did.ContextV1},
 				Service: []did.Service{
@@ -117,7 +117,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 	})
 
 	t.Run("fail: resolve DID", func(t *testing.T) {
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{}, "")
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{}, "")
 
 		_, err := resolver.Resolve("did:foo:bar")
 		require.Error(t, err)
@@ -125,7 +125,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 	})
 
 	t.Run("fail: no 'queries' query param", func(t *testing.T) {
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{
 			ResolveValue: &did.Doc{
 				Context: []string{did.ContextV1},
 			},
@@ -137,7 +137,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 	})
 
 	t.Run("fail: no query params", func(t *testing.T) {
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{
 			ResolveValue: &did.Doc{
 				Context: []string{did.ContextV1},
 			},
@@ -149,7 +149,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 	})
 
 	t.Run("fail: no 'queries' param", func(t *testing.T) {
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{
 			ResolveValue: &did.Doc{
 				Context: []string{did.ContextV1},
 			},
@@ -161,7 +161,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 	})
 
 	t.Run("fail: 'queries' param is not base 64 data", func(t *testing.T) {
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{
 			ResolveValue: &did.Doc{
 				Context: []string{did.ContextV1},
 			},
@@ -173,7 +173,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 	})
 
 	t.Run("fail: 'queries' param is not encoded map list", func(t *testing.T) {
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{
 			ResolveValue: &did.Doc{
 				Context: []string{did.ContextV1},
 			},
@@ -187,7 +187,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 	})
 
 	t.Run("fail: 'queries' does not have valid data for constructing request", func(t *testing.T) {
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{
 			ResolveValue: &did.Doc{
 				Context: []string{did.ContextV1},
 			},
@@ -201,7 +201,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 	})
 
 	t.Run("fail: no identity hub did service", func(t *testing.T) {
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{
 			ResolveValue: &did.Doc{
 				Context: []string{did.ContextV1},
 			},
@@ -223,7 +223,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 			statusServer.Close()
 		}()
 
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{
 			ResolveValue: &did.Doc{
 				Context: []string{did.ContextV1},
 				Service: []did.Service{
@@ -252,7 +252,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 			statusServer.Close()
 		}()
 
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{
 			ResolveValue: &did.Doc{
 				Context: []string{did.ContextV1},
 				Service: []did.Service{
@@ -291,7 +291,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 			statusServer.Close()
 		}()
 
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{
 			ResolveValue: &did.Doc{
 				Context: []string{did.ContextV1},
 				Service: []did.Service{
@@ -333,7 +333,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 			statusServer.Close()
 		}()
 
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{
 			ResolveValue: &did.Doc{
 				Context: []string{did.ContextV1},
 				Service: []did.Service{
@@ -383,7 +383,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 			statusServer.Close()
 		}()
 
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{
 			ResolveValue: &did.Doc{
 				Context: []string{did.ContextV1},
 				Service: []did.Service{
@@ -403,7 +403,7 @@ func TestResolve(t *testing.T) { //nolint:maintidx
 	})
 
 	t.Run("fail: can't parse status VC", func(t *testing.T) {
-		resolver := NewResolver(http.DefaultClient, &vdr.MockVDRegistry{}, "")
+		resolver := NewResolver(http.DefaultClient, &mockvdr.VDRegistry{}, "")
 
 		statusServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			_, e := w.Write([]byte("invalid data"))

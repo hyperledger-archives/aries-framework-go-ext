@@ -13,8 +13,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
-	"github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
+	"github.com/hyperledger/aries-framework-go/component/models/verifiable"
+	vdr "github.com/hyperledger/aries-framework-go/component/vdr/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vc/status/api"
@@ -32,7 +32,7 @@ func TestClient_VerifyStatus(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		client := Client{
 			ValidatorGetter: validator.GetValidator,
-			Resolver:        resolver.NewResolver(http.DefaultClient, &vdr.MockVDRegistry{}, ""),
+			Resolver:        resolver.NewResolver(http.DefaultClient, &vdr.VDRegistry{}, ""),
 		}
 
 		statusServer := httptest.NewServer(mockStatusResponseHandler(t, mockStatusVC(t, issuerID, isRevoked{false, true})))

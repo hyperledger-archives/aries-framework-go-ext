@@ -10,15 +10,14 @@ import (
 	"crypto"
 	"encoding/json"
 	"fmt"
-
 	"strings"
 
 	"github.com/btcsuite/btcutil/base58"
+	docdid "github.com/hyperledger/aries-framework-go/component/models/did"
+	ld "github.com/hyperledger/aries-framework-go/component/models/ld/documentloader"
+	ldstore "github.com/hyperledger/aries-framework-go/component/models/ld/store"
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
-	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/ld"
-	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
-	ldstore "github.com/hyperledger/aries-framework-go/pkg/store/ld"
+	vdrapi "github.com/hyperledger/aries-framework-go/component/vdr/api"
 	jsonld "github.com/piprate/json-gold/ld"
 	"github.com/trustbloc/sidetree-core-go/pkg/document"
 
@@ -268,7 +267,7 @@ func (v *VDR) Deactivate(_ string, _ ...vdrapi.DIDMethodOption) error {
 	return fmt.Errorf("not implemented")
 }
 
-func (v *VDR) sendRequest(req []byte, _ func() ([]string, error)) ([]byte, error) {
+func (v *VDR) sendRequest(req []byte, _ sidetree.GetEndpointsFunc) ([]byte, error) {
 	didResolution, err := v.sidetreeDocHandler.ProcessOperation(req)
 	if err != nil {
 		return nil, err

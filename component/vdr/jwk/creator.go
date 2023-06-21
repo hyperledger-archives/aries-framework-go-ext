@@ -10,9 +10,9 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
-	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	"github.com/hyperledger/aries-framework-go/component/kmscrypto/doc/jose/jwk"
+	"github.com/hyperledger/aries-framework-go/component/models/did"
+	vdrapi "github.com/hyperledger/aries-framework-go/component/vdr/api"
 	"github.com/trustbloc/sidetree-core-go/pkg/canonicalizer"
 )
 
