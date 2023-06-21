@@ -16,8 +16,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/hyperledger/aries-framework-go/pkg/common/log"
-	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/component/log"
+	docdid "github.com/hyperledger/aries-framework-go/component/models/did"
 	"github.com/trustbloc/sidetree-core-go/pkg/commitment"
 	"github.com/trustbloc/sidetree-core-go/pkg/hashing"
 	"github.com/trustbloc/sidetree-core-go/pkg/patch"

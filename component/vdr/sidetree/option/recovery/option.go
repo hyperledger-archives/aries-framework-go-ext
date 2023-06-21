@@ -9,7 +9,7 @@ package recovery
 import (
 	"crypto"
 
-	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	docdid "github.com/hyperledger/aries-framework-go/component/models/did"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/api"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
