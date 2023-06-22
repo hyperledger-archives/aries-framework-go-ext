@@ -11,8 +11,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
+	"github.com/hyperledger/aries-framework-go/component/kmscrypto/doc/jose/jwk"
+	docdid "github.com/hyperledger/aries-framework-go/component/models/did"
 )
 
 const (
