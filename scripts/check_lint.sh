@@ -65,7 +65,7 @@ do
       # use local lint config
       ${DOCKER_CMD} run --rm -e GOPROXY=${GOPROXY} \
       -v "$ROOT:/opt/workspace" \
-      -v "$ROOT/$lint_path/.custom_golangci.yml:/opt/workspace/$(dirname $i)/.custom_golangci.yml" \
+      -v "$ROOT/$(dirname $i)/.custom_golangci.yml:/opt/workspace/$(dirname $i)/.custom_golangci.yml" \
       -w "/opt/workspace/$(dirname $i)" \
       ${lint_image} golangci-lint run -c "/opt/workspace/$(dirname $i)/.custom_golangci.yml" \
       --path-prefix "$(dirname $i)/"

@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/jwk"
-	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	vdrapi "github.com/hyperledger/aries-framework-go/component/vdr/api"
 )
 
-var _ vdr.VDR = (*jwk.VDR)(nil) // verify interface compliance
+var _ vdrapi.VDR = (*jwk.VDR)(nil) // verify interface compliance
 
 func TestAccept(t *testing.T) {
 	t.Run("jwk method", func(t *testing.T) {

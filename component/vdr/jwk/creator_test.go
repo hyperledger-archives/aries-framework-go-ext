@@ -12,9 +12,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	jwkapi "github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
+	jwkapi "github.com/hyperledger/aries-framework-go/component/kmscrypto/doc/jose/jwk"
+	"github.com/hyperledger/aries-framework-go/component/kmscrypto/doc/jose/jwk/jwksupport"
+	"github.com/hyperledger/aries-framework-go/component/models/did"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/sidetree-core-go/pkg/canonicalizer"
 
