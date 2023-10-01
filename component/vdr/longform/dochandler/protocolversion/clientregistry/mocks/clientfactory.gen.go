@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/longform/dochandler/protocolversion/versions/common"
-	"github.com/trustbloc/sidetree-core-go/pkg/api/protocol"
+	"github.com/trustbloc/sidetree-go/pkg/api/protocol"
 )
 
 type ClientFactory struct {

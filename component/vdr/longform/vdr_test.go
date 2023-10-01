@@ -24,7 +24,7 @@ import (
 	ldstore "github.com/hyperledger/aries-framework-go/component/models/ld/store"
 	vdrapi "github.com/hyperledger/aries-framework-go/component/vdr/api"
 	"github.com/stretchr/testify/require"
-	"github.com/trustbloc/sidetree-core-go/pkg/document"
+	"github.com/trustbloc/sidetree-go/pkg/document"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/option/create"
 )

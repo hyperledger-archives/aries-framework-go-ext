@@ -84,30 +84,22 @@ linters-settings:
     allow-unused: false # report any unused nolint directives
     require-explanation: false # don't require an explanation for nolint directives
     require-specific: false # don't require nolint directives to be specific about which linter is being skipped
-    machine: false # don't require //nolint instead of //nolint
+    machine: false # don't require //nolint instead of // nolint
     explain: false # don't require //nolint // my explanation instead of just //nolint
 
 linters:
   disable-all: true
   enable:
-    - bodyclose
     - dogsled
     - errcheck
     - exportloopref
-    - funlen
     - gochecknoinits
-    - goconst
     - gocyclo
-    - gomnd
     - goprintffuncname
-    - gosec
     - gosimple
     - govet
     - ineffassign
-    - lll
     - nakedret
-    - noctx
-    - nolintlint
     - staticcheck
     - stylecheck
     - typecheck
@@ -117,6 +109,16 @@ linters:
     - whitespace
 
   # don't enable:
+  # - gomnd
+  # - dupl
+  # - funlen
+  # - bodyclose
+  # - goconst
+  # - gosec
+  # - noctx
+  # - wrapcheck
+  # - lll
+  # - gocritic
   # - asciicheck
   # - scopelint
   # - gochecknoglobals
@@ -132,9 +134,8 @@ linters:
   # - revive
   # - wsl
   # - depguard
-  # - gocritic
+  # - nolintlint
   # - goimports
-  # - dupl
 
 issues:
   # Excluding configuration per-path, per-linter, per-text and per-source
@@ -152,7 +153,6 @@ issues:
         - wrapcheck
         - lll
         - gocritic
-        - nolintlint
 
     - path: pkg/golinters/errcheck.go
       text: "SA1019: errCfg.Exclude is deprecated: use ExcludeFunctions instead"

@@ -14,13 +14,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/trustbloc/sidetree-core-go/pkg/api/operation"
-	"github.com/trustbloc/sidetree-core-go/pkg/api/protocol"
-	"github.com/trustbloc/sidetree-core-go/pkg/canonicalizer"
-	"github.com/trustbloc/sidetree-core-go/pkg/dochandler"
-	"github.com/trustbloc/sidetree-core-go/pkg/document"
-	"github.com/trustbloc/sidetree-core-go/pkg/docutil"
-	"github.com/trustbloc/sidetree-core-go/pkg/encoder"
+	"github.com/trustbloc/sidetree-go/pkg/api/operation"
+	"github.com/trustbloc/sidetree-go/pkg/api/protocol"
+	"github.com/trustbloc/sidetree-go/pkg/canonicalizer"
+	"github.com/trustbloc/sidetree-go/pkg/document"
+	"github.com/trustbloc/sidetree-go/pkg/docutil"
+	"github.com/trustbloc/sidetree-go/pkg/encoder"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/longform/dochandler/protocol/nsprovider"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/longform/dochandler/protocol/verprovider"
@@ -112,14 +111,14 @@ func (r *DocumentHandler) ProcessOperation(operationBuffer []byte) (*document.Re
 
 	requestJCS := encoder.EncodeToString(jcsBytes)
 
-	ti := dochandler.GetTransformationInfoForUnpublished(r.namespace, "", "", op.UniqueSuffix, requestJCS)
+	ti := docutil.GetTransformationInfoForUnpublished(r.namespace, "", "", op.UniqueSuffix, requestJCS)
 
 	return r.getCreateResponse(op, ti, pv)
 }
 
 func (r *DocumentHandler) getCreateResponse(op *operation.Operation,
 	ti protocol.TransformationInfo, pv protocol.Version) (*document.ResolutionResult, error) {
-	rm, err := dochandler.GetCreateResult(op, pv)
+	rm, err := docutil.GetCreateResult(op, pv)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +184,7 @@ func (r *DocumentHandler) resolveRequestWithInitialState(uniqueSuffix, longFormD
 	}
 
 	createRequestJCS := longFormDID[strings.LastIndex(longFormDID, docutil.NamespaceDelimiter)+1:]
-	ti := dochandler.GetTransformationInfoForUnpublished(r.namespace, "", "", uniqueSuffix, createRequestJCS)
+	ti := docutil.GetTransformationInfoForUnpublished(r.namespace, "", "", uniqueSuffix, createRequestJCS)
 
 	return r.getCreateResponse(op, ti, pv)
 }

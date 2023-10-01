@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/trustbloc/sidetree-core-go/pkg/api/protocol"
+	"github.com/trustbloc/sidetree-go/pkg/api/protocol"
 
 	vercommon "github.com/hyperledger/aries-framework-go-ext/component/vdr/longform/dochandler/protocolversion/common"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/longform/dochandler/protocolversion/versions/common"

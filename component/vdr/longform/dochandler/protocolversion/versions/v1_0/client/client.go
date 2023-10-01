@@ -7,12 +7,12 @@ SPDX-License-Identifier: Apache-2.0
 package client
 
 import (
-	"github.com/trustbloc/sidetree-core-go/pkg/api/protocol"
-	"github.com/trustbloc/sidetree-core-go/pkg/versions/1_0/doccomposer"
-	"github.com/trustbloc/sidetree-core-go/pkg/versions/1_0/doctransformer/didtransformer"
-	"github.com/trustbloc/sidetree-core-go/pkg/versions/1_0/docvalidator/didvalidator"
-	"github.com/trustbloc/sidetree-core-go/pkg/versions/1_0/operationapplier"
-	"github.com/trustbloc/sidetree-core-go/pkg/versions/1_0/operationparser"
+	"github.com/trustbloc/sidetree-go/pkg/api/protocol"
+	"github.com/trustbloc/sidetree-go/pkg/versions/1_0/doccomposer"
+	"github.com/trustbloc/sidetree-go/pkg/versions/1_0/doctransformer/didtransformer"
+	"github.com/trustbloc/sidetree-go/pkg/versions/1_0/docvalidator/didvalidator"
+	"github.com/trustbloc/sidetree-go/pkg/versions/1_0/operationapplier"
+	"github.com/trustbloc/sidetree-go/pkg/versions/1_0/operationparser"
 
 	vcommon "github.com/hyperledger/aries-framework-go-ext/component/vdr/longform/dochandler/protocolversion/versions/common"
 	protocolcfg "github.com/hyperledger/aries-framework-go-ext/component/vdr/longform/dochandler/protocolversion/versions/v1_0/config"

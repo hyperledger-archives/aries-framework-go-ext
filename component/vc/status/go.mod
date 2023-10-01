@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 module github.com/hyperledger/aries-framework-go-ext/component/vc/status
 
-go 1.20
+go 1.21
 
 require (
 	github.com/google/uuid v1.3.0
