@@ -294,7 +294,7 @@ func (s *store) Put(key string, value []byte, tags ...storage.Tag) error {
 	}
 
 	// create upsert query to insert the record, checking whether the key is already mapped to a value in the store.
-	insertStmt := "INSERT INTO " + s.tableName + " VALUES (?, ?) ON DUPLICATE KEY UPDATE value=?"
+	insertStmt := "INSERT INTO " + s.tableName + " VALUES (?, ?) ON DUPLICATE KEY UPDATE value=?" //nolint:gosec
 	// executing the prepared insert statement
 	_, err = s.db.Exec(insertStmt, key, entryBytes, entryBytes)
 	if err != nil {
@@ -371,7 +371,7 @@ func (s *store) Delete(k string) error {
 	}
 
 	// delete query to delete the record by key
-	_, err := s.db.Exec("DELETE FROM "+s.tableName+" WHERE `key`= ?", k)
+	_, err := s.db.Exec("DELETE FROM "+s.tableName+" WHERE `key`= ?", k) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf(storage.ErrDataNotFound.Error(), err)
 	}
@@ -394,7 +394,7 @@ func (s *store) Delete(k string) error {
 // Executing a single multi-statement query requires O(N) space for the query string and an additional
 // slice with O(2*N) space holding the values for the query. Callers should take care of this additional
 // memory usage by limiting the size of the batch.
-func (s *store) Batch(batch []storage.Operation) error { // nolint:gocyclo
+func (s *store) Batch(batch []storage.Operation) error {
 	if len(batch) == 0 {
 		return errors.New("batch requires at least one operation")
 	}

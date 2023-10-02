@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	coremocks "github.com/trustbloc/sidetree-core-go/pkg/mocks"
+	coremocks "github.com/trustbloc/sidetree-go/pkg/mocks"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/longform/dochandler/protocolversion/clientregistry"
 	crmocks "github.com/hyperledger/aries-framework-go-ext/component/vdr/longform/dochandler/protocolversion/clientregistry/mocks"

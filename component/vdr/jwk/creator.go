@@ -13,7 +13,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/component/kmscrypto/doc/jose/jwk"
 	"github.com/hyperledger/aries-framework-go/component/models/did"
 	vdrapi "github.com/hyperledger/aries-framework-go/component/vdr/api"
-	"github.com/trustbloc/sidetree-core-go/pkg/canonicalizer"
+	"github.com/trustbloc/sidetree-go/pkg/canonicalizer"
 )
 
 // Create new DID document for didDoc.

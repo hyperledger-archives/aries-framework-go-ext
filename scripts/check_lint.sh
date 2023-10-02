@@ -31,7 +31,7 @@ fi
 DOCKER_CMD=${DOCKER_CMD:-docker}
 
 if [ -z "${GOLANGCI_LINT_IMAGE}" ]; then
-  lint_image="golangci/golangci-lint:v1.39.0"
+  lint_image="golangci/golangci-lint:v1.54.2"
 else
   lint_image="${GOLANGCI_LINT_IMAGE}"
 fi

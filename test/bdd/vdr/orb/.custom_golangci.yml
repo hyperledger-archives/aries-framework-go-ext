@@ -90,7 +90,6 @@ linters-settings:
 linters:
   disable-all: true
   enable:
-    - depguard
     - dogsled
     - errcheck
     - exportloopref
@@ -103,7 +102,6 @@ linters:
     - ineffassign
     - nakedret
     - nolintlint
-    - staticcheck
     - stylecheck
     - typecheck
     - unconvert
@@ -136,6 +134,8 @@ linters:
   # - testpackage
   # - revive
   # - wsl
+  # - depguard
+  # - staticcheck
 
 issues:
   # Excluding configuration per-path, per-linter, per-text and per-source

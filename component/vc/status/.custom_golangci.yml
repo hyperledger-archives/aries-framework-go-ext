@@ -90,6 +90,7 @@ linters:
     - wrapcheck # TODO enable
     - forbidigo # TODO enable
     - typecheck
+    - depguard
 
 issues:
   exclude-use-default: false

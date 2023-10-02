@@ -13,7 +13,7 @@ import (
 
 	"github.com/hyperledger/aries-framework-go/component/models/did"
 	"github.com/stretchr/testify/require"
-	"github.com/trustbloc/sidetree-core-go/pkg/canonicalizer"
+	"github.com/trustbloc/sidetree-go/pkg/canonicalizer"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/jwk"
 )

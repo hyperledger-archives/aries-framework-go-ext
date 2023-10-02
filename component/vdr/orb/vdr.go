@@ -33,9 +33,9 @@ import (
 	"github.com/trustbloc/orb/pkg/discovery/endpoint/client/models"
 	"github.com/trustbloc/orb/pkg/hashlink"
 	"github.com/trustbloc/orb/pkg/orbclient/resolutionverifier"
-	"github.com/trustbloc/sidetree-core-go/pkg/commitment"
-	"github.com/trustbloc/sidetree-core-go/pkg/document"
-	"github.com/trustbloc/sidetree-core-go/pkg/util/pubkey"
+	"github.com/trustbloc/sidetree-go/pkg/commitment"
+	"github.com/trustbloc/sidetree-go/pkg/document"
+	"github.com/trustbloc/sidetree-go/pkg/util/pubkey"
 	"golang.org/x/net/http2"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
@@ -390,7 +390,7 @@ func (v *VDR) Create(did *docdid.Doc, //nolint:gocyclo
 
 // Read Orb DID.
 
-func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) { //nolint: funlen,gocyclo
+func (v *VDR) Read(did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
 	didMethodOpts := applyOptions(opts...)
 
 	var ctx context.Context
@@ -508,15 +508,20 @@ func (v *VDR) resolveFromRandomDomain(ctx context.Context, did string, opts ...v
 		return nil, fmt.Errorf("resolve from domain %s: %w", domain, err)
 	}
 
-	doc, err := v.resolveFromEndpoint(ctx, endpoint, did, opts...)
+	result, err := v.resolveFromEndpoint(ctx, endpoint, did, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("resolve from endpoint %s: %w", endpoint.ResolutionEndpoints, err)
 	}
 
-	return doc, nil
+	return result, nil
 }
 
-func (v *VDR) resolveFromEndpoint(ctx context.Context, endpoint *models.Endpoint, did string, opts ...vdrapi.DIDMethodOption) (*docdid.DocResolution, error) {
+func (v *VDR) resolveFromEndpoint(
+	ctx context.Context,
+	endpoint *models.Endpoint,
+	did string,
+	opts ...vdrapi.DIDMethodOption,
+) (*docdid.DocResolution, error) {
 	var docResolution *docdid.DocResolution
 
 	var docBytes []byte

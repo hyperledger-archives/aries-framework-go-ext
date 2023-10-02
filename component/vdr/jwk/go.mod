@@ -3,19 +3,19 @@
 // SPDX-License-Identifier: Apache-2.0
 module github.com/hyperledger/aries-framework-go-ext/component/vdr/jwk
 
-go 1.20
+go 1.21
 
 require (
 	github.com/hyperledger/aries-framework-go/component/kmscrypto v0.0.0-20230622082138-3ffab1691857
 	github.com/hyperledger/aries-framework-go/component/models v0.0.0-20230622171716-43af8054a539
 	github.com/hyperledger/aries-framework-go/component/vdr v0.0.0-20230622171716-43af8054a539
 	github.com/stretchr/testify v1.8.1
-	github.com/trustbloc/sidetree-core-go v1.0.0-rc5.0.20230609191801-793cbea60692
+	github.com/trustbloc/sidetree-go v0.0.0-20230928172705-30e78b6b6ddd
 )
 
 require (
 	github.com/IBM/mathlib v0.0.3-0.20230605104224-932ab92f2ce0 // indirect
-	github.com/btcsuite/btcd v0.22.0-beta // indirect
+	github.com/btcsuite/btcd v0.22.3 // indirect
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce // indirect
 	github.com/consensys/bavard v0.1.13 // indirect
 	github.com/consensys/gnark-crypto v0.9.1 // indirect

@@ -867,7 +867,7 @@ func testProviderAndStoreNotImplemented(t *testing.T, provider spi.Provider) {
 	require.EqualError(t, err, "not implemented")
 }
 
-func verifyExpectedIterator(t *testing.T, actualResultsItr spi.Iterator, // nolint:gocyclo // Test file
+func verifyExpectedIterator(t *testing.T, actualResultsItr spi.Iterator,
 	expectedKeys []string, expectedValues [][]byte) {
 	t.Helper()
 

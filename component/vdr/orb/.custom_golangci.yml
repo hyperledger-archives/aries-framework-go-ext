@@ -91,7 +91,6 @@ linters:
   disable-all: true
   enable:
     - bodyclose
-    - depguard
     - dogsled
     - dupl
     - errcheck
@@ -135,6 +134,7 @@ linters:
   # - testpackage
   # - revive
   # - wsl
+  # - depguard
 
 issues:
   # Excluding configuration per-path, per-linter, per-text and per-source

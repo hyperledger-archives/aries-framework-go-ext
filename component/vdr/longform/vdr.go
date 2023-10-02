@@ -19,7 +19,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	vdrapi "github.com/hyperledger/aries-framework-go/component/vdr/api"
 	jsonld "github.com/piprate/json-gold/ld"
-	"github.com/trustbloc/sidetree-core-go/pkg/document"
+	"github.com/trustbloc/sidetree-go/pkg/document"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/longform/dochandler"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree"
