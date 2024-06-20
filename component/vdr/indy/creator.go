@@ -12,6 +12,7 @@ import (
 
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/common/model"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/fingerprint"
@@ -36,7 +37,7 @@ func (v *VDR) Create(didDoc *did.Doc, opts ...vdrapi.DIDMethodOption) (*did.DocR
 
 	didDoc = docResolution.DIDDocument
 
-	pubKeyValue := base58.Decode(string(didDoc.VerificationMethod[0].Value))
+	pubKeyValue := didDoc.VerificationMethod[0].Value
 	methodID := base58.Encode(pubKeyValue[0:16])
 	didKey := fmt.Sprintf("did:%s:%s", v.MethodName, methodID)
 
@@ -125,13 +126,18 @@ func configServices(service *did.Service, verificationMethod *did.VerificationMe
 		service.Type = v
 	}
 
-	if service.ServiceEndpoint == "" && docOpts.Values[DefaultServiceEndpoint] != nil {
+	serviceEndpointUri, err := service.ServiceEndpoint.URI()
+	if err != nil {
+		return nil, fmt.Errorf("defaultServiceEndpoint not string")
+	}
+
+	if serviceEndpointUri == "" && docOpts.Values[DefaultServiceEndpoint] != nil {
 		v, ok := docOpts.Values[DefaultServiceEndpoint].(string)
 		if !ok {
 			return nil, fmt.Errorf("defaultServiceEndpoint not string")
 		}
 
-		service.ServiceEndpoint = v
+		service.ServiceEndpoint = model.NewDIDCommV1Endpoint(v)
 	}
 
 	if service.Type == vdrapi.DIDCommServiceType {

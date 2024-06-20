@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,8 @@ const (
 	invalidTag     = `"%s" is an invalid tag %s since it contains one or more of the ` +
 		`following substrings: ":", "<=", "<", ">=", ">"`
 )
+
+var logger = log.New("aries-framework-ext/postgresql")
 
 type closer func(storeName string)
 
@@ -195,6 +198,8 @@ func (p *Provider) SetStoreConfig(storeName string, config storage.StoreConfigur
 
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), p.timeout)
 	defer cancel()
+
+	logger.Debugf("alterTableStatement: [%s]", alterTableStatement)
 
 	_, err = openStore.connectionPoolToDatabase.Exec(ctxWithTimeout, alterTableStatement)
 	if err != nil && !strings.Contains(err.Error(), "already exists") {

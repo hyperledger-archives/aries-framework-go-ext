@@ -10,7 +10,7 @@ import (
 	"crypto/ed25519"
 	"testing"
 
-	"github.com/btcsuite/btcutil/base58"
+	"github.com/hyperledger/aries-framework-go/pkg/common/model"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/stretchr/testify/require"
 
@@ -51,13 +51,13 @@ func TestVDRI_Build(t *testing.T) {
 
 		pubKeys := []did.VerificationMethod{{
 			ID:    "test",
-			Value: []byte(base58.Encode(k)),
+			Value: []byte(k.Public().(ed25519.PublicKey)),
 			Type:  "Ed25519VerificationKey2018",
 		}}
 
 		doc, err := r.Create(
 			&did.Doc{
-				ID:                 "did:sov:D8HmB7s9KCGuPGbi5Ymiqr",
+				ID:                 "did:sov:WvRwKqxFLtJ3YbhmHZBpmy",
 				VerificationMethod: pubKeys,
 			})
 
@@ -67,7 +67,7 @@ func TestVDRI_Build(t *testing.T) {
 		didDoc := doc.DIDDocument
 
 		require.NotNil(t, didDoc)
-		require.Equal(t, "did:sov:D8HmB7s9KCGuPGbi5Ymiqr", didDoc.ID)
+		require.Equal(t, "did:sov:WvRwKqxFLtJ3YbhmHZBpmy", didDoc.ID)
 		require.NotNil(t, didDoc.Context)
 		require.NotNil(t, didDoc.Updated)
 		require.NotNil(t, didDoc.Created)
@@ -84,11 +84,11 @@ func TestVDRI_Build(t *testing.T) {
 		k := ed25519.NewKeyFromSeed([]byte("b2352b32947e188eb72871093ac6217e"))
 		pubKeys := []did.VerificationMethod{{
 			ID:    "test",
-			Value: []byte(base58.Encode(k)),
+			Value: []byte(k.Public().(ed25519.PublicKey)),
 			Type:  "Ed25519VerificationKey2018",
 		}}
 
-		ep := "http://127.0.0.1:8080"
+		ep := model.NewDIDCommV1Endpoint("http://127.0.0.1:8080")
 
 		services := []did.Service{{
 			Type:            "did-communication",
@@ -97,7 +97,7 @@ func TestVDRI_Build(t *testing.T) {
 
 		doc, err := r.Create(
 			&did.Doc{
-				ID:                 "did:sov:D8HmB7s9KCGuPGbi5Ymiqr",
+				ID:                 "did:sov:WvRwKqxFLtJ3YbhmHZBpmy",
 				VerificationMethod: pubKeys,
 				Service:            services,
 			})
@@ -107,7 +107,7 @@ func TestVDRI_Build(t *testing.T) {
 
 		didDoc := doc.DIDDocument
 
-		require.Equal(t, "did:sov:D8HmB7s9KCGuPGbi5Ymiqr", didDoc.ID)
+		require.Equal(t, "did:sov:WvRwKqxFLtJ3YbhmHZBpmy", didDoc.ID)
 		require.NotNil(t, didDoc.Context)
 		require.NotNil(t, didDoc.Updated)
 		require.NotNil(t, didDoc.Created)

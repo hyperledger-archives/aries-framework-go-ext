@@ -67,7 +67,7 @@ func New(methodName string, opts ...Option) (*VDR, error) {
 }
 
 // Accept the did method.
-func (v *VDR) Accept(method string) bool {
+func (v *VDR) Accept(method string, opts ...vdrapi.DIDMethodOption) bool {
 	return method == v.MethodName
 }
 
